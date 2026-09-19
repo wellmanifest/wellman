@@ -18,3 +18,19 @@ def test_runner_with_agents_md(tmp_path):
     runner = ConformanceRunner(tmp_path)
     agent_findings = runner.check_agent_hosts()
     assert len(agent_findings) == 0
+
+
+def test_runner_selected_standard_uses_only_its_check(tmp_path):
+    runner = ConformanceRunner(tmp_path)
+
+    findings = runner.run_standard("wellmanifest/agent")
+
+    assert [finding.code for finding in findings] == ["GOV-AGENT-001"]
+
+
+def test_runner_selected_unimplemented_standard_fails_closed(tmp_path):
+    runner = ConformanceRunner(tmp_path)
+
+    findings = runner.run_standard("wellmanifest/docs")
+
+    assert [finding.code for finding in findings] == ["GOV-STANDARD-NOT-IMPLEMENTED"]

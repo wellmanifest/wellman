@@ -46,3 +46,16 @@ def test_validator_on_empty_dir(tmp_path):
     # Missing manifest.json should produce an ERROR finding
     error_codes = [f.code for f in findings if f.severity == "ERROR"]
     assert "GOV-MANIFEST-MISSING" in error_codes
+
+
+def test_validator_rejects_unknown_adoption_target(tmp_path):
+    gov_dir = tmp_path / ".governance"
+    gov_dir.mkdir()
+    (gov_dir / "manifest.json").write_text(
+        json.dumps({"standard": {"id": "wellmanifest/nope", "version": "0.20.35"}}),
+        encoding="utf-8",
+    )
+
+    findings = StandardsValidator(tmp_path).validate_adoption_manifest()
+
+    assert "GOV-MANIFEST-UNKNOWN-STANDARD" in [finding.code for finding in findings]

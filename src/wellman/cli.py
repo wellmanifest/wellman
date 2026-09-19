@@ -22,7 +22,7 @@ from wellman.registry import (
     list_standards,
 )
 from wellman.runner import ConformanceRunner
-from wellman.validator import StandardsValidator, load_bundled_schema, validate_json_structure
+from wellman.validator import Finding, StandardsValidator, load_bundled_schema, validate_json_structure
 
 
 def print_banner() -> None:
@@ -124,7 +124,19 @@ def cmd_check(args: argparse.Namespace) -> int:
     root = Path(args.root or ".").resolve()
     runner = ConformanceRunner(root)
 
-    findings = runner.run_all()
+    selected_standard = get_standard(args.standard) if args.standard else None
+    if args.standard and selected_standard is None:
+        findings = [
+            Finding(
+                code="GOV-STANDARD-UNKNOWN",
+                message=f"Unknown standard '{args.standard}'.",
+                remediation="Run `wellman standards` to view registered standards.",
+            )
+        ]
+    elif selected_standard is not None:
+        findings = runner.run_standard(selected_standard.id)
+    else:
+        findings = runner.run_all()
     errors = [f for f in findings if f.severity == "ERROR"]
     warnings = [f for f in findings if f.severity == "WARNING"]
 
@@ -210,16 +222,25 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     profile = get_profile(args.standard_id)
 
     gov_dir = root / ".governance"
-    gov_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"Adopting '{args.standard_id}' into {root}...")
-
     manifest_path = gov_dir / "manifest.json"
+    if std is None and profile is None:
+        print(f"Error: Unknown standard or profile '{args.standard_id}'.", file=sys.stderr)
+        print("Run `wellman standards` or `wellman profiles` to view supported values.", file=sys.stderr)
+        return 1
+    if manifest_path.exists() and not args.force:
+        print(
+            f"Error: {manifest_path} already exists; refusing to overwrite it without --force.",
+            file=sys.stderr,
+        )
+        return 1
+
+    gov_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Adopting '{args.standard_id}' into {root}...")
     manifest_data = {
         "schema": "wellmanifest.manifest/v1",
         "standard": {
             "id": std.id if std else (f"profile:{profile.name}" if profile else args.standard_id),
-            "version": "0.20.32",
+            "version": __version__,
         },
     }
     manifest_path.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
@@ -233,7 +254,7 @@ def cmd_adopt(args: argparse.Namespace) -> int:
             target_packs.write_text(bundled_packs.read_text(encoding="utf-8"), encoding="utf-8")
             print(f"✓ Attached {target_packs.relative_to(root)}")
 
-    print("✓ Adoption configured successfully. Run `wellman check` to verify.")
+    print("✓ Adoption scaffolded. Run `wellman check` and resolve remaining findings before treating it as conformant.")
     return 0
 
 
@@ -282,6 +303,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_adopt = subparsers.add_parser("adopt", help="Adopt standard or profile into repository")
     p_adopt.add_argument("standard_id", help="Standard ID or profile name to adopt")
     p_adopt.add_argument("--root", "-r", default=".", help="Target repository root path")
+    p_adopt.add_argument("--force", action="store_true", help="Replace an existing adoption manifest")
     p_adopt.set_defaults(func=cmd_adopt)
 
     # gate

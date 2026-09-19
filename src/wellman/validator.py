@@ -20,6 +20,7 @@ from wellman.registry import (
     EXECUTION_MODELS,
     PROFILES_CATALOG,
     STANDARDS_CATALOG,
+    get_profile,
     get_standard,
 )
 
@@ -223,6 +224,12 @@ class StandardsValidator:
 
         if not standard_id:
             findings.append(Finding("GOV-MANIFEST-NO-STANDARD", "manifest.json missing 'standard.id'"))
+        elif not self._is_registered_adoption_target(standard_id):
+            findings.append(Finding(
+                "GOV-MANIFEST-UNKNOWN-STANDARD",
+                f"manifest.json names unknown standard or profile '{standard_id}'",
+                remediation="Use a registered standard ID or profile name from `wellman standards` or `wellman profiles`.",
+            ))
         if not standard_version:
             findings.append(Finding("GOV-MANIFEST-NO-VERSION", "manifest.json missing 'standard.version'"))
 
@@ -256,10 +263,19 @@ class StandardsValidator:
                 "GOV-LOCK-MISSING",
                 "Missing .governance/manifest.lock.json",
                 severity="WARNING",
-                remediation="Generate lockfile via `wellman adopt`.",
+                remediation="Use the managed wellmanifest/new-project adoption flow to generate a lockfile.",
             ))
 
         return findings
+
+    @staticmethod
+    def _is_registered_adoption_target(standard_id: Any) -> bool:
+        if not isinstance(standard_id, str):
+            return False
+        if get_standard(standard_id) is not None:
+            return True
+        prefix = "profile:"
+        return standard_id.startswith(prefix) and get_profile(standard_id[len(prefix):]) is not None
 
     def validate_standard_adoption(self) -> List[Finding]:
         """Validate .governance/standard-adoption.json."""

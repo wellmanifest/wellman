@@ -170,6 +170,33 @@ class ConformanceRunner:
         findings.extend(self.check_agent_hosts())
         return findings
 
+    def run_standard(self, standard_id: str) -> List[Finding]:
+        """Run the concrete conformance check implemented for one standard.
+
+        The registry is broader than the current executable checker set.  A
+        selected standard must therefore fail closed when this release has no
+        standard-specific check, rather than returning the result of an
+        unrelated full scan.
+        """
+        checks = {
+            "wellmanifest/new-project": self.validator.run_all_validations,
+            "wellmanifest/git-lifecycle": self.check_git_lifecycle,
+            "wellmanifest/worktrees": self.check_worktrees,
+            "wellmanifest/ticket-lifecycle": self.check_ticket_lifecycle,
+            "wellmanifest/agent": self.check_agent_hosts,
+        }
+        check = checks.get(standard_id)
+        if check is not None:
+            return check()
+        return [Finding(
+            code="GOV-STANDARD-NOT-IMPLEMENTED",
+            message=(
+                f"No standard-specific conformance check is implemented for "
+                f"'{standard_id}'."
+            ),
+            remediation="Run `wellman check` for the available aggregate checks or implement this standard's checker.",
+        )]
+
     def run_canonical_gate(self, extra_args: Optional[List[str]] = None) -> int:
         """Run the bundled canonical governance_check.py gate."""
         checker = _find_bundled_script("governance_check.py")

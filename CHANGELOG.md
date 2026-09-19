@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- Reject unknown standards before adoption and preserve an existing adoption manifest unless `--force` is explicit.
+- Make `check --standard` fail closed when the named standard is unknown or has no implemented checker.
+- Record the running Wellman version in new adoption manifests and describe adoption as a scaffold until all findings are resolved.
+
 ## [0.20.35] - 2026-09-19
 
 ### Docs

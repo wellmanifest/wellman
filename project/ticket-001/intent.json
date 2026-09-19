@@ -1,0 +1,54 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-001",
+  "summary": "Harden Wellman adoption and selected-standard conformance checks after the NVIDIA-host pilot",
+  "workstream": "governance",
+  "classification": {
+    "kind": "BUGFIX",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    ".gitignore",
+    "CHANGELOG.md",
+    "README.md",
+    "VERSION",
+    "pyproject.toml",
+    "uv.lock",
+    "src/wellman/cli.py",
+    "src/wellman/runner.py",
+    "src/wellman/validator.py",
+    "tests/test_cli.py",
+    "tests/test_runner.py",
+    "tests/test_validator.py",
+    "project/ticket-001/**",
+    "docs/analysis/wellman-nvidia-pilot.md",
+    "docs/README.md"
+  ],
+  "forbiddenPaths": [],
+  "stacks": ["python"],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "56258269a51f69fae5f787c1d6cf229d2473e5ba",
+    "targetBranch": "main",
+    "outcome": "Wellman 0.20.36 fails closed for unknown or unimplemented selected standards and preserves existing adoption manifests unless explicitly forced.",
+    "nonGoals": ["Publishing a package release", "Enabling a protected CI rule in another repository"],
+    "complexity": "S",
+    "estimatedMinutes": 60,
+    "budgets": {
+      "maxImplementationFiles": 7,
+      "maxAffectedComponents": 2,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": ["uv run --extra dev --group dev python -m pytest -q", "uv run --locked python -m build", "uv run --locked twine check dist/*"],
+        "evidence": "Regression tests and distributable package validation pass."
+      }
+    ]
+  }
+}

@@ -7,6 +7,7 @@ Indeks oficjalnej dokumentacji technicznej i analitycznej repozytorium `wellmani
 
 ## Analizy i Raporty (`docs/analysis/`)
 - [Analiza Porównawcza: Wellman (Policy-as-Code) vs Rozwiązanie Plikowo-Szablonowe w Standaryzacji Wellmanifest](analysis/wellman-vs-file-governance-comparative-analysis.md) (`wellman-vs-file-governance-comparative-analysis`)
+- [Pilotaż NVIDIA: poprawność kontroli standardów Wellman](analysis/wellman-nvidia-pilot.md) (`wellman-nvidia-pilot`)
 
 ---
 

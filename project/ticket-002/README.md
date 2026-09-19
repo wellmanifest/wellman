@@ -32,3 +32,10 @@ Current integration scope combines that self-adoption with the requested CLI
 path correction; other repositories require their own admitted owner and lease.
 Additional catalog checkers and broad real-repository rollout remain separate
 follow-up work, not conformance claims from this registration slice.
+
+Review remediation: continue under the user's publication authorization with
+new-project 0.20.38 at e2fd653ff801fb228fca818e1d874ee685a4da62, independently
+approved and merged in upstream PR #390. Adopt only its published immutable
+release through the managed updater to remove the unsafe review-bypass
+guidance identified in PR #3. Retest and obtain fresh exact-head review;
+previous review progress is not approval of the updated adoption.

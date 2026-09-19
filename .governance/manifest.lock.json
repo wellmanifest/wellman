@@ -48,7 +48,7 @@
     ".governance/governance_check.py": "9998df5cf53d4634c6bbce907c63592633f6f968066919e5cb6d4870926dba10",
     ".governance/intent.schema.json": "c70b7f210c9f4f549870e2bda0f765e882b85cc75dd481250b36b7be8d3d2ef9",
     ".governance/lock.schema.json": "ad80c98f800a4a3310870336dcdaf0aa689cc4988f71084d25d76bea2df1242f",
-    ".governance/manifest.base.json": "ca982c5cd27d2bbda0e9139f7ec486ab6c192a4231fcdbdb09fa780a83806260",
+    ".governance/manifest.base.json": "798b5af2f43f2563feced5f787a4eadda0daa44a0c73dbf75f938548d7d392ee",
     ".governance/manifest.schema.json": "5aa2ccd3f6898834d4e39a78342448145490be56aa132e16ac7c9d64acef8f73",
     ".governance/package-manifest.json": "453e4a0730b02a0b5c6e39a365cec1e2e0d6825b227fc3ad8b38124bb5b17ac5",
     ".governance/precommit_standard_update.py": "c91e2bf9ae9d6ccc77bce0e61450c818a5961edee5bfde3b60426da88e296b0f",
@@ -91,12 +91,12 @@
     ".governance/worktrees.schema.json": "bb5989c19ee33d9beafa34576ef568ef70384a664ccf763ac2e29dde3a464756",
     ".subactor/.gitignore": "dd223aed5e053f94c6808ac434368c16eeca7e77218f8426e8cf5e46ae441d03",
     ".subactor/manifest.json": "ab8b1cbe4052a6f0005a3c33a43fa2a70e8837cd32c18b4183d0d448c3a8cee2",
-    "AGENTS.md": "069c0449eea1bc62b7002785d1b71187755c9ebfa17bada4f4f298483b274fb5",
+    "AGENTS.md": "db8078aba5b54c577130d188fd91ffc71af47b8977705413539ebcfe80db30be",
     "CLAUDE.md": "628e743294cd4e23531eece8053595fec526080b20f2fac74248e43e5227442b",
     "GEMINI.md": "f72a35f8a888b1727f4829fa33410e75a1e830a363cc7bf7c465e5c519535725",
     "project/governance-check.bat": "04f4fd3ba15abd6b874bde8fab0dd869402b84b9c83ae72da40c1a804b068045",
     "project/governance-check.sh": "8eb977ff01a96e47455d227ed5ced949eb53ea19537f870d9016f803840e048e",
-    "project/new-ticket.sh": "c3f32f3deecb012acc4629604ca6eb65b7e4ebe8cf371611cd161b52a3435498",
+    "project/new-ticket.sh": "5aeedd4f5b51399c16327773ad087cb74e0cdaf06a81baa666803838d77e3392",
     "project/readme.sh": "b41a9c88374e6de0439284a4561fb11b1b482039bc5ba1bcf6683fd59b1a3968",
     "scripts/install-agent-hosts.sh": "19fb8fa511f9fd0cef41bdcfa244bc9dbee43d1175148161ca1d652060627482",
     "scripts/runtime.sh": "27ec7c0ff9ba3e16be5438ce2fd938a0e1dd34cc3a3627bf97155a83f4304306",
@@ -108,7 +108,7 @@
     "id": "wellmanifest/new-project",
     "publicationStatus": "published",
     "sourceRepository": "wellmanifest/new-project",
-    "sourceRevision": "368085282d0caa41cfa5ef2ec65644920566ae77",
-    "version": "0.20.36"
+    "sourceRevision": "e2fd653ff801fb228fca818e1d874ee685a4da62",
+    "version": "0.20.38"
   }
 }

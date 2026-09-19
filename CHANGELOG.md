@@ -6,7 +6,7 @@
 
 ### Added
 - Additive language-independent standard requirements registration and explicit non-Git bootstrap.
-- Pinned self-adoption of new-project 0.20.36 with governance enforcement in the pytest lifecycle.
+- Pinned self-adoption of new-project 0.20.38 with governance enforcement in the pytest lifecycle and corrected protected-review guidance.
 
 ### Fixed
 - Resolve adoption to the active Git checkout from nested directories, including linked worktrees.

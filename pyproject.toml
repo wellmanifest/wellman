@@ -47,8 +47,8 @@ dev = [
 package-dir = {"" = "src"}
 
 [tool.wellmanifest]
-standard = "0.20.36"
-revision = "368085282d0caa41cfa5ef2ec65644920566ae77"
+standard = "0.20.38"
+revision = "e2fd653ff801fb228fca818e1d874ee685a4da62"
 gate = "project/governance-check.sh"
 
 [tool.pytest.ini_options]

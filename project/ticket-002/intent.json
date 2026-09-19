@@ -76,7 +76,7 @@
     "standardAdoption": {
       "sourceRepository": "wellmanifest/new-project",
       "fromRevision": null,
-      "toRevision": "368085282d0caa41cfa5ef2ec65644920566ae77"
+      "toRevision": "e2fd653ff801fb228fca818e1d874ee685a4da62"
     },
     "architecture": {
       "status": "accepted",

@@ -1,0 +1,61 @@
+# goal.yaml - Goal configuration file for wellman
+version: '1.0'
+project:
+  name: wellman
+  type:
+  - python
+  description: Wellmanifest unified standards runtime — policy-as-code checker for all wellmanifest standards
+versioning:
+  strategy: semver
+  files:
+  - VERSION
+  - pyproject.toml:version
+  bump_rules:
+    patch: 10
+    minor: 50
+    major: 200
+git:
+  commit:
+    strategy: conventional
+    scope: wellman
+    abstraction_level: auto
+    templates:
+      feat:
+        high: 'feat({domain}): {benefit}'
+        medium: 'feat({domain}): add {entities}'
+        low: 'feat({domain}): add {file_count} files'
+      fix:
+        high: 'fix({domain}): {benefit}'
+        medium: 'fix({domain}): resolve {entities}'
+        low: 'fix({domain}): update {file_count} files'
+      chore:
+        high: 'chore({domain}): {benefit}'
+        medium: 'chore({domain}): update {entities}'
+        low: 'chore({domain}): update {file_count} files'
+  tag:
+    enabled: true
+    prefix: v
+    format: '{prefix}{version}'
+publishing:
+  enabled: true
+  registries:
+  - pypi
+  fallback:
+    github_release:
+      enabled: true
+      owner: wellmanifest
+      repo: wellman
+      token_env: GITHUB_TOKEN
+      skip_pypi_retries_on_block: true
+      create_on_tag: true
+      asset_glob: dist/*
+strategies:
+  python:
+    test: pytest tests/ -v
+    build: python -m build
+    publish: twine upload --skip-existing dist/wellman-{version}*
+    publish_enabled: true
+registries:
+  pypi:
+    url: https://pypi.org/simple/
+    token_env: PYPI_TOKEN

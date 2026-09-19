@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.dev/schemas/repository-publisher-agent/v1",
+  "title": "Wellmanifest one-time repository publisher agent v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema",
+    "profileId",
+    "version",
+    "agentRef",
+    "kind",
+    "lane",
+    "mutation",
+    "identityRef",
+    "operationProfile",
+    "mutationContract",
+    "remotePrecondition",
+    "authority",
+    "executionSafety",
+    "completion",
+    "maxClaimSeconds",
+    "llmAuthority"
+  ],
+  "properties": {
+    "$schema": {"const": "https://wellmanifest.dev/schemas/repository-publisher-agent/v1"},
+    "schema": {"const": "wellmanifest.repository-publisher-agent/v1"},
+    "profileId": {"const": "profile.repository.publisher.v1"},
+    "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"},
+    "agentRef": {
+      "type": "string",
+      "pattern": "^agent://[a-z0-9.-]+/repository-publisher-agent/v[1-9][0-9]*$",
+      "maxLength": 240
+    },
+    "kind": {"const": "repository-publisher"},
+    "lane": {"const": "publish-initial-ref"},
+    "mutation": {"const": "initial-ref-publish"},
+    "identityRef": {
+      "type": "string",
+      "pattern": "^identity://[a-z0-9.-]+/[A-Za-z0-9._:/-]+$",
+      "maxLength": 320
+    },
+    "operationProfile": {"$ref": "#/$defs/artifactRef"},
+    "mutationContract": {"$ref": "#/$defs/artifactRef"},
+    "remotePrecondition": {"const": "empty-no-refs"},
+    "authority": {"$ref": "#/$defs/authority"},
+    "executionSafety": {"$ref": "#/$defs/executionSafety"},
+    "completion": {"$ref": "#/$defs/completion"},
+    "maxClaimSeconds": {"type": "integer", "minimum": 60, "maximum": 1800},
+    "llmAuthority": {"const": "advisory"}
+  },
+  "$defs": {
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "maxLength": 200
+    },
+    "commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "relativePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$",
+      "maxLength": 300
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "revision", "path", "sha256"],
+      "properties": {
+        "repository": {"$ref": "#/$defs/repository"},
+        "revision": {"$ref": "#/$defs/commit"},
+        "path": {"$ref": "#/$defs/relativePath"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "requiredBindings", "singleUse", "inheritedAuthority", "whenMissing"],
+      "properties": {
+        "mode": {"const": "digest-bound"},
+        "requiredBindings": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "planDigest",
+              "repositoryRef",
+              "targetBranchRef",
+              "sourceCommitSha",
+              "sourceTreeDigest",
+              "allowlistDigest"
+            ]
+          }
+        },
+        "singleUse": {"const": true},
+        "inheritedAuthority": {"const": false},
+        "whenMissing": {"const": "block"}
+      }
+    },
+    "executionSafety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "isolation",
+        "executesUntrustedCode",
+        "storesCredentials",
+        "forceAllowed"
+      ],
+      "properties": {
+        "isolation": {"const": "isolated-workspace"},
+        "executesUntrustedCode": {"const": false},
+        "storesCredentials": {"const": false},
+        "forceAllowed": {"const": false}
+      }
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "publicationState",
+        "publicationTerminal",
+        "validatorRole",
+        "independentValidation",
+        "terminalStates",
+        "automaticRefDeletion"
+      ],
+      "properties": {
+        "publicationState": {"const": "initial-ref-published"},
+        "publicationTerminal": {"const": false},
+        "validatorRole": {"const": "validator-agent"},
+        "independentValidation": {"const": true},
+        "terminalStates": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {"enum": ["accepted", "quarantined"]}
+        },
+        "automaticRefDeletion": {"const": false}
+      }
+    }
+  }
+}

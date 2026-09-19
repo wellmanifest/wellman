@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wellmanifest/git-lifecycle/standard/repo-hygiene.schema.json",
+  "title": "Wellmanifest Git repository hygiene observation",
+  "description": "Closed observation document for the one_main_zero_pr invariant. This document never authorizes merge, branch deletion, force-push or a new pull request.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "invariant",
+    "repository",
+    "defaultBranch",
+    "staleWindowSeconds",
+    "observedAt",
+    "openPullRequests",
+    "branches"
+  ],
+  "properties": {
+    "schema": { "const": "wellmanifest.git-lifecycle/repo-hygiene/v1" },
+    "kind": { "const": "repo-hygiene-snapshot" },
+    "invariant": { "const": "one_main_zero_pr" },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "defaultBranch": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "staleWindowSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 604800,
+      "default": 7200
+    },
+    "observedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$"
+    },
+    "openPullRequests": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/openPullRequest" }
+    },
+    "branches": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/branch" }
+    }
+  },
+  "$defs": {
+    "openPullRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "headRef", "headRepository", "lastActivityAt"],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "headRef": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "headRepository": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "lastActivityAt": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$"
+        }
+      }
+    },
+    "branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "committedAt"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "committedAt": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$"
+        }
+      }
+    }
+  }
+}

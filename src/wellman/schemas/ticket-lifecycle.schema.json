@@ -1,0 +1,600 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wellmanifest/new-project/subprojects/ticket-lifecycle/ticket-lifecycle.schema.json",
+  "title": "Wellmanifest ticket lifecycle",
+  "oneOf": [
+    { "$ref": "#/$defs/transitionRequest" },
+    { "$ref": "#/$defs/lifecycleState" },
+    { "$ref": "#/$defs/transitionReceipt" }
+  ],
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^request:[a-z][a-z0-9._-]{0,95}$"
+    },
+    "repositoryRef": {
+      "type": "string",
+      "pattern": "^repository:[a-z][a-z0-9._-]{0,95}$"
+    },
+    "workstreamRef": {
+      "type": "string",
+      "pattern": "^workstream:[a-z][a-z0-9-]{0,63}$"
+    },
+    "authorizationRef": {
+      "type": "string",
+      "pattern": "^authorization:[a-z][a-z0-9._-]{0,127}$"
+    },
+    "artifactRef": {
+      "type": "string",
+      "pattern": "^artifact:[a-z][a-z0-9._:-]{0,159}$"
+    },
+    "evidenceRef": {
+      "type": "string",
+      "pattern": "^(artifact|receipt|decision|knowledge):[a-z][a-z0-9._:-]{0,159}$"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^idempotency:[a-z][a-z0-9._-]{0,127}$"
+    },
+    "ticket": {
+      "type": "string",
+      "pattern": "^ticket-[0-9]{3,}$"
+    },
+    "state": {
+      "enum": [
+        "unallocated",
+        "allocated",
+        "planned",
+        "authorized",
+        "editing",
+        "validating",
+        "publication",
+        "done",
+        "blocked"
+      ]
+    },
+    "action": {
+      "enum": [
+        "allocate",
+        "plan",
+        "authorize",
+        "edit",
+        "validate",
+        "publish",
+        "close",
+        "block",
+        "checkpoint",
+        "resume"
+      ]
+    },
+    "transitionPair": {
+      "anyOf": [
+        {
+          "properties": {
+            "action": { "const": "allocate" },
+            "expectedState": { "const": "unallocated" },
+            "targetState": { "const": "allocated" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "plan" },
+            "expectedState": { "const": "allocated" },
+            "targetState": { "const": "planned" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "authorize" },
+            "expectedState": { "const": "planned" },
+            "targetState": { "const": "authorized" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "edit" },
+            "expectedState": { "const": "authorized" },
+            "targetState": { "const": "editing" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "validate" },
+            "expectedState": { "const": "editing" },
+            "targetState": { "const": "validating" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "publish" },
+            "expectedState": { "const": "validating" },
+            "targetState": { "const": "publication" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "close" },
+            "expectedState": { "const": "publication" },
+            "targetState": { "const": "done" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "block" },
+            "expectedState": {
+              "enum": [
+                "allocated",
+                "planned",
+                "authorized",
+                "editing",
+                "validating",
+                "publication"
+              ]
+            },
+            "targetState": { "const": "blocked" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "expectedState": { "const": "authorized" },
+            "targetState": { "const": "authorized" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "expectedState": { "const": "editing" },
+            "targetState": { "const": "editing" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "expectedState": { "const": "validating" },
+            "targetState": { "const": "validating" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "expectedState": { "const": "publication" },
+            "targetState": { "const": "publication" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "expectedState": { "const": "blocked" },
+            "targetState": { "const": "blocked" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "resume" },
+            "expectedState": { "const": "blocked" },
+            "targetState": { "const": "planned" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        }
+      ]
+    },
+    "receiptPair": {
+      "anyOf": [
+        {
+          "properties": {
+            "action": { "const": "allocate" },
+            "beforeState": { "const": "unallocated" },
+            "afterState": { "enum": ["unallocated", "allocated"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "plan" },
+            "beforeState": { "const": "allocated" },
+            "afterState": { "enum": ["allocated", "planned"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "authorize" },
+            "beforeState": { "const": "planned" },
+            "afterState": { "enum": ["planned", "authorized"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "edit" },
+            "beforeState": { "const": "authorized" },
+            "afterState": { "enum": ["authorized", "editing"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "validate" },
+            "beforeState": { "const": "editing" },
+            "afterState": { "enum": ["editing", "validating"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "publish" },
+            "beforeState": { "const": "validating" },
+            "afterState": { "enum": ["validating", "publication"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "close" },
+            "beforeState": { "const": "publication" },
+            "afterState": { "enum": ["publication", "done"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "block" },
+            "beforeState": {
+              "enum": [
+                "allocated",
+                "planned",
+                "authorized",
+                "editing",
+                "validating",
+                "publication"
+              ]
+            },
+            "afterState": { "enum": ["allocated", "planned", "authorized", "editing", "validating", "publication", "blocked"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "beforeState": { "const": "authorized" },
+            "afterState": { "const": "authorized" }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "beforeState": { "const": "editing" },
+            "afterState": { "const": "editing" }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "beforeState": { "const": "validating" },
+            "afterState": { "const": "validating" }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "beforeState": { "const": "publication" },
+            "afterState": { "const": "publication" }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "beforeState": { "const": "blocked" },
+            "afterState": { "const": "blocked" }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "resume" },
+            "beforeState": { "const": "blocked" },
+            "afterState": { "enum": ["blocked", "planned"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        }
+      ]
+    },
+    "transitionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "requestId",
+        "repositoryRef",
+        "workstreamRef",
+        "action",
+        "ticket",
+        "expectedState",
+        "targetState",
+        "intentRef",
+        "authorizationRef",
+        "evidenceRefs",
+        "idempotencyKey"
+      ],
+      "properties": {
+        "schema": { "const": "wellmanifest.ticket-lifecycle/v1" },
+        "kind": { "const": "transition-request" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "repositoryRef": { "$ref": "#/$defs/repositoryRef" },
+        "workstreamRef": { "$ref": "#/$defs/workstreamRef" },
+        "action": { "$ref": "#/$defs/action" },
+        "ticket": {
+          "oneOf": [{ "$ref": "#/$defs/ticket" }, { "type": "null" }]
+        },
+        "expectedState": { "$ref": "#/$defs/state" },
+        "targetState": { "$ref": "#/$defs/state" },
+        "intentRef": {
+          "oneOf": [{ "$ref": "#/$defs/artifactRef" }, { "type": "null" }]
+        },
+        "authorizationRef": {
+          "oneOf": [
+            { "$ref": "#/$defs/authorizationRef" },
+            { "type": "null" }
+          ]
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "allOf": [
+        { "$ref": "#/$defs/transitionPair" },
+        {
+          "if": {
+            "properties": { "action": { "const": "allocate" } },
+            "required": ["action"]
+          },
+          "then": {
+            "properties": {
+              "ticket": { "type": "null" },
+              "intentRef": { "type": "null" },
+              "authorizationRef": { "type": "null" }
+            }
+          },
+          "else": {
+            "properties": {
+              "ticket": { "$ref": "#/$defs/ticket" },
+              "intentRef": { "$ref": "#/$defs/artifactRef" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "action": { "enum": ["allocate", "plan"] } },
+            "required": ["action"]
+          },
+          "then": {
+            "properties": { "authorizationRef": { "type": "null" } }
+          },
+          "else": {
+            "properties": {
+              "authorizationRef": { "$ref": "#/$defs/authorizationRef" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "action": { "const": "checkpoint" } },
+            "required": ["action"]
+          },
+          "then": {
+            "properties": {
+              "evidenceRefs": {
+                "contains": {
+                  "type": "string",
+                  "pattern": "^receipt:continuity[.][a-z0-9._:-]+$"
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "lifecycleState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "repositoryRef",
+        "ticket",
+        "workstreamRef",
+        "state",
+        "intentRef",
+        "acceptedBaseSha",
+        "sessionExecutionAuthorized",
+        "trustedMergeApproved",
+        "workstreamReleased",
+        "lastReceiptRef"
+      ],
+      "properties": {
+        "schema": { "const": "wellmanifest.ticket-lifecycle/v1" },
+        "kind": { "const": "lifecycle-state" },
+        "repositoryRef": { "$ref": "#/$defs/repositoryRef" },
+        "ticket": { "$ref": "#/$defs/ticket" },
+        "workstreamRef": { "$ref": "#/$defs/workstreamRef" },
+        "state": { "$ref": "#/$defs/state" },
+        "intentRef": { "$ref": "#/$defs/artifactRef" },
+        "acceptedBaseSha": {
+          "oneOf": [{ "$ref": "#/$defs/sha" }, { "type": "null" }]
+        },
+        "sessionExecutionAuthorized": { "type": "boolean" },
+        "trustedMergeApproved": { "type": "boolean" },
+        "workstreamReleased": { "type": "boolean" },
+        "lastReceiptRef": {
+          "oneOf": [{ "$ref": "#/$defs/evidenceRef" }, { "type": "null" }]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": ["authorized", "editing", "validating", "publication", "done"]
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "acceptedBaseSha": { "$ref": "#/$defs/sha" },
+              "sessionExecutionAuthorized": { "const": true }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "state": { "const": "blocked" } },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": { "workstreamReleased": { "const": true } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "state": { "const": "done" } },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": { "trustedMergeApproved": { "const": true } }
+          }
+        }
+      ]
+    },
+    "transitionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "requestId",
+        "repositoryRef",
+        "ticket",
+        "action",
+        "outcome",
+        "beforeState",
+        "afterState",
+        "workstreamReleased",
+        "secretsRedacted",
+        "diagnosticCodes",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "schema": { "const": "wellmanifest.ticket-lifecycle/v1" },
+        "kind": { "const": "transition-receipt" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "repositoryRef": { "$ref": "#/$defs/repositoryRef" },
+        "ticket": {
+          "oneOf": [{ "$ref": "#/$defs/ticket" }, { "type": "null" }]
+        },
+        "action": { "$ref": "#/$defs/action" },
+        "outcome": { "enum": ["applied", "rejected", "no-op"] },
+        "beforeState": { "$ref": "#/$defs/state" },
+        "afterState": { "$ref": "#/$defs/state" },
+        "workstreamReleased": { "type": "boolean" },
+        "secretsRedacted": { "const": true },
+        "diagnosticCodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^TICKET-LIFECYCLE-[A-Z]+-[0-9]{3}$"
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        }
+      },
+      "allOf": [
+        { "$ref": "#/$defs/receiptPair" },
+        {
+          "if": {
+            "properties": {
+              "action": { "const": "block" },
+              "outcome": { "const": "applied" }
+            },
+            "required": ["action", "outcome"]
+          },
+          "then": {
+            "properties": {
+              "afterState": { "const": "blocked" },
+              "workstreamReleased": { "const": true }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": { "const": "close" },
+              "outcome": { "const": "applied" }
+            },
+            "required": ["action", "outcome"]
+          },
+          "then": {
+            "properties": {
+              "afterState": { "const": "done" },
+              "workstreamReleased": { "const": true }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "action": { "const": "checkpoint" } },
+            "required": ["action"]
+          },
+          "then": {
+            "properties": {
+              "workstreamReleased": { "const": false },
+              "evidenceRefs": {
+                "contains": {
+                  "type": "string",
+                  "pattern": "^receipt:continuity[.][a-z0-9._:-]+$"
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

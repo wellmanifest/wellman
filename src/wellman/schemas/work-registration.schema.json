@@ -1,0 +1,383 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:wellmanifest:new-project:work-registration:v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "repository",
+    "sequence",
+    "previousDigest",
+    "planfile",
+    "requests",
+    "inventoryComplete",
+    "worktrees",
+    "outbox"
+  ],
+  "properties": {
+    "schema": {
+      "const": "new-project.work-registration/v1"
+    },
+    "repository": {
+      "$ref": "#/$defs/repository"
+    },
+    "sequence": {
+      "$ref": "#/$defs/positive"
+    },
+    "previousDigest": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/digest"
+        }
+      ]
+    },
+    "planfile": {
+      "$ref": "#/$defs/planfile"
+    },
+    "requests": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/request"
+      }
+    },
+    "inventoryComplete": {
+      "type": "boolean"
+    },
+    "worktrees": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/worktree"
+      }
+    },
+    "outbox": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/effect"
+      }
+    }
+  },
+  "$defs": {
+    "receipt": {
+      "type": "string",
+      "pattern": "^receipt:[A-Za-z0-9._:/-]+$",
+      "maxLength": 512
+    },
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "positive": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "planfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "version",
+        "sourceRevision",
+        "configPath",
+        "installationReceipt"
+      ],
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/repository"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sourceRevision": {
+          "$ref": "#/$defs/sha"
+        },
+        "configPath": {
+          "$ref": "#/$defs/text"
+        },
+        "installationReceipt": {
+          "$ref": "#/$defs/receipt"
+        }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "number",
+        "receiptRef"
+      ],
+      "properties": {
+        "number": {
+          "$ref": "#/$defs/positive"
+        },
+        "receiptRef": {
+          "$ref": "#/$defs/receipt"
+        }
+      }
+    },
+    "lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "revision",
+        "fencingToken",
+        "receiptRef",
+        "ownerActor",
+        "ownerSession",
+        "scopeHash"
+      ],
+      "properties": {
+        "phase": {
+          "enum": [
+            "editing",
+            "publication_frozen",
+            "released"
+          ]
+        },
+        "revision": {
+          "$ref": "#/$defs/positive"
+        },
+        "fencingToken": {
+          "$ref": "#/$defs/positive"
+        },
+        "receiptRef": {
+          "$ref": "#/$defs/receipt"
+        },
+        "ownerActor": {
+          "$ref": "#/$defs/text"
+        },
+        "ownerSession": {
+          "$ref": "#/$defs/text"
+        },
+        "scopeHash": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticket",
+        "branch",
+        "worktree",
+        "lease",
+        "materialHead"
+      ],
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "pattern": "^ticket-[0-9]{3,}$"
+        },
+        "branch": {
+          "$ref": "#/$defs/text"
+        },
+        "worktree": {
+          "$ref": "#/$defs/text"
+        },
+        "lease": {
+          "$ref": "#/$defs/lease"
+        },
+        "materialHead": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha"
+            }
+          ]
+        }
+      }
+    },
+    "pr": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "number",
+        "headSha",
+        "receiptRef"
+      ],
+      "properties": {
+        "number": {
+          "$ref": "#/$defs/positive"
+        },
+        "headSha": {
+          "$ref": "#/$defs/sha"
+        },
+        "receiptRef": {
+          "$ref": "#/$defs/receipt"
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "planfileTicket",
+        "state",
+        "issue",
+        "binding",
+        "pr",
+        "terminalReceipt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$"
+        },
+        "planfileTicket": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9]*-[0-9]+$"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "blocked",
+            "editing",
+            "publication",
+            "merged",
+            "cancelled"
+          ]
+        },
+        "issue": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/issue"
+            }
+          ]
+        },
+        "binding": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/binding"
+            }
+          ]
+        },
+        "pr": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/pr"
+            }
+          ]
+        },
+        "terminalReceipt": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/receipt"
+            }
+          ]
+        }
+      }
+    },
+    "effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "effect",
+        "idempotencyKey",
+        "journalReceipt"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/text"
+        },
+        "effect": {
+          "enum": [
+            "ensure-issue",
+            "ensure-planfile-ticket",
+            "ensure-worktree",
+            "ensure-pr",
+            "sync-terminal"
+          ]
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/digest"
+        },
+        "journalReceipt": {
+          "$ref": "#/$defs/receipt"
+        }
+      }
+    },
+    "worktree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "branch",
+        "dirty"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/text"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/text"
+            }
+          ]
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/text"
+            }
+          ]
+        },
+        "dirty": {
+          "enum": [
+            "clean",
+            "dirty",
+            "unknown"
+          ]
+        }
+      }
+    }
+  }
+}

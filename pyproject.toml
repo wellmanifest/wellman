@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wellman"
+version = "0.20.33"
+description = "Wellmanifest unified standards runtime — policy-as-code checker for all wellmanifest standards"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+authors = [{name = "wellmanifest"}, {name = "Tom Softreck",email = "tom@sapletta.com"}]
+keywords = [
+    "wellmanifest",
+    "governance",
+    "standards",
+    "policy-as-code",
+    "worktrees",
+    "git-lifecycle",
+    "ticket-lifecycle",
+    "autonomous-agents",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Quality Assurance",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.scripts]
+wellman = "wellman.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "goal>=2.1.0; python_version >= '3.12'",
+    "costs>=0.1.53; python_version >= '3.9'",
+    "pfix>=0.1.60; python_version >= '3.10'",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+wellman = [
+    "schemas/*.json",
+    "_bundled/*.py",
+]
+
+[tool.costs]
+# AI Cost tracking configuration
+badge = true
+update_readme = true
+readme_path = "README.md"
+default_model = "openrouter/qwen/qwen3-coder-next"
+analysis_mode = "byok"
+full_history = true
+max_commits = 500
+
+# Cost thresholds for badge colors (USD)
+badge_color_thresholds = { low = 1.0, medium = 5.0, high = 10.0, critical = 50.0 }
+
+[tool.pfix]
+# Self-healing Python configuration
+model = "openrouter/qwen/qwen3-coder-next"
+auto_apply = true
+auto_install_deps = true
+auto_restart = false
+max_retries = 3
+create_backups = false
+git_auto_commit = false
+
+[tool.pfix.runtime_todo]
+enabled = true
+todo_file = "TODO.md"
+min_severity = "low"
+deduplicate = true

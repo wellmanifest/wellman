@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.dev/schemas/repository-initial-ref/v1",
+  "title": "Wellmanifest repository initial-ref handoffs v1",
+  "oneOf": [
+    {"$ref": "#/$defs/plan"},
+    {"$ref": "#/$defs/grantBinding"},
+    {"$ref": "#/$defs/publicationReceipt"},
+    {"$ref": "#/$defs/terminalReceipt"}
+  ],
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "repositoryRef": {
+      "type": "string",
+      "pattern": "^repository:[a-z][a-z0-9._-]{0,95}$"
+    },
+    "branchRef": {
+      "type": "string",
+      "pattern": "^branch:[a-z][a-z0-9._-]{0,95}$"
+    },
+    "documentRef": {
+      "type": "string",
+      "pattern": "^(?:plan|grant|receipt|validation):[a-z][a-z0-9._-]{0,127}$"
+    },
+    "evidenceRef": {
+      "type": "string",
+      "pattern": "^(?:artifact|evidence|profile|receipt):[a-z][a-z0-9._:-]{0,159}$"
+    },
+    "actorRef": {
+      "type": "string",
+      "pattern": "^agent:[a-z][a-z0-9._-]{0,127}$"
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/evidenceRef"}
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "planId",
+        "operationId",
+        "repositoryRef",
+        "expectedRemoteState",
+        "targetBranchRef",
+        "sourceCommitSha",
+        "sourceTreeDigest",
+        "allowlistDigest",
+        "secretScanEvidenceRef",
+        "governanceEvidenceRef",
+        "validationProfileRef",
+        "idempotencyKey",
+        "planDigest",
+        "llmAuthority"
+      ],
+      "properties": {
+        "schema": {"const": "wellmanifest.repository-initial-ref/v1"},
+        "kind": {"const": "plan"},
+        "planId": {"$ref": "#/$defs/documentRef"},
+        "operationId": {"const": "repository:initial-ref"},
+        "repositoryRef": {"$ref": "#/$defs/repositoryRef"},
+        "expectedRemoteState": {"const": "empty-no-refs"},
+        "targetBranchRef": {"$ref": "#/$defs/branchRef"},
+        "sourceCommitSha": {"$ref": "#/$defs/sha"},
+        "sourceTreeDigest": {"$ref": "#/$defs/sha256"},
+        "allowlistDigest": {"$ref": "#/$defs/sha256"},
+        "secretScanEvidenceRef": {"$ref": "#/$defs/evidenceRef"},
+        "governanceEvidenceRef": {"$ref": "#/$defs/evidenceRef"},
+        "validationProfileRef": {"$ref": "#/$defs/evidenceRef"},
+        "idempotencyKey": {"$ref": "#/$defs/sha256"},
+        "planDigest": {"$ref": "#/$defs/sha256"},
+        "llmAuthority": {"const": "propose-only"}
+      }
+    },
+    "grantBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "grantRef",
+        "grantDigest",
+        "planDigest",
+        "operationId",
+        "repositoryRef",
+        "targetBranchRef",
+        "sourceCommitSha",
+        "sourceTreeDigest",
+        "allowlistDigest",
+        "authorizedEffect",
+        "issuedByRef",
+        "expiresAt",
+        "singleUse",
+        "inheritedAuthority"
+      ],
+      "properties": {
+        "schema": {"const": "wellmanifest.repository-initial-ref/v1"},
+        "kind": {"const": "grant-binding"},
+        "grantRef": {"$ref": "#/$defs/documentRef"},
+        "grantDigest": {"$ref": "#/$defs/sha256"},
+        "planDigest": {"$ref": "#/$defs/sha256"},
+        "operationId": {"const": "repository:initial-ref"},
+        "repositoryRef": {"$ref": "#/$defs/repositoryRef"},
+        "targetBranchRef": {"$ref": "#/$defs/branchRef"},
+        "sourceCommitSha": {"$ref": "#/$defs/sha"},
+        "sourceTreeDigest": {"$ref": "#/$defs/sha256"},
+        "allowlistDigest": {"$ref": "#/$defs/sha256"},
+        "authorizedEffect": {"const": "initial-ref-publish"},
+        "issuedByRef": {"$ref": "#/$defs/actorRef"},
+        "expiresAt": {"type": "string", "format": "date-time"},
+        "singleUse": {"const": true},
+        "inheritedAuthority": {"const": false}
+      }
+    },
+    "publicationReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "receiptRef",
+        "planDigest",
+        "grantRef",
+        "grantDigest",
+        "repositoryRef",
+        "targetBranchRef",
+        "beforeState",
+        "afterState",
+        "headSha",
+        "treeDigest",
+        "refCountBefore",
+        "refCountAfter",
+        "pushPerformed",
+        "forceUsed",
+        "readBack",
+        "validationRequired",
+        "evidenceRefs",
+        "terminal",
+        "secretMaterialIncluded"
+      ],
+      "properties": {
+        "schema": {"const": "wellmanifest.repository-initial-ref/v1"},
+        "kind": {"const": "publication-receipt"},
+        "receiptRef": {"$ref": "#/$defs/documentRef"},
+        "planDigest": {"$ref": "#/$defs/sha256"},
+        "grantRef": {"$ref": "#/$defs/documentRef"},
+        "grantDigest": {"$ref": "#/$defs/sha256"},
+        "repositoryRef": {"$ref": "#/$defs/repositoryRef"},
+        "targetBranchRef": {"$ref": "#/$defs/branchRef"},
+        "beforeState": {"const": "empty-no-refs"},
+        "afterState": {"const": "initial-ref-published"},
+        "headSha": {"$ref": "#/$defs/sha"},
+        "treeDigest": {"$ref": "#/$defs/sha256"},
+        "refCountBefore": {"const": 0},
+        "refCountAfter": {"const": 1},
+        "pushPerformed": {"const": true},
+        "forceUsed": {"const": false},
+        "readBack": {"const": true},
+        "validationRequired": {"const": true},
+        "evidenceRefs": {"$ref": "#/$defs/evidenceRefs"},
+        "terminal": {"const": false},
+        "secretMaterialIncluded": {"const": false}
+      }
+    },
+    "terminalReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "receiptRef",
+        "publicationReceiptRef",
+        "publicationReceiptDigest",
+        "planDigest",
+        "repositoryRef",
+        "targetBranchRef",
+        "state",
+        "headSha",
+        "treeDigest",
+        "validatorRef",
+        "validationEvidenceRef",
+        "validationOutcome",
+        "readBack",
+        "automaticRefDeletion",
+        "forceUsed",
+        "evidenceRefs",
+        "terminal",
+        "secretMaterialIncluded"
+      ],
+      "properties": {
+        "schema": {"const": "wellmanifest.repository-initial-ref/v1"},
+        "kind": {"const": "terminal-receipt"},
+        "receiptRef": {"$ref": "#/$defs/documentRef"},
+        "publicationReceiptRef": {"$ref": "#/$defs/documentRef"},
+        "publicationReceiptDigest": {"$ref": "#/$defs/sha256"},
+        "planDigest": {"$ref": "#/$defs/sha256"},
+        "repositoryRef": {"$ref": "#/$defs/repositoryRef"},
+        "targetBranchRef": {"$ref": "#/$defs/branchRef"},
+        "state": {"enum": ["accepted", "quarantined"]},
+        "headSha": {"$ref": "#/$defs/sha"},
+        "treeDigest": {"$ref": "#/$defs/sha256"},
+        "validatorRef": {"$ref": "#/$defs/actorRef"},
+        "validationEvidenceRef": {"$ref": "#/$defs/evidenceRef"},
+        "validationOutcome": {"enum": ["approved", "rejected"]},
+        "readBack": {"const": true},
+        "automaticRefDeletion": {"const": false},
+        "forceUsed": {"const": false},
+        "evidenceRefs": {"$ref": "#/$defs/evidenceRefs"},
+        "terminal": {"const": true},
+        "secretMaterialIncluded": {"const": false}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"validationOutcome": {"const": "approved"}},
+            "required": ["validationOutcome"]
+          },
+          "then": {"properties": {"state": {"const": "accepted"}}},
+          "else": {"properties": {"state": {"const": "quarantined"}}}
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,533 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wellmanifest/new-project/subprojects/git-lifecycle/git-lifecycle.schema.json",
+  "title": "Wellmanifest Git lifecycle",
+  "oneOf": [
+    { "$ref": "#/$defs/transitionRequest" },
+    { "$ref": "#/$defs/lifecycleState" },
+    { "$ref": "#/$defs/transitionReceipt" }
+  ],
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^request:[a-z][a-z0-9._-]{0,95}$"
+    },
+    "repositoryRef": {
+      "type": "string",
+      "pattern": "^repository:[a-z][a-z0-9._-]{0,95}$"
+    },
+    "authorizationRef": {
+      "type": "string",
+      "pattern": "^authorization:[a-z][a-z0-9._-]{0,127}$"
+    },
+    "seedProfileRef": {
+      "type": "string",
+      "pattern": "^seed-profile:[a-z][a-z0-9._-]{0,95}$"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^idempotency:[a-z][a-z0-9._-]{0,127}$"
+    },
+    "evidenceRef": {
+      "type": "string",
+      "pattern": "^(artifact|receipt|decision|knowledge):[a-z][a-z0-9._:-]{0,159}$"
+    },
+    "ticket": {
+      "type": "string",
+      "pattern": "^ticket-[0-9]{3,}$"
+    },
+    "state": {
+      "enum": [
+        "uninitialized",
+        "seeded",
+        "ticket-ready",
+        "implementation-local",
+        "review-open",
+        "integrated",
+        "released",
+        "terminal"
+      ]
+    },
+    "action": {
+      "enum": [
+        "seed-baseline",
+        "create-ticket-branch",
+        "local-commit",
+        "open-pr",
+        "integrate",
+        "release",
+        "checkpoint",
+        "cleanup"
+      ]
+    },
+    "transitionPair": {
+      "anyOf": [
+        {
+          "properties": {
+            "action": { "const": "seed-baseline" },
+            "expectedState": { "const": "uninitialized" },
+            "targetState": { "const": "seeded" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "create-ticket-branch" },
+            "expectedState": { "const": "seeded" },
+            "targetState": { "const": "ticket-ready" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "local-commit" },
+            "expectedState": { "const": "ticket-ready" },
+            "targetState": { "const": "implementation-local" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "open-pr" },
+            "expectedState": { "const": "implementation-local" },
+            "targetState": { "const": "review-open" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "integrate" },
+            "expectedState": { "const": "review-open" },
+            "targetState": { "const": "integrated" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "release" },
+            "expectedState": { "const": "integrated" },
+            "targetState": { "const": "released" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "expectedState": { "const": "seeded" },
+            "targetState": { "const": "seeded" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "expectedState": { "const": "ticket-ready" },
+            "targetState": { "const": "ticket-ready" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "expectedState": { "const": "implementation-local" },
+            "targetState": { "const": "implementation-local" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "expectedState": { "const": "review-open" },
+            "targetState": { "const": "review-open" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "expectedState": { "const": "integrated" },
+            "targetState": { "const": "integrated" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "expectedState": { "const": "released" },
+            "targetState": { "const": "released" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "cleanup" },
+            "expectedState": { "enum": ["integrated", "released"] },
+            "targetState": { "const": "terminal" }
+          },
+          "required": ["action", "expectedState", "targetState"]
+        }
+      ]
+    },
+    "receiptPair": {
+      "anyOf": [
+        {
+          "properties": {
+            "action": { "const": "seed-baseline" },
+            "beforeState": { "const": "uninitialized" },
+            "afterState": { "enum": ["uninitialized", "seeded"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "create-ticket-branch" },
+            "beforeState": { "const": "seeded" },
+            "afterState": { "enum": ["seeded", "ticket-ready"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "local-commit" },
+            "beforeState": { "const": "ticket-ready" },
+            "afterState": { "enum": ["ticket-ready", "implementation-local"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "open-pr" },
+            "beforeState": { "const": "implementation-local" },
+            "afterState": { "enum": ["implementation-local", "review-open"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "integrate" },
+            "beforeState": { "const": "review-open" },
+            "afterState": { "enum": ["review-open", "integrated"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "release" },
+            "beforeState": { "const": "integrated" },
+            "afterState": { "enum": ["integrated", "released"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "beforeState": { "const": "seeded" },
+            "afterState": { "const": "seeded" }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "beforeState": { "const": "ticket-ready" },
+            "afterState": { "const": "ticket-ready" }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "beforeState": { "const": "implementation-local" },
+            "afterState": { "const": "implementation-local" }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "beforeState": { "const": "review-open" },
+            "afterState": { "const": "review-open" }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "beforeState": { "const": "integrated" },
+            "afterState": { "const": "integrated" }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "checkpoint" },
+            "beforeState": { "const": "released" },
+            "afterState": { "const": "released" }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        },
+        {
+          "properties": {
+            "action": { "const": "cleanup" },
+            "beforeState": { "enum": ["integrated", "released"] },
+            "afterState": { "enum": ["integrated", "released", "terminal"] }
+          },
+          "required": ["action", "beforeState", "afterState"]
+        }
+      ]
+    },
+    "transitionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "requestId",
+        "repositoryRef",
+        "ticket",
+        "action",
+        "expectedState",
+        "targetState",
+        "authorizationRef",
+        "evidenceRefs",
+        "idempotencyKey"
+      ],
+      "properties": {
+        "schema": { "const": "wellmanifest.git-lifecycle/v1" },
+        "kind": { "const": "transition-request" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "repositoryRef": { "$ref": "#/$defs/repositoryRef" },
+        "ticket": { "$ref": "#/$defs/ticket" },
+        "action": { "$ref": "#/$defs/action" },
+        "expectedState": { "$ref": "#/$defs/state" },
+        "targetState": { "$ref": "#/$defs/state" },
+        "authorizationRef": { "$ref": "#/$defs/authorizationRef" },
+        "seedProfileRef": { "$ref": "#/$defs/seedProfileRef" },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" }
+      },
+      "allOf": [
+        { "$ref": "#/$defs/transitionPair" },
+        {
+          "if": {
+            "properties": { "action": { "const": "seed-baseline" } },
+            "required": ["action"]
+          },
+          "then": { "required": ["seedProfileRef"] },
+          "else": { "not": { "required": ["seedProfileRef"] } }
+        },
+        {
+          "if": {
+            "properties": { "action": { "const": "checkpoint" } },
+            "required": ["action"]
+          },
+          "then": {
+            "properties": {
+              "evidenceRefs": {
+                "contains": {
+                  "type": "string",
+                  "pattern": "^receipt:continuity[.][a-z0-9._:-]+$"
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "lifecycleState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "repositoryRef",
+        "state",
+        "headSha",
+        "baselineSha",
+        "activeTicket",
+        "clean",
+        "remoteConfigured",
+        "implementationPresent",
+        "lastReceiptRef"
+      ],
+      "properties": {
+        "schema": { "const": "wellmanifest.git-lifecycle/v1" },
+        "kind": { "const": "lifecycle-state" },
+        "repositoryRef": { "$ref": "#/$defs/repositoryRef" },
+        "state": { "$ref": "#/$defs/state" },
+        "headSha": {
+          "oneOf": [{ "$ref": "#/$defs/sha" }, { "type": "null" }]
+        },
+        "baselineSha": {
+          "oneOf": [{ "$ref": "#/$defs/sha" }, { "type": "null" }]
+        },
+        "activeTicket": {
+          "oneOf": [{ "$ref": "#/$defs/ticket" }, { "type": "null" }]
+        },
+        "clean": { "type": "boolean" },
+        "remoteConfigured": { "type": "boolean" },
+        "implementationPresent": { "type": "boolean" },
+        "lastReceiptRef": {
+          "oneOf": [{ "$ref": "#/$defs/evidenceRef" }, { "type": "null" }]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "state": { "const": "uninitialized" } },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "headSha": { "type": "null" },
+              "baselineSha": { "type": "null" },
+              "remoteConfigured": { "const": false },
+              "implementationPresent": { "const": false }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "seeded",
+                  "ticket-ready",
+                  "implementation-local",
+                  "review-open",
+                  "integrated",
+                  "released",
+                  "terminal"
+                ]
+              }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "headSha": { "$ref": "#/$defs/sha" },
+              "baselineSha": { "$ref": "#/$defs/sha" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "state": { "const": "seeded" } },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": { "implementationPresent": { "const": false } }
+          }
+        }
+      ]
+    },
+    "transitionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "requestId",
+        "repositoryRef",
+        "ticket",
+        "action",
+        "outcome",
+        "beforeState",
+        "afterState",
+        "headSha",
+        "pushPerformed",
+        "publicationPerformed",
+        "secretsRedacted",
+        "diagnosticCodes",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "schema": { "const": "wellmanifest.git-lifecycle/v1" },
+        "kind": { "const": "transition-receipt" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "repositoryRef": { "$ref": "#/$defs/repositoryRef" },
+        "ticket": { "$ref": "#/$defs/ticket" },
+        "action": { "$ref": "#/$defs/action" },
+        "outcome": { "enum": ["applied", "rejected", "no-op"] },
+        "beforeState": { "$ref": "#/$defs/state" },
+        "afterState": { "$ref": "#/$defs/state" },
+        "headSha": {
+          "oneOf": [{ "$ref": "#/$defs/sha" }, { "type": "null" }]
+        },
+        "pushPerformed": { "type": "boolean" },
+        "publicationPerformed": { "type": "boolean" },
+        "secretsRedacted": { "const": true },
+        "diagnosticCodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^GIT-LIFECYCLE-[A-Z]+-[0-9]{3}$"
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        }
+      },
+      "allOf": [
+        { "$ref": "#/$defs/receiptPair" },
+        {
+          "if": {
+            "properties": {
+              "action": { "const": "seed-baseline" },
+              "outcome": { "const": "applied" }
+            },
+            "required": ["action", "outcome"]
+          },
+          "then": {
+            "properties": {
+              "afterState": { "const": "seeded" },
+              "headSha": { "$ref": "#/$defs/sha" },
+              "pushPerformed": { "const": false },
+              "publicationPerformed": { "const": false }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": { "const": "checkpoint" },
+              "outcome": { "const": "applied" }
+            },
+            "required": ["action", "outcome"]
+          },
+          "then": {
+            "properties": {
+              "headSha": { "$ref": "#/$defs/sha" },
+              "pushPerformed": { "const": false },
+              "publicationPerformed": { "const": false },
+              "evidenceRefs": {
+                "contains": {
+                  "type": "string",
+                  "pattern": "^receipt:continuity[.][a-z0-9._:-]+$"
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

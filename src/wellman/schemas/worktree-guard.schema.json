@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wellmanifest/new-project/governance/worktree-guard.schema.json",
+  "title": "Worktree overlap guard",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "pipeline"],
+  "properties": {
+    "schema": { "const": "wellmanifest.worktree-guard/v1" },
+    "pipeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "detect", "compare", "enforce", "triggers"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "detect": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["min_worktrees", "same_identity"],
+          "properties": {
+            "min_worktrees": { "type": "integer", "minimum": 2 },
+            "same_identity": { "type": "boolean" },
+            "workspace_roots": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "compare": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "git": { "type": "boolean" },
+            "intents": { "type": "boolean" },
+            "code2llm": { "enum": ["optional", "required", "off"] }
+          }
+        },
+        "ignore": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "enforce": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["on_overlap"],
+          "properties": {
+            "on_overlap": { "enum": ["fail_closed", "warn"] },
+            "require_conflictsWith": { "type": "boolean" }
+          }
+        },
+        "triggers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "once",
+                  "interval",
+                  "worktree-change",
+                  "pre-commit",
+                  "governance-check",
+                  "systemd-timer",
+                  "systemd-path"
+                ]
+              },
+              "seconds": { "type": "integer", "minimum": 5 }
+            }
+          }
+        },
+        "command": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.dev/schemas/ticket-execution-lease/v1",
+  "title": "Wellmanifest ticket execution lease",
+  "oneOf": [
+    {"$ref": "#/$defs/lease"},
+    {"$ref": "#/$defs/request"},
+    {"$ref": "#/$defs/receipt"}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "gitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "actor": {"type": "string", "pattern": "^actor:[a-z][a-z0-9._-]{0,127}$"},
+    "session": {"type": "string", "pattern": "^session:[a-z][a-z0-9._-]{0,127}$"},
+    "leaseId": {"type": "string", "pattern": "^lease:[a-z][a-z0-9._-]{0,127}$"},
+    "repository": {"type": "string", "pattern": "^repository:[a-z][a-z0-9._-]{0,127}$"},
+    "workstream": {"type": "string", "pattern": "^workstream:[a-z][a-z0-9-]{0,63}$"},
+    "ticket": {"type": "string", "pattern": "^ticket-[0-9]{3,}$"},
+    "worktree": {"type": "string", "pattern": "^worktree:[a-z][a-z0-9._-]{0,127}$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "evidence": {"type": "string", "pattern": "^(artifact|receipt|decision|knowledge):[a-z][a-z0-9._:-]{0,159}$"},
+    "lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "leaseId", "repositoryRef", "ticket", "workstreamRef", "branchRef", "worktreeId", "ownerActor", "ownerSession", "scopeHash", "headSha", "state", "generation", "fencing", "issuedAt", "leaseExpiresAt", "takeoverAt", "lastRenewedAt", "ttlSeconds", "graceSeconds", "eventSequence"],
+      "properties": {
+        "schema": {"const": "wellmanifest.ticket-execution-lease/v1"},
+        "kind": {"const": "execution-lease"},
+        "leaseId": {"$ref": "#/$defs/leaseId"},
+        "repositoryRef": {"$ref": "#/$defs/repository"},
+        "ticket": {"$ref": "#/$defs/ticket"},
+        "workstreamRef": {"$ref": "#/$defs/workstream"},
+        "branchRef": {"type": "string", "pattern": "^branch:[a-z][a-z0-9._/-]{0,127}$"},
+        "worktreeId": {"$ref": "#/$defs/worktree"},
+        "ownerActor": {"$ref": "#/$defs/actor"},
+        "ownerSession": {"$ref": "#/$defs/session"},
+        "scopeHash": {"$ref": "#/$defs/sha256"},
+        "headSha": {"$ref": "#/$defs/gitSha"},
+        "state": {"enum": ["active", "expired", "released"]},
+        "generation": {"type": "integer", "minimum": 1},
+        "fencing": {"type": "integer", "minimum": 1},
+        "issuedAt": {"$ref": "#/$defs/timestamp"},
+        "leaseExpiresAt": {"$ref": "#/$defs/timestamp"},
+        "takeoverAt": {"$ref": "#/$defs/timestamp"},
+        "lastRenewedAt": {"$ref": "#/$defs/timestamp"},
+        "ttlSeconds": {"const": 3600},
+        "graceSeconds": {"const": 600},
+        "eventSequence": {"type": "integer", "minimum": 1}
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "requestId", "leaseId", "action", "expectedGeneration", "expectedFencing", "requestedBy", "newOwnerActor", "newOwnerSession", "newWorktreeId", "requestedAt", "authorityRef", "evidenceRefs", "idempotencyKey"],
+      "properties": {
+        "schema": {"const": "wellmanifest.ticket-execution-lease-transition/v1"},
+        "kind": {"const": "lease-transition-request"},
+        "requestId": {"type": "string", "pattern": "^request:[a-z][a-z0-9._-]{0,127}$"},
+        "leaseId": {"$ref": "#/$defs/leaseId"},
+        "action": {"enum": ["renew", "takeover", "release", "expire"]},
+        "expectedGeneration": {"type": "integer", "minimum": 1},
+        "expectedFencing": {"type": "integer", "minimum": 1},
+        "requestedBy": {"$ref": "#/$defs/actor"},
+        "newOwnerActor": {"anyOf": [{"$ref": "#/$defs/actor"}, {"type": "null"}]},
+        "newOwnerSession": {"anyOf": [{"$ref": "#/$defs/session"}, {"type": "null"}]},
+        "newWorktreeId": {"anyOf": [{"$ref": "#/$defs/worktree"}, {"type": "null"}]},
+        "requestedAt": {"$ref": "#/$defs/timestamp"},
+        "authorityRef": {"type": "string", "pattern": "^authority:[a-z][a-z0-9._-]{0,127}$"},
+        "evidenceRefs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/evidence"}},
+        "idempotencyKey": {"type": "string", "pattern": "^idempotency:[a-z][a-z0-9._-]{0,127}$"}
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "requestId", "leaseId", "action", "outcome", "code", "stateBefore", "stateAfter", "previousGeneration", "generation", "previousFencing", "fencing", "ownerActor", "ownerSession", "leaseExpiresAt", "takeoverAt", "receiptRef", "occurredAt"],
+      "properties": {
+        "schema": {"const": "wellmanifest.ticket-execution-lease-receipt/v1"},
+        "kind": {"const": "lease-transition-receipt"},
+        "requestId": {"type": "string", "pattern": "^request:[a-z][a-z0-9._-]{0,127}$"},
+        "leaseId": {"$ref": "#/$defs/leaseId"},
+        "action": {"enum": ["renew", "takeover", "release", "expire"]},
+        "outcome": {"enum": ["accepted", "rejected", "idempotent"]},
+        "code": {"type": ["string", "null"], "pattern": "^[A-Z0-9_-]{3,64}$"},
+        "stateBefore": {"enum": ["active", "expired", "released"]},
+        "stateAfter": {"enum": ["active", "expired", "released"]},
+        "previousGeneration": {"type": "integer", "minimum": 1},
+        "generation": {"type": "integer", "minimum": 1},
+        "previousFencing": {"type": "integer", "minimum": 1},
+        "fencing": {"type": "integer", "minimum": 1},
+        "ownerActor": {"$ref": "#/$defs/actor"},
+        "ownerSession": {"$ref": "#/$defs/session"},
+        "leaseExpiresAt": {"$ref": "#/$defs/timestamp"},
+        "takeoverAt": {"$ref": "#/$defs/timestamp"},
+        "receiptRef": {"type": "string", "pattern": "^receipt:lease\\.[a-z][a-z0-9._:-]{0,159}$"},
+        "occurredAt": {"$ref": "#/$defs/timestamp"}
+      }
+    }
+  }
+}

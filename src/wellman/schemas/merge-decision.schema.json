@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.com/schemas/merge-decision/v1",
+  "title": "Wellmanifest merge decision contracts v1",
+  "description": "Closed contracts for deciding what happens to divergent work: an orphaned branch, an unpushed commit, a stale working tree or a duplicate of something already delivered. A decision records which evidence was evaluated. It never merges, deletes or publishes anything by itself, and no disposition is valid without the evidence its own rule requires.",
+  "oneOf": [
+    { "$ref": "#/$defs/candidate" },
+    { "$ref": "#/$defs/evidence" },
+    { "$ref": "#/$defs/decision" },
+    { "$ref": "#/$defs/receipt" }
+  ],
+  "$defs": {
+    "schemaFamily": { "const": "wellmanifest.merge-decision/v1" },
+    "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256Ref": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "repositoryRef": { "type": "string", "maxLength": 160, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "gitRef": { "type": "string", "maxLength": 160, "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$" },
+    "candidateId": { "type": "string", "pattern": "^candidate:[a-z0-9][a-z0-9._-]{0,95}$" },
+    "evidenceId": { "type": "string", "pattern": "^evidence:[a-z0-9][a-z0-9._-]{0,95}$" },
+    "decisionId": { "type": "string", "pattern": "^decision:[a-z0-9][a-z0-9._-]{0,95}$" },
+    "actorRef": { "type": "string", "maxLength": 240, "pattern": "^actor://[a-z0-9][a-z0-9.-]*/[A-Za-z0-9._:-]+$" },
+    "recoveryRef": { "type": "string", "maxLength": 320, "pattern": "^(?:ref|patch|tag):[A-Za-z0-9._:/-]+$" },
+    "timestamp": { "type": "string", "maxLength": 40, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?(?:Z|[+-][0-9]{2}:[0-9]{2})$" },
+
+    "shape": {
+      "description": "Where the divergent work physically lives. Uncommitted shapes cannot be recovered from git alone, which is why discarding them needs a recovery artifact.",
+      "enum": ["remote-branch", "local-branch", "unpushed-commit", "staged-tree", "worktree", "pull-request"]
+    },
+
+    "disposition": {
+      "description": "The closed set of outcomes. Every one of them is a decision about work someone already did, so each carries its own evidence obligation.",
+      "enum": ["adopt", "rebuild", "already-implemented", "superseded", "regressive", "obsolete", "defer"]
+    },
+
+    "evidenceKind": {
+      "enum": [
+        "content-identity",
+        "patch-equivalence",
+        "reachability",
+        "intent-delta",
+        "gate-outcome",
+        "code-liveness",
+        "dependency-evidence",
+        "history-shape",
+        "recoverability"
+      ]
+    },
+
+    "producer": {
+      "description": "Which tool produced the observation. `git` and `gate` are deterministic; the semcod producers are analytical and their verdicts are advisory unless the evidence carries a digest of a deterministic artifact.",
+      "enum": ["git", "gate", "todo2code", "code2llm", "deconnected", "giton", "human"]
+    },
+
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "candidateId", "repository", "shape", "ref", "baseRef", "baseRevision", "ahead", "behind", "authors", "lastActivity", "recoverable"],
+      "properties": {
+        "schema": { "$ref": "#/$defs/schemaFamily" },
+        "kind": { "const": "candidate" },
+        "candidateId": { "$ref": "#/$defs/candidateId" },
+        "repository": { "$ref": "#/$defs/repositoryRef" },
+        "shape": { "$ref": "#/$defs/shape" },
+        "ref": { "$ref": "#/$defs/gitRef" },
+        "headRevision": { "oneOf": [{ "$ref": "#/$defs/revision" }, { "type": "null" }] },
+        "baseRef": { "$ref": "#/$defs/gitRef" },
+        "baseRevision": { "$ref": "#/$defs/revision" },
+        "ahead": { "type": "integer", "minimum": 0 },
+        "behind": { "type": "integer", "minimum": 0 },
+        "authors": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "type": "string", "maxLength": 120 } },
+        "lastActivity": { "$ref": "#/$defs/timestamp" },
+        "intent": { "type": "string", "maxLength": 320 },
+        "recoverable": {
+          "description": "Whether the work survives the decision without a separate artifact. False for staged trees and dirty worktrees.",
+          "type": "boolean"
+        }
+      }
+    },
+
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "evidenceId", "candidateId", "evidenceKind", "producer", "command", "observation", "deterministic", "observedAt"],
+      "properties": {
+        "schema": { "$ref": "#/$defs/schemaFamily" },
+        "kind": { "const": "evidence" },
+        "evidenceId": { "$ref": "#/$defs/evidenceId" },
+        "candidateId": { "$ref": "#/$defs/candidateId" },
+        "evidenceKind": { "$ref": "#/$defs/evidenceKind" },
+        "producer": { "$ref": "#/$defs/producer" },
+        "command": { "type": "string", "minLength": 3, "maxLength": 400 },
+        "observation": { "type": "string", "minLength": 3, "maxLength": 800 },
+        "artifactDigest": { "oneOf": [{ "$ref": "#/$defs/sha256Ref" }, { "type": "null" }] },
+        "coverage": {
+          "description": "For content-identity: how many of the candidate's files were compared, and how many matched. A summary without full coverage cannot carry an already-implemented decision.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["compared", "total", "matched"],
+          "properties": {
+            "compared": { "type": "integer", "minimum": 0 },
+            "total": { "type": "integer", "minimum": 0 },
+            "matched": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "deterministic": {
+          "description": "True when re-running the command on the same inputs must produce the same observation. LLM-backed extraction is never deterministic.",
+          "type": "boolean"
+        },
+        "observedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "decisionId", "candidateId", "disposition", "evidenceIds", "rationale", "decidedBy", "actionsAuthorized", "destructive", "recoveryRefs", "decidedAt"],
+      "properties": {
+        "schema": { "$ref": "#/$defs/schemaFamily" },
+        "kind": { "const": "decision" },
+        "decisionId": { "$ref": "#/$defs/decisionId" },
+        "candidateId": { "$ref": "#/$defs/candidateId" },
+        "disposition": { "$ref": "#/$defs/disposition" },
+        "evidenceIds": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/evidenceId" } },
+        "rationale": { "type": "string", "minLength": 10, "maxLength": 800 },
+        "supersededBy": { "oneOf": [{ "$ref": "#/$defs/revision" }, { "type": "null" }] },
+        "decidedBy": { "$ref": "#/$defs/actorRef" },
+        "actionsAuthorized": {
+          "description": "What the decision permits next. The decision itself performs nothing.",
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "enum": ["open-pull-request", "request-autonomous-merge", "merge", "rebuild-history", "delete-branch", "discard-worktree", "record-backlog", "no-action"] }
+        },
+        "executor": {
+          "description": "Who performs the authorized actions. An interactive agent may never authorize `merge` for itself; it authorizes `request-autonomous-merge` and the automated validator identity performs the merge.",
+          "enum": ["interactive-agent", "automated-validator", "owner"]
+        },
+        "destructive": { "type": "boolean" },
+        "recoveryRefs": { "type": "array", "maxItems": 8, "uniqueItems": true, "items": { "$ref": "#/$defs/recoveryRef" } },
+        "decidedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "kind", "decisionId", "candidateId", "executedActions", "outcome", "resultingRefs", "recoveryRefs", "secretsRedacted", "recordedAt"],
+      "properties": {
+        "schema": { "$ref": "#/$defs/schemaFamily" },
+        "kind": { "const": "receipt" },
+        "decisionId": { "$ref": "#/$defs/decisionId" },
+        "candidateId": { "$ref": "#/$defs/candidateId" },
+        "executedActions": { "type": "array", "maxItems": 8, "uniqueItems": true, "items": { "enum": ["open-pull-request", "request-autonomous-merge", "merge", "rebuild-history", "delete-branch", "discard-worktree", "record-backlog", "no-action"] } },
+        "outcome": { "enum": ["applied", "partially-applied", "blocked", "abandoned"] },
+        "resultingRefs": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "maxLength": 200 } },
+        "recoveryRefs": { "type": "array", "maxItems": 8, "uniqueItems": true, "items": { "$ref": "#/$defs/recoveryRef" } },
+        "secretsRedacted": { "const": true },
+        "recordedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    }
+  }
+}

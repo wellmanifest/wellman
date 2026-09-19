@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.dev/schemas/agent/v1",
+  "title": "Wellmanifest agent contracts v1",
+  "description": "Closed contracts for versioned agent profiles, isolated run requests, run state and secret-free receipts. Documents never store credentials, execute untrusted pull-request code or grant merge authority.",
+  "oneOf": [
+    {"$ref": "#/$defs/profile"},
+    {"$ref": "#/$defs/request"},
+    {"$ref": "#/$defs/run"},
+    {"$ref": "#/$defs/receipt"}
+  ],
+  "$defs": {
+    "identifier": {"type": "string", "minLength": 1, "maxLength": 96, "pattern": "^[a-z][a-z0-9._:-]*$"},
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "agentRef": {"type": "string", "pattern": "^agent://[a-z0-9.-]+/[a-z][a-z0-9._:-]*/v[1-9][0-9]*$", "maxLength": 240},
+    "runRef": {"type": "string", "pattern": "^run://[a-z0-9.-]+/[A-Za-z0-9._:/-]+$", "maxLength": 320},
+    "correlationRef": {"type": "string", "pattern": "^correlation://[a-z0-9.-]+/[A-Za-z0-9._:/-]+$", "maxLength": 320},
+    "targetRef": {"type": "string", "pattern": "^target://[a-z0-9.-]+/[A-Za-z0-9._:/-]+$", "maxLength": 320},
+    "skillRef": {"type": "string", "pattern": "^skill://[a-z0-9.-]+/[A-Za-z0-9._:/-]+/v[1-9][0-9]*$", "maxLength": 320},
+    "identityRef": {"type": "string", "pattern": "^identity://[a-z0-9.-]+/[A-Za-z0-9._:/-]+$", "maxLength": 320},
+    "leaseRef": {"type": "string", "pattern": "^lease://[a-z0-9.-]+/[A-Za-z0-9._:/-]+$", "maxLength": 320},
+    "intentRef": {"type": "string", "pattern": "^intent://[a-z0-9.-]+/[A-Za-z0-9._:/-]+$", "maxLength": 320},
+    "grantRef": {"type": "string", "pattern": "^grant://[a-z0-9.-]+/[A-Za-z0-9._:/-]+$", "maxLength": 320},
+    "evidenceRef": {"type": "string", "pattern": "^evidence://[a-z0-9.-]+/[A-Za-z0-9._:/-]+/r[1-9][0-9]*$", "maxLength": 320},
+    "kind": {"enum": ["doctor", "repair", "validator", "test", "skills", "control", "runtime", "vault"]},
+    "lane": {"enum": ["diagnose", "repair", "validate", "observe", "orchestrate", "execute", "lease"]},
+    "mutation": {"enum": ["none", "pull-request"]},
+    "isolation": {"enum": ["isolated-workspace", "networkless-executor", "host-scheduler"]},
+    "llmAuthority": {"const": "advisory"},
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$schema", "schema", "profileId", "version", "agentRef", "kind", "lane", "mutation", "isolation", "identityRef", "llmAuthority", "executesUntrustedCode", "storesCredentials", "maxClaimSeconds"],
+      "properties": {
+        "$schema": {"const": "https://wellmanifest.dev/schemas/agent/v1"},
+        "schema": {"const": "wellmanifest.agent-profile/v1"},
+        "profileId": {"$ref": "#/$defs/identifier"},
+        "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"},
+        "agentRef": {"$ref": "#/$defs/agentRef"},
+        "kind": {"$ref": "#/$defs/kind"},
+        "lane": {"$ref": "#/$defs/lane"},
+        "mutation": {"$ref": "#/$defs/mutation"},
+        "isolation": {"$ref": "#/$defs/isolation"},
+        "identityRef": {"$ref": "#/$defs/identityRef"},
+        "skillRef": {"$ref": "#/$defs/skillRef"},
+        "llmAuthority": {"$ref": "#/$defs/llmAuthority"},
+        "executesUntrustedCode": {"type": "boolean"},
+        "storesCredentials": {"const": false},
+        "maxClaimSeconds": {"type": "integer", "minimum": 60, "maximum": 7200}
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$schema", "schema", "requestId", "operation", "agentRef", "correlationRef", "targetRef", "targetKind", "intentRef", "grantRef", "planHash"],
+      "properties": {
+        "$schema": {"const": "https://wellmanifest.dev/schemas/agent/v1"},
+        "schema": {"const": "wellmanifest.agent-request/v1"},
+        "requestId": {"$ref": "#/$defs/identifier"},
+        "operation": {"enum": ["inspect", "claim", "diagnose", "repair", "validate", "observe", "orchestrate", "lease", "release"]},
+        "agentRef": {"$ref": "#/$defs/agentRef"},
+        "correlationRef": {"$ref": "#/$defs/correlationRef"},
+        "targetRef": {"$ref": "#/$defs/targetRef"},
+        "targetKind": {"enum": ["product", "control-plane"]},
+        "headSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "skillRef": {"$ref": "#/$defs/skillRef"},
+        "leaseRef": {"$ref": "#/$defs/leaseRef"},
+        "intentRef": {"$ref": "#/$defs/intentRef"},
+        "grantRef": {"$ref": "#/$defs/grantRef"},
+        "planHash": {"$ref": "#/$defs/sha256"}
+      },
+      "allOf": [
+        {"if": {"properties": {"operation": {"enum": ["repair", "validate"]}}, "required": ["operation"]}, "then": {"required": ["headSha"]}},
+        {"if": {"properties": {"operation": {"const": "lease"}}, "required": ["operation"]}, "then": {"required": ["leaseRef"]}}
+      ]
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$schema", "schema", "runRef", "agentRef", "correlationRef", "targetRef", "state", "version", "updatedAt", "identityRef", "claimedUntil"],
+      "properties": {
+        "$schema": {"const": "https://wellmanifest.dev/schemas/agent/v1"},
+        "schema": {"const": "wellmanifest.agent-run-state/v1"},
+        "runRef": {"$ref": "#/$defs/runRef"},
+        "agentRef": {"$ref": "#/$defs/agentRef"},
+        "correlationRef": {"$ref": "#/$defs/correlationRef"},
+        "targetRef": {"$ref": "#/$defs/targetRef"},
+        "state": {"enum": ["unclaimed", "claimed", "diagnosing", "repairing", "validating", "observing", "blocked", "released", "failed"]},
+        "version": {"type": "integer", "minimum": 1},
+        "updatedAt": {"type": "string", "format": "date-time"},
+        "identityRef": {"$ref": "#/$defs/identityRef"},
+        "headSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "claimedUntil": {"oneOf": [{"type": "null"}, {"type": "string", "format": "date-time"}]}
+      },
+      "allOf": [
+        {"if": {"properties": {"state": {"enum": ["claimed", "diagnosing", "repairing", "validating"]}}, "required": ["state"]}, "then": {"properties": {"claimedUntil": {"type": "string", "format": "date-time"}}}},
+        {"if": {"properties": {"state": {"enum": ["repairing", "validating"]}}, "required": ["state"]}, "then": {"required": ["headSha"]}}
+      ]
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$schema", "schema", "requestId", "runRef", "agentRef", "correlationRef", "targetRef", "inputHash", "planHash", "outcome", "startedAt", "completedAt", "evidenceRefs", "secretsRedacted", "credentialsStored"],
+      "properties": {
+        "$schema": {"const": "https://wellmanifest.dev/schemas/agent/v1"},
+        "schema": {"const": "wellmanifest.agent-receipt/v1"},
+        "requestId": {"$ref": "#/$defs/identifier"},
+        "runRef": {"$ref": "#/$defs/runRef"},
+        "agentRef": {"$ref": "#/$defs/agentRef"},
+        "correlationRef": {"$ref": "#/$defs/correlationRef"},
+        "targetRef": {"$ref": "#/$defs/targetRef"},
+        "inputHash": {"$ref": "#/$defs/sha256"},
+        "planHash": {"$ref": "#/$defs/sha256"},
+        "outcome": {"enum": ["denied", "claimed", "diagnosed", "repaired", "validated", "observed", "leased", "released", "failed"]},
+        "startedAt": {"type": "string", "format": "date-time"},
+        "completedAt": {"type": "string", "format": "date-time"},
+        "evidenceRefs": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/evidenceRef"}},
+        "secretsRedacted": {"const": true},
+        "credentialsStored": {"const": false}
+      }
+    }
+  }
+}

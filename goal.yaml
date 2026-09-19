@@ -53,7 +53,7 @@ strategies:
   python:
     test: pytest tests/ -v
     build: python -m build
-    publish: twine upload --skip-existing --non-interactive dist/wellman-{version}*
+    publish: python -m twine upload --skip-existing --non-interactive dist/wellman-{version}*
     publish_enabled: true
 registries:
   pypi:

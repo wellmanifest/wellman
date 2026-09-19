@@ -9,7 +9,9 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -397,6 +399,15 @@ def worktree_ignore_payload(target_root: Path) -> bytes:
     return content + b"\n# Repository-local worktrees and operational state\n" + b"\n".join(missing) + b"\n"
 
 
+def is_executable_file(path: Path) -> bool:
+    if os.name == "nt":
+        return True
+    try:
+        return bool(path.stat().st_mode & 0o111)
+    except OSError:
+        return False
+
+
 def planned_changes(
     target_root: Path,
     payloads: dict[str, bytes],
@@ -411,7 +422,7 @@ def planned_changes(
             changes.append(("CREATE", target))
         elif path.read_bytes() != content:
             changes.append(("UPDATE", target))
-        elif target in executable_targets and not os.access(path, os.X_OK):
+        elif target in executable_targets and not is_executable_file(path):
             changes.append(("CHMOD", target))
 
     lock_target = ".governance/manifest.lock.json"
@@ -519,7 +530,11 @@ def project_inherited_required_checks(
         # the source declaration rather than inventing one; a later adoption
         # in the real repository will project the local workflow truth.
         return
-    callers = derived.get("reusableWorkflowCallers", [])
+    callers = [
+        caller for caller in derived.get("reusableWorkflowCallers", [])
+        if caller not in {"governance", "new-project-governance"}
+        and not str(caller).endswith(("/governance.yml", "/new-project-governance.yml"))
+    ]
     if callers:
         raise SystemExit(
             "cannot project inherited required-checks through reusable workflow callers: "
@@ -672,12 +687,39 @@ def main() -> int:
         path = target_root / target
         if not path.exists() or path.read_bytes() != content:
             atomic_write(path, content, 0o755 if target in executable_targets else None)
-        elif target in executable_targets and not os.access(path, os.X_OK):
+        elif target in executable_targets and not is_executable_file(path):
             os.chmod(path, 0o755)
     atomic_write(
         target_root / ".governance/manifest.lock.json",
         expected_lock,
     )
+    agent_hosts_script = target_root / "scripts/install-agent-hosts.sh"
+    if agent_hosts_script.is_file() and (target_root / ".git").exists():
+        try:
+            cmd = [str(agent_hosts_script), "--target", str(target_root)]
+            if os.name != "nt":
+                if is_executable_file(agent_hosts_script):
+                    subprocess.run(cmd, cwd=target_root, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                elif shutil.which("bash"):
+                    subprocess.run(["bash"] + cmd, cwd=target_root, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                bash_path = shutil.which("bash")
+                if bash_path:
+                    subprocess.run([bash_path] + cmd, cwd=target_root, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+    dsl_render_script = target_root / ".governance/render_dsl_manifest.py"
+    if dsl_render_script.is_file():
+        try:
+            subprocess.run(
+                [sys.executable, str(dsl_render_script)],
+                cwd=target_root,
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
     print(f"adopted wellmanifest/new-project {version} at {args.source_revision}")
     report_missing_target_prerequisites(missing_prerequisites)
     return 0

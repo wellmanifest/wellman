@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wellman"
-version = "0.20.33"
+version = "0.20.34"
 description = "Wellmanifest unified standards runtime — policy-as-code checker for all wellmanifest standards"
 readme = "README.md"
 requires-python = ">=3.9"

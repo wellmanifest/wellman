@@ -7,6 +7,14 @@
 ### Docs
 - Update README.md
 
+### Other
+- Update uv.lock
+
+## [0.20.34] - 2026-09-19
+
+### Docs
+- Update README.md
+
 ## [0.20.33] - 2026-09-19
 
 ### Docs

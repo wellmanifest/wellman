@@ -83,3 +83,10 @@ enabled = true
 todo_file = "TODO.md"
 min_severity = "low"
 deduplicate = true
+
+[dependency-groups]
+dev = [
+    "build>=1.4.4",
+    "pip>=26.0.1",
+    "twine>=6.2.0",
+]

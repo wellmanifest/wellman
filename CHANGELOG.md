@@ -7,6 +7,11 @@
 ### Docs
 - Update README.md
 
+## [0.20.35] - 2026-09-19
+
+### Docs
+- Update README.md
+
 ## [0.20.34] - 2026-09-19
 
 ### Docs

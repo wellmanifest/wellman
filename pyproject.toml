@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wellman"
-version = "0.20.36"
+version = "0.20.37"
 description = "Wellmanifest unified standards runtime — policy-as-code checker for all wellmanifest standards"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -45,6 +45,16 @@ dev = [
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.wellmanifest]
+standard = "0.20.36"
+revision = "368085282d0caa41cfa5ef2ec65644920566ae77"
+gate = "project/governance-check.sh"
+
+[tool.pytest.ini_options]
+addopts = "-p wellmanifest_governance"
+testpaths = ["tests"]
+pythonpath = [".", "src"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

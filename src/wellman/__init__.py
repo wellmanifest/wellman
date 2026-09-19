@@ -11,7 +11,7 @@ from importlib.metadata import version as _get_version
 try:
     __version__ = _get_version("wellman")
 except Exception:
-    __version__ = "0.20.32"
+    __version__ = "0.20.37"
 
 from wellman.registry import (
     CONFORMANCE_LEVELS,

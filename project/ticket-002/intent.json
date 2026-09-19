@@ -1,0 +1,176 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-002",
+  "summary": "Complete automatic standards registration and self-adoption with repository-local path safety",
+  "workstream": "integration",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-002/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/adoption.py",
+    "src/wellman/cli.py",
+    "src/wellman/__init__.py",
+    "tests/test_adoption.py",
+    "tests/test_cli.py",
+    "README.md",
+    "pyproject.toml",
+    "uv.lock",
+    "VERSION",
+    "CHANGELOG.md",
+    ".aider.conf.yml",
+    ".cursor/rules/new-project-standard.mdc",
+    ".gitattributes",
+    ".gitignore",
+    ".githooks/**",
+    ".github/copilot-instructions.md",
+    ".github/workflows/new-project-governance.yml",
+    ".github/workflows/new-project-branch-hygiene.yml",
+    ".governance/**",
+    ".subactor/.gitignore",
+    ".subactor/manifest.json",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md",
+    "project.sh",
+    "project.bat",
+    "project/governance-check.sh",
+    "project/governance-check.bat",
+    "project/new-ticket.sh",
+    "project/readme.sh",
+    "scripts/install-agent-hosts.sh",
+    "scripts/runtime.sh",
+    "wellmanifest_governance.py",
+    "worktree-guard.yaml"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "1611eee7b7217908f085da0544d72902eba8a07e",
+    "targetBranch": "main",
+    "outcome": "Recover the existing authorized ticket through the published fenced allocator, finish additive registration and safe repository-root selection, complete self-adoption and package metadata, and deliver through protected publication before real-repository rollout.",
+    "nonGoals": [
+      "Claim registration alone proves conformance or protected enforcement",
+      "Replace existing adopter pins, reports or independent controller storage",
+      "Modify foreign repositories without their own admitted ticket and lease",
+      "Implement every catalog checker in this slice",
+      "Overwrite existing bundled fixes on main or clean unknown work"
+    ],
+    "complexity": "L",
+    "estimatedMinutes": 90,
+    "budgets": {
+      "maxImplementationFiles": 15,
+      "maxAffectedComponents": 4,
+      "maxPublicInterfaceChanges": 3,
+      "maxRuntimeDependencies": 0
+    },
+    "standardAdoption": {
+      "sourceRepository": "wellmanifest/new-project",
+      "fromRevision": null,
+      "toRevision": "368085282d0caa41cfa5ef2ec65644920566ae77"
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Preserve the previous owner's additive registration and bootstrap snapshot. Git discovery selects the active repository/worktree; reject symlink escapes before writes and require explicit bootstrap outside Git. Repo-owned metadata and final documentation remain in the owning checkout; external protected authority state is not relocated. Only the immutable updater changes managed payloads. Integrate existing main changes without reverting them after recovery.",
+      "components": [
+        {
+          "name": "registration-cli",
+          "paths": [
+            "src/wellman/adoption.py",
+            "src/wellman/cli.py",
+            "tests/test_adoption.py",
+            "tests/test_cli.py"
+          ]
+        },
+        {
+          "name": "package-release",
+          "paths": [
+            "src/wellman/__init__.py",
+            "pyproject.toml",
+            "uv.lock",
+            "VERSION",
+            "CHANGELOG.md"
+          ]
+        },
+        {
+          "name": "usage",
+          "paths": [
+            "README.md"
+          ]
+        },
+        {
+          "name": "self-adoption",
+          "paths": [
+            ".aider.conf.yml",
+            ".cursor/**",
+            ".gitattributes",
+            ".gitignore",
+            ".githooks/**",
+            ".github/**",
+            ".governance/**",
+            ".subactor/manifest.json",
+            ".subactor/.gitignore",
+            "AGENTS.md",
+            "CLAUDE.md",
+            "GEMINI.md",
+            "project.sh",
+            "project.bat",
+            "project/**",
+            "scripts/**",
+            "wellmanifest_governance.py",
+            "worktree-guard.yaml"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "Additive auto registration",
+        "Git-root-aware adopt command",
+        "Explicit non-Git bootstrap opt-in"
+      ],
+      "dataChanges": [
+        "Repository-local additive standard-requirements.json and pinned self-adoption metadata"
+      ],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Preserve the pre-adoption content-addressed snapshot and existing committed implementation. Publish a corrective version; never move immutable tags, silently overwrite pins or remove unknown workspace data."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src /usr/bin/python3 -m pytest -q tests"
+        ],
+        "evidence": "Preservation, additive registration, idempotence, nested directory, active linked checkout, outside-Git and symlink-escape regressions."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh",
+          "git diff --check"
+        ],
+        "evidence": "Published immutable self-adoption, native allocator recovery, package governance lifecycle and exact scope validation."
+      },
+      {
+        "criterion": "AC-03",
+        "commands": [
+          "wellman adopt auto --dry-run --json"
+        ],
+        "evidence": "Built artifact canary first; prior Semcod disposable-copy pilot remains read-only evidence, not real-repository rollout or conformance."
+      }
+    ]
+  }
+}

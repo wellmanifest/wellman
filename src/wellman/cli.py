@@ -217,7 +217,32 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_adopt(args: argparse.Namespace) -> int:
-    root = Path(args.root or ".").resolve()
+    from wellman.adoption import register, repository_root, safe_path
+    try:
+        root = repository_root(args.root or '.', bootstrap=args.bootstrap)
+        for name in ('manifest.json', 'standard-packs.json', 'standard-requirements.json'):
+            safe_path(root / '.governance' / name)
+    except (OSError, ValueError) as error:
+        print(f'Error: {error}', file=sys.stderr)
+        return 1
+    if args.standard_id == 'auto':
+        try:
+            if args.force:
+                raise ValueError('--force is not supported by additive auto registration')
+            result = register(root, args.profile, dry_run=args.dry_run)
+        except (OSError, ValueError, UnicodeError) as error:
+            print(f'Error: {error}', file=sys.stderr)
+            return 1
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            action = 'Would register' if args.dry_run else 'Registered'
+            print(f"{action} {len(result['registration']['requirements'])} required standards: {result['path']}")
+            print('Requirements only: adoption pins, conformance and protected enforcement remain unverified.')
+        return 0
+    if args.dry_run or args.profile or args.json:
+        print('Error: --dry-run, --profile and --json require adopt auto.', file=sys.stderr)
+        return 1
     std = get_standard(args.standard_id)
     profile = get_profile(args.standard_id)
 
@@ -234,6 +259,14 @@ def cmd_adopt(args: argparse.Namespace) -> int:
         )
         return 1
 
+    selected_profiles = [profile.name] if profile else []
+    selected_standards = [std.id] if std else []
+    try:
+        # Validate the registration before the legacy scaffold writes anything.
+        register(root, selected_profiles, standards=selected_standards, dry_run=True)
+    except (OSError, ValueError, UnicodeError) as error:
+        print(f'Error: {error}', file=sys.stderr)
+        return 1
     gov_dir.mkdir(parents=True, exist_ok=True)
     print(f"Adopting '{args.standard_id}' into {root}...")
     manifest_data = {
@@ -254,7 +287,12 @@ def cmd_adopt(args: argparse.Namespace) -> int:
             target_packs.write_text(bundled_packs.read_text(encoding="utf-8"), encoding="utf-8")
             print(f"✓ Attached {target_packs.relative_to(root)}")
 
-    print("✓ Adoption scaffolded. Run `wellman check` and resolve remaining findings before treating it as conformant.")
+    try:
+        register(root, selected_profiles, standards=selected_standards)
+    except (OSError, ValueError, UnicodeError) as error:
+        print(f'Error: scaffold created but requirement registration failed: {error}', file=sys.stderr)
+        return 1
+    print("✓ Adoption scaffolded. Requirements registered, not verified. Run `wellman check` and resolve remaining findings before treating it as conformant.")
     return 0
 
 
@@ -301,9 +339,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     # adopt
     p_adopt = subparsers.add_parser("adopt", help="Adopt standard or profile into repository")
-    p_adopt.add_argument("standard_id", help="Standard ID or profile name to adopt")
+    p_adopt.add_argument("standard_id", nargs='?', default='auto', help="Standard ID, profile, or auto (default)")
     p_adopt.add_argument("--root", "-r", default=".", help="Target repository root path")
+    p_adopt.add_argument('--bootstrap', action='store_true', help='Explicitly allow adoption into a non-Git directory; Git targets still resolve to their checkout root')
     p_adopt.add_argument("--force", action="store_true", help="Replace an existing adoption manifest")
+    p_adopt.add_argument('--profile', action='append', default=[], help='Additional capability profile for auto registration')
+    p_adopt.add_argument('--dry-run', action='store_true', help='Preview auto registration without writes')
+    p_adopt.add_argument('--json', action='store_true', help='Return auto registration as JSON')
     p_adopt.set_defaults(func=cmd_adopt)
 
     # gate

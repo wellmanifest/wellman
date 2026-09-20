@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.20.37] - 2026-09-19
+
+### Added
+- Additive language-independent standard requirements registration and explicit non-Git bootstrap.
+- Pinned self-adoption of new-project 0.20.38 with governance enforcement in the pytest lifecycle and corrected protected-review guidance.
+
+### Fixed
+- Resolve adoption to the active Git checkout from nested directories, including linked worktrees.
+- Reject symlink destinations and inherited Git overrides that could redirect repository metadata.
+
+### Documentation
+- Distinguish repository-owned metadata and reports from external protected controller state, and registration from enforced conformance.
+
 ### Fixed
 - Reject unknown standards before adoption and preserve an existing adoption manifest unless `--force` is explicit.
 - Make `check --standard` fail closed when the named standard is unknown or has no implemented checker.

@@ -9,7 +9,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from wellman import __version__
 from wellman.registry import (
@@ -23,6 +23,9 @@ from wellman.registry import (
 )
 from wellman.runner import ConformanceRunner
 from wellman.validator import Finding, StandardsValidator, load_bundled_schema, validate_json_structure
+from wellman.docs_adoption import render_adoption
+from wellman.fleet import apply_plan, build_plan, check_fleet, discover_repositories
+from wellman.repository import RepositoryIdentityError
 
 
 def print_banner() -> None:
@@ -267,6 +270,46 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     except (OSError, ValueError, UnicodeError) as error:
         print(f'Error: {error}', file=sys.stderr)
         return 1
+
+    def profile_includes(profile_name: str, target: str, seen: Optional[Set[str]] = None) -> bool:
+        seen = seen or set()
+        if profile_name in seen:
+            return False
+        seen.add(profile_name)
+        current = get_profile(profile_name)
+        if current is None:
+            return False
+        if any(item.get("id") == target for item in current.requirements):
+            return True
+        return any(profile_includes(parent, target, seen) for parent in current.extends)
+
+    adopts_docs = bool(std and std.id == "wellmanifest/docs") or bool(
+        profile and profile_includes(profile.name, "wellmanifest/docs")
+    )
+    docs_content = None
+    if adopts_docs:
+        try:
+            docs_content = render_adoption(root, args.repository)
+        except RepositoryIdentityError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+
+    if docs_content is not None:
+        docs_path = gov_dir / "docs.json"
+        if docs_path.exists() and not args.force:
+            try:
+                existing = docs_path.read_text(encoding="utf-8")
+            except OSError as exc:
+                print(f"Error: cannot read {docs_path}: {exc}", file=sys.stderr)
+                return 1
+            if existing != docs_content:
+                print(
+                    f"Error: {docs_path} already contains a different repository binding; "
+                    "use --force only after reviewing it.",
+                    file=sys.stderr,
+                )
+                return 1
+
     gov_dir.mkdir(parents=True, exist_ok=True)
     print(f"Adopting '{args.standard_id}' into {root}...")
     manifest_data = {
@@ -292,8 +335,86 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     except (OSError, ValueError, UnicodeError) as error:
         print(f'Error: scaffold created but requirement registration failed: {error}', file=sys.stderr)
         return 1
+
+    if docs_content is not None:
+        docs_path = gov_dir / "docs.json"
+        if not docs_path.exists() or args.force:
+            docs_path.write_text(docs_content, encoding="utf-8")
+            print(f"✓ Created {docs_path.relative_to(root)}")
+
     print("✓ Adoption scaffolded. Requirements registered, not verified. Run `wellman check` and resolve remaining findings before treating it as conformant.")
     return 0
+
+
+def _print_fleet_payload(payload: object, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    if isinstance(payload, dict) and "repositories" in payload:
+        repositories = payload["repositories"]
+        for item in repositories:
+            if isinstance(item, dict):
+                status = "READY" if item.get("ready", item.get("valid", False)) else "BLOCKED"
+                if "status" in item:
+                    status = str(item["status"]).upper()
+                print(f"{status}: {item.get('path', '<unknown>')}")
+                for action in item.get("actions", []):
+                    print(f"  action: {action}")
+                for blocker in item.get("blockers", []):
+                    print(f"  blocker: {blocker}")
+                for finding in item.get("findings", []):
+                    print(f"  finding: {finding.get('code', 'UNKNOWN')}: {finding.get('message', '')}")
+        if "ready" in payload or "blocked" in payload:
+            print(f"ready={payload.get('ready', 0)} blocked={payload.get('blocked', 0)}")
+        elif "valid" in payload:
+            print(f"valid={payload['valid']} repositories={len(repositories)}")
+        return
+    for item in payload if isinstance(payload, list) else []:
+        print(item)
+
+
+def cmd_fleet_discover(args: argparse.Namespace) -> int:
+    repositories = discover_repositories(Path(args.root), args.recursive)
+    payload = {"root": str(Path(args.root).resolve()), "repositories": [str(path) for path in repositories]}
+    _print_fleet_payload(payload, args.json)
+    return 0
+
+
+def cmd_fleet_plan(args: argparse.Namespace) -> int:
+    try:
+        payload = build_plan(
+            Path(args.root), args.target, args.recursive, args.allow_dirty, args.update_manifests
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    _print_fleet_payload(payload, args.json)
+    return 0 if payload["blocked"] == 0 else 2
+
+
+def cmd_fleet_adopt(args: argparse.Namespace) -> int:
+    try:
+        plan = build_plan(
+            Path(args.root), args.target, args.recursive, args.allow_dirty, args.update_manifests
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    if not args.apply:
+        _print_fleet_payload(plan, args.json)
+        print("dry-run only; pass --apply to write changes", file=sys.stderr)
+        return 0 if plan["blocked"] == 0 else 2
+    payload = apply_plan(plan, args.target, args.update_manifests)
+    _print_fleet_payload(payload, args.json)
+    return 0 if plan["blocked"] == 0 and all(
+        item.get("status") == "updated" for item in payload["repositories"]
+    ) else 2
+
+
+def cmd_fleet_check(args: argparse.Namespace) -> int:
+    payload = check_fleet(Path(args.root), args.recursive)
+    _print_fleet_payload(payload, args.json)
+    return 0 if payload["valid"] else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -342,11 +463,43 @@ def build_parser() -> argparse.ArgumentParser:
     p_adopt.add_argument("standard_id", nargs='?', default='auto', help="Standard ID, profile, or auto (default)")
     p_adopt.add_argument("--root", "-r", default=".", help="Target repository root path")
     p_adopt.add_argument('--bootstrap', action='store_true', help='Explicitly allow adoption into a non-Git directory; Git targets still resolve to their checkout root')
+    p_adopt.add_argument("--repository", help="Canonical GitHub owner/name when origin is unavailable")
     p_adopt.add_argument("--force", action="store_true", help="Replace an existing adoption manifest")
     p_adopt.add_argument('--profile', action='append', default=[], help='Additional capability profile for auto registration')
     p_adopt.add_argument('--dry-run', action='store_true', help='Preview auto registration without writes')
     p_adopt.add_argument('--json', action='store_true', help='Return auto registration as JSON')
     p_adopt.set_defaults(func=cmd_adopt)
+
+    # fleet
+    p_fleet = subparsers.add_parser("fleet", help="Discover, plan and check a repository fleet")
+    fleet_commands = p_fleet.add_subparsers(dest="fleet_command", required=True)
+
+    p_fleet_discover = fleet_commands.add_parser("discover", help="List repositories below a directory")
+    p_fleet_discover.add_argument("--root", "-r", default=".")
+    p_fleet_discover.add_argument("--recursive", action="store_true")
+    p_fleet_discover.add_argument("--json", action="store_true")
+    p_fleet_discover.set_defaults(func=cmd_fleet_discover)
+
+    for command, handler, help_text in (
+        ("plan", cmd_fleet_plan, "Create a read-only fleet adoption plan"),
+        ("adopt", cmd_fleet_adopt, "Apply a fleet adoption plan"),
+    ):
+        fleet_parser = fleet_commands.add_parser(command, help=help_text)
+        fleet_parser.add_argument("target", help="Standard ID or profile name, e.g. baseline")
+        fleet_parser.add_argument("--root", "-r", default=".")
+        fleet_parser.add_argument("--recursive", action="store_true")
+        fleet_parser.add_argument("--allow-dirty", action="store_true", help="Allow writes to dirty repositories")
+        fleet_parser.add_argument("--update-manifests", action="store_true", help="Update only wellman-owned manifest version fields")
+        fleet_parser.add_argument("--json", action="store_true")
+        if command == "adopt":
+            fleet_parser.add_argument("--apply", action="store_true", help="Actually write the planned changes")
+        fleet_parser.set_defaults(func=handler)
+
+    p_fleet_check = fleet_commands.add_parser("check", help="Run wellman checks across repositories")
+    p_fleet_check.add_argument("--root", "-r", default=".")
+    p_fleet_check.add_argument("--recursive", action="store_true")
+    p_fleet_check.add_argument("--json", action="store_true")
+    p_fleet_check.set_defaults(func=cmd_fleet_check)
 
     # gate
     p_gate = subparsers.add_parser("gate", help="Run deterministic governance gate")

@@ -184,6 +184,7 @@ class ConformanceRunner:
             "wellmanifest/worktrees": self.check_worktrees,
             "wellmanifest/ticket-lifecycle": self.check_ticket_lifecycle,
             "wellmanifest/agent": self.check_agent_hosts,
+            "wellmanifest/docs": lambda: self.validator.validate_docs(required=True),
         }
         check = checks.get(standard_id)
         if check is not None:

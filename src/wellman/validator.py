@@ -23,6 +23,7 @@ from wellman.registry import (
     get_profile,
     get_standard,
 )
+from wellman.docs_adoption import validate_adoption as validate_docs_adoption
 
 
 @dataclass
@@ -301,10 +302,59 @@ class StandardsValidator:
 
         return findings
 
+    def validate_docs(self, required: bool = False) -> List[Finding]:
+        """Validate repository-bound ``wellmanifest/docs`` adoption metadata."""
+
+        return [
+            Finding(
+                code=item["code"],
+                message=item["message"],
+                path=".governance/docs.json",
+                remediation=item.get("remediation", ""),
+            )
+            for item in validate_docs_adoption(self.root, required=required)
+        ]
+
+    def docs_adoption_required(self) -> bool:
+        """Return whether the selected manifest/profile requires docs adoption."""
+
+        manifest_path = self.gov_dir / "manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+
+        selected = []
+        standard = manifest.get("standard", {})
+        if isinstance(standard, dict) and isinstance(standard.get("id"), str):
+            selected.append(standard["id"])
+        for item in manifest.get("standards", []):
+            if isinstance(item, dict) and isinstance(item.get("id"), str):
+                selected.append(item["id"])
+
+        def profile_includes(profile_name: str, target: str, seen: set) -> bool:
+            if profile_name in seen:
+                return False
+            seen.add(profile_name)
+            profile_name = profile_name.removeprefix("profile:")
+            profile = get_profile(profile_name)
+            if profile is None:
+                return False
+            if any(item.get("id") == target for item in profile.requirements):
+                return True
+            return any(profile_includes(parent, target, seen) for parent in profile.extends)
+
+        return any(
+            item == "wellmanifest/docs"
+            or (item.startswith("profile:") and profile_includes(item, "wellmanifest/docs", set()))
+            for item in selected
+        )
+
     def run_all_validations(self) -> List[Finding]:
         """Execute complete suite of standards validations."""
         all_findings: List[Finding] = []
         all_findings.extend(self.validate_adoption_manifest())
         all_findings.extend(self.validate_standard_packs())
         all_findings.extend(self.validate_standard_adoption())
+        all_findings.extend(self.validate_docs(required=self.docs_adoption_required()))
         return all_findings

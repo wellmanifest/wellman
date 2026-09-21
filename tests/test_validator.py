@@ -59,3 +59,46 @@ def test_validator_rejects_unknown_adoption_target(tmp_path):
     findings = StandardsValidator(tmp_path).validate_adoption_manifest()
 
     assert "GOV-MANIFEST-UNKNOWN-STANDARD" in [finding.code for finding in findings]
+
+
+def test_validator_rejects_docs_adoption_bound_to_another_repository(tmp_path):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/acme/example.git"],
+        cwd=tmp_path,
+        check=True,
+    )
+    gov_dir = tmp_path / ".governance"
+    gov_dir.mkdir()
+    (gov_dir / "docs.json").write_text(
+        json.dumps({
+            "schema": "wellmanifest.docs/adoption/v1",
+            "repository": "acme/other",
+            "standard": "wellmanifest/docs",
+            "source_revision": "19efafbeb18923cfd51cc69bd519330488500137",
+            "policy_sha256": "fac05e720ec49370ba393e817a4a03b895d7ed33828e09b3420f9fcfb09264b0",
+        }),
+        encoding="utf-8",
+    )
+
+    findings = StandardsValidator(tmp_path).validate_docs(required=True)
+
+    assert [finding.code for finding in findings] == ["GOV-DOCS-DRIFT"]
+
+
+def test_validator_requires_docs_for_baseline_profile(tmp_path):
+    gov_dir = tmp_path / ".governance"
+    gov_dir.mkdir()
+    (gov_dir / "manifest.json").write_text(
+        json.dumps({
+            "schema": "wellmanifest.manifest/v1",
+            "standard": {"id": "profile:baseline", "version": "0.20.36"},
+        }),
+        encoding="utf-8",
+    )
+
+    findings = StandardsValidator(tmp_path).run_all_validations()
+
+    assert "GOV-DOCS-MISSING" in [finding.code for finding in findings]

@@ -78,7 +78,7 @@ def test_cli_check_fails_closed_for_unimplemented_standard(capsys, tmp_path):
 
     assert ret == 1
     result = json.loads(capsys.readouterr().out)
-    assert result["findings"][0]["code"] == "GOV-STANDARD-NOT-IMPLEMENTED"
+    assert result["findings"][0]["code"] == "GOV-DOCS-MISSING"
 
 
 def test_cli_adopt_rejects_unknown_target_without_writing(capsys, tmp_path):
@@ -100,7 +100,10 @@ def test_cli_adopt_does_not_overwrite_manifest_without_force(capsys, tmp_path):
     assert manifest.read_text(encoding="utf-8") == '{"preserve": true}\n'
     assert "without --force" in capsys.readouterr().err
 
-    ret = main(["adopt", "baseline", "--root", str(tmp_path), "--force", "--bootstrap"])
+    ret = main([
+        "adopt", "baseline", "--root", str(tmp_path), "--force", "--bootstrap",
+        "--repository", "acme/example",
+    ])
 
     assert ret == 0
     adopted = json.loads(manifest.read_text(encoding="utf-8"))
@@ -108,7 +111,10 @@ def test_cli_adopt_does_not_overwrite_manifest_without_force(capsys, tmp_path):
 
 
 def test_cli_adopt_uses_running_package_version(capsys, tmp_path):
-    ret = main(["adopt", "baseline", "--root", str(tmp_path), "--bootstrap"])
+    ret = main([
+        "adopt", "baseline", "--root", str(tmp_path), "--bootstrap",
+        "--repository", "acme/example",
+    ])
 
     assert ret == 0
     manifest = json.loads((tmp_path / ".governance" / "manifest.json").read_text(encoding="utf-8"))
@@ -126,7 +132,10 @@ def test_adopt_requires_explicit_non_git_bootstrap(tmp_path, capsys, target):
     assert main(['adopt', target, '--root', str(tmp_path)]) == 1
     assert '--bootstrap' in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []
-    assert main(['adopt', target, '--root', str(tmp_path), '--bootstrap']) == 0
+    assert main([
+        'adopt', target, '--root', str(tmp_path), '--bootstrap',
+        '--repository', 'acme/example',
+    ]) == 0
     assert (tmp_path / '.governance' / 'standard-requirements.json').is_file()
 
 
@@ -143,6 +152,7 @@ def test_adopt_from_nested_directory_uses_git_root(tmp_path, monkeypatch, capsys
         argv += ['--root', str(nested)]
     else:
         monkeypatch.chdir(nested)
+    argv += ['--repository', 'acme/example']
     assert main(argv) == 0
     result = json.loads(capsys.readouterr().out)
     assert result['path'] == str(tmp_path / '.governance' / 'standard-requirements.json')
@@ -202,7 +212,7 @@ def test_adopt_ignores_inherited_git_location_overrides(tmp_path, monkeypatch):
     git(other, 'init', '-q')
     monkeypatch.setenv('GIT_DIR', str(other / '.git'))
     monkeypatch.setenv('GIT_WORK_TREE', str(other))
-    assert main(['adopt', '--root', str(own)]) == 0
+    assert main(['adopt', '--root', str(own), '--repository', 'acme/own']) == 0
     assert (own / '.governance' / 'standard-requirements.json').exists()
     assert not (other / '.governance').exists()
 

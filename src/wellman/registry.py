@@ -355,6 +355,7 @@ PROFILES_CATALOG: Dict[str, Profile] = {
             {"id": "wellmanifest/validation-attestation", "minimumLevel": "S4"},
             {"id": "wellmanifest/ticket-lifecycle", "minimumLevel": "S3"},
             {"id": "wellmanifest/logs", "minimumLevel": "S3"},
+            {"id": "wellmanifest/docs", "minimumLevel": "S3"},
         ],
     ),
     "domain-pack": Profile(

@@ -51,3 +51,4 @@ def test_profiles_catalog():
     assert "wellmanifest/new-project" in req_ids
     assert "wellmanifest/git-lifecycle" in req_ids
     assert "wellmanifest/worktrees" in req_ids
+    assert "wellmanifest/docs" in req_ids

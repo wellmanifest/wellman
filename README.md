@@ -98,6 +98,33 @@ wellman check --json
 wellman adopt wellmanifest/git-lifecycle
 # or adopt a profile
 wellman adopt baseline
+# Adoption binds repository-local metadata to `origin`.
+# For a repository without a remote, pass `--repository owner/name`.
+wellman adopt baseline --repository acme/example
+
+### 5. Operate on a local repository fleet
+
+```bash
+# read-only inventory
+wellman fleet discover --root /workspace/wellmanifest
+
+# read-only plan; dirty repositories are blocked by default
+wellman fleet plan baseline --root /workspace/wellmanifest --json
+
+# apply only after reviewing the plan
+wellman fleet adopt baseline --root /workspace/wellmanifest --apply
+
+# update only wellman-owned manifest version fields as part of the rollout
+wellman fleet adopt baseline --root /workspace/wellmanifest \
+  --update-manifests --apply
+
+# audit every discovered repository
+wellman fleet check --root /workspace/wellmanifest --json
+```
+
+Fleet adoption does not overwrite dirty repositories unless `--allow-dirty` is
+explicitly supplied. Existing manifests are merged only in wellman-owned
+version fields; repository-specific configuration is preserved.
 ```
 
 ### 5. Validate a JSON/YAML file against bundled schemas
@@ -119,7 +146,7 @@ wellman gate --preflight
 
 Wellman supports composite governance profiles:
 
-- **`baseline`**: `new-project` (S4), `git-lifecycle` (S4), `worktrees` (S3), `merge` (S4), `validation-attestation` (S4), `ticket-lifecycle` (S3), `logs` (S3).
+- **`baseline`**: `new-project` (S4), `git-lifecycle` (S4), `worktrees` (S3), `merge` (S4), `validation-attestation` (S4), `ticket-lifecycle` (S3), `logs` (S3), `docs` (S3).
 - **`domain-pack`**: `baseline` + `dsl` (S4), `code-dsl` (S4).
 - **`runtime-service`**: `baseline` + `poa` (S5), `authority-lifecycle` (S5), `logs` (S5).
 - **`agent-executor`**: `runtime-service` + `agent` (S4), `repair-lifecycle` (S5), `validation-attestation` (S5), `skills` (S4), `llm` (S4).

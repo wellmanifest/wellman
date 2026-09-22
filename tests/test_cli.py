@@ -81,6 +81,20 @@ def test_cli_check_fails_closed_for_unimplemented_standard(capsys, tmp_path):
     assert result["findings"][0]["code"] == "GOV-DOCS-MISSING"
 
 
+def test_cli_check_rejects_git_checkout_below_system_tmp(capsys, tmp_path):
+    git(tmp_path, "init", "-q")
+
+    ret = main([
+        "check", "--root", str(tmp_path),
+        "--standard", "wellmanifest/worktrees", "--json",
+    ])
+
+    assert ret == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["valid"] is False
+    assert result["findings"][0]["code"] == "GOV-WORKTREE-ADMISSION-001"
+
+
 def test_cli_adopt_rejects_unknown_target_without_writing(capsys, tmp_path):
     ret = main(["adopt", "wellmanifest/nope", "--root", str(tmp_path), "--bootstrap"])
 

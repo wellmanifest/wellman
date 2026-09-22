@@ -26,7 +26,7 @@ _previous_bytecode_policy = sys.dont_write_bytecode
 sys.dont_write_bytecode = True
 try:
     try:
-        from ticket_activity import ActivityError, resolve as resolve_ticket_activity
+        from ticket_activity import ActivityError, delivery_landed, resolve as resolve_ticket_activity
     except ModuleNotFoundError:
         _activity_spec = importlib.util.spec_from_file_location(
             "ticket_activity", Path(__file__).with_name("ticket_activity.py")
@@ -37,7 +37,28 @@ try:
         sys.modules[_activity_spec.name] = _activity_module
         _activity_spec.loader.exec_module(_activity_module)
         ActivityError = _activity_module.ActivityError
+        delivery_landed = _activity_module.delivery_landed
         resolve_ticket_activity = _activity_module.resolve
+finally:
+    sys.dont_write_bytecode = _previous_bytecode_policy
+
+_previous_bytecode_policy = sys.dont_write_bytecode
+sys.dont_write_bytecode = True
+try:
+    try:
+        from repository_policy import load_adapter, policy_error, selected_policy
+    except ModuleNotFoundError:
+        _policy_spec = importlib.util.spec_from_file_location(
+            "repository_policy", Path(__file__).with_name("repository_policy.py")
+        )
+        if _policy_spec is None or _policy_spec.loader is None:
+            raise
+        _policy_module = importlib.util.module_from_spec(_policy_spec)
+        sys.modules[_policy_spec.name] = _policy_module
+        _policy_spec.loader.exec_module(_policy_module)
+        load_adapter = _policy_module.load_adapter
+        policy_error = _policy_module.policy_error
+        selected_policy = _policy_module.selected_policy
 finally:
     sys.dont_write_bytecode = _previous_bytecode_policy
 
@@ -103,6 +124,7 @@ class TicketRecord:
     intent: dict[str, Any] | None
     intent_error: str | None
     files: dict[str, tuple[bytes, str]] | None = None
+    external: bool = False
 
 
 class Report:
@@ -1247,6 +1269,10 @@ def repository_policy_valid(repository: Any) -> bool:
     return (mode == "standalone" and not roots) or (mode == "monorepo" and bool(roots))
 
 
+def selected_repository_policy_valid(value: Any) -> bool:
+    return value is None or policy_error(value) is None
+
+
 def domain_contract_policy_valid(domain_contracts: Any) -> bool:
     """Keep the optional target contract closed and backwards compatible."""
     return (
@@ -1333,12 +1359,14 @@ def basic_manifest_valid(manifest: Any) -> bool:
         "$schema", "schema", "standard", "requiredFiles", "governancePaths",
         "trustedApprovalSources", "approvalEvidence", "ticket", "docker",
         "repository", "domainContracts", "coordination", "delivery", "stacks",
+        "repositoryPolicy",
     }
     coordination = manifest.get("coordination")
     delivery = manifest.get("delivery")
     return (
         set(manifest) <= allowed_root_keys
         and repository_policy_valid(manifest.get("repository"))
+        and selected_repository_policy_valid(manifest.get("repositoryPolicy"))
         and domain_contract_policy_valid(manifest.get("domainContracts"))
         and string_list(manifest.get("stacks", []))
         and set(manifest.get("stacks", [])) <= {"node", "python", "go", "rust", "java", "docker", "frontend", "terraform", "kubernetes"}
@@ -1623,6 +1651,53 @@ def load_ticket_records(directories: list[Path], config: dict[str, Any]) -> list
         intent, error = validate_intent(directory / config["intentFile"], directory.name)
         records.append(TicketRecord(directory, status, workflow, intent, error))
     return records
+
+
+def load_repository_policy_ticket(
+    root: Path,
+    manifest: dict[str, Any],
+    report: Report,
+) -> TicketRecord | None:
+    """Project a declared external ticket into the normal scope checker.
+
+    The projection carries only bounded intent and current state.  It never
+    treats a local adapter as trusted approval or as a replacement for the
+    external ticket system's protected publication receipt.
+    """
+    policy = selected_policy(manifest)
+    if policy.get("tickets", {}).get("backend") != "planfile":
+        return None
+    adapter, error = load_adapter(root, manifest)
+    raw_path = policy.get("tickets", {}).get("adapterPath", ".governance/ticket-adapter.json")
+    if error or adapter is None:
+        report.add(
+            "GOV-TICKET-EXTERNAL-001",
+            f"External ticket adapter is invalid: {error or 'missing adapter'}",
+            "Create or refresh the repository-local adapter from the active Planfile ticket before changing implementation files.",
+            [str(raw_path)],
+        )
+        return None
+    intent = {
+        "schema": "new-project.intent/v3",
+        "ticket": adapter["ticket"],
+        "summary": adapter["summary"],
+        "allowedPaths": adapter["allowedPaths"],
+        "forbiddenPaths": adapter["forbiddenPaths"],
+        "stacks": [],
+        "workstream": adapter["workstream"],
+        "dependsOn": [],
+        "conflictsWith": [],
+        "integrationTicket": None,
+        "classification": {"kind": "SERVICE", "priority": "P2", "origin": "requested"},
+    }
+    return TicketRecord(
+        root / str(raw_path),
+        adapter["status"],
+        adapter["workflow"],
+        intent,
+        None,
+        external=True,
+    )
 
 
 def load_external_ticket_records(args: argparse.Namespace, root: Path, config: dict[str, Any]) -> list[TicketRecord] | None:
@@ -3290,7 +3365,7 @@ def check_selected_ticket_state(
 ) -> None:
     directory = selected.directory
     workflow = selected.workflow
-    if selected.files is None:
+    if selected.files is None and not selected.external:
         check_history_order(
             root, base=base, head=head, ticket_name=directory.name,
             ticket_root=config["root"],
@@ -3379,7 +3454,7 @@ def check_selected_ticket_intent(
         coordination = manifest.get("coordination")
         if isinstance(coordination, dict) and intent.get("schema") in {"new-project.intent/v2", "new-project.intent/v3"}:
             check_workstream_change_scope(root, manifest, records, coordination, selected, implementation, report)
-        if intent is not None:
+        if intent is not None and not selected.external:
             check_delivery_gate(root, manifest, selected, implementation, base, elapsed_minutes, report)
 
 
@@ -3770,20 +3845,23 @@ def load_standard_adoption_evidence(
         raise ValueError("head package manifest or lock is missing")
     initial = adoption["fromRevision"] is None
     if initial:
-        if base_package_content is not None or base_lock_content is not None:
-            raise ValueError("initial adoption base already contains a package manifest or lock")
+        if base_package_content is not None:
+            raise ValueError("initial adoption base already contains a package manifest")
         base_strategies: dict[str, str] = {}
         base_hashes: dict[str, str] = {}
     else:
-        if base_package_content is None or base_lock_content is None:
-            raise ValueError("upgrade base package manifest or lock is missing")
-        base_strategies = package_strategies(base_package_content)
+        if base_lock_content is None:
+            raise ValueError("upgrade base lock is missing")
+        if base_package_content is None:
+            base_strategies = {}
+        else:
+            base_strategies = package_strategies(base_package_content)
         base_hashes = adoption_lock(base_lock_content, adoption["fromRevision"])
     head_strategies = package_strategies(head_package_path.read_bytes())
     head_hashes = adoption_lock(head_lock_path.read_bytes(), adoption["toRevision"])
     base_managed = {path for path, strategy in base_strategies.items() if strategy == "managed"}
     head_managed = {path for path, strategy in head_strategies.items() if strategy == "managed"}
-    legacy_base = set(base_hashes) <= set(base_strategies)
+    legacy_base = not base_strategies or (set(base_hashes) <= set(base_strategies))
     if (
         frozenset(base_hashes) not in {frozenset(base_strategies), frozenset(base_managed)}
         and not legacy_base
@@ -4210,7 +4288,27 @@ def resolve_validation_base(
         return supplied_base
     active = active_records if active_records is not None else active_ticket_records(root, config, records)
     adoption_records = standard_adoption_records(active)
-    deliveries = [record.intent["delivery"] for record in adoption_records if record.intent is not None]
+    # If an adoption ticket's delivery is already landed on its target branch,
+    # its prose status remains active only because terminal receipts were not recorded.
+    # Exclude landed adoptions so subsequent tickets do not have their validation base poisoned.
+    unlanded_adoptions = []
+    for record in adoption_records:
+        if record.intent is None:
+            continue
+        delivery = record.intent.get("delivery")
+        if not isinstance(delivery, dict):
+            continue
+        ticket_dir = getattr(record, "directory", None)
+        target_branch = delivery.get("targetBranch")
+        if ticket_dir is not None and target_branch:
+            target_ref = f"refs/remotes/origin/{target_branch}"
+            try:
+                if delivery_landed(root, ticket_dir, target_ref):
+                    continue
+            except Exception:
+                pass
+        unlanded_adoptions.append(record)
+    deliveries = [record.intent["delivery"] for record in unlanded_adoptions if record.intent is not None]
     if not deliveries:
         return None
     # Fresh published clones retain historical adoption prose but not external
@@ -4486,18 +4584,25 @@ def run_governance_checks(
 ) -> str | None:
     lock_path = optional_repo_path(root, args.lock, "GOV-SYNC-001", "governance lock", report)
     profiles_path = optional_repo_path(root, args.stack_profiles, "GOV-MANIFEST-001", "stack-profile", report)
-    try:
-        records = load_external_ticket_records(args, root, manifest["ticket"])
-    except Exception:
-        report.add("GOV-INTENT-002", "Ticket input is missing, invalid or untrusted for this validation mode.",
-            "Use initialized local SQLite for local checks, or an independently acquired exact-subject snapshot and digest for CI.")
-        return None
-    if records is None:
-        directories = ticket_directories(root, manifest["ticket"])
-        records = load_ticket_records(directories, manifest["ticket"])
+    repository_policy = selected_policy(manifest)
+    if repository_policy.get("tickets", {}).get("backend") == "planfile":
+        projected = load_repository_policy_ticket(root, manifest, report)
+        records = [projected] if projected is not None else []
+        directories = []
+        active = records[:]
     else:
-        directories = [record.directory for record in records]
-    active = timed_step(report, "active_ticket_records", active_ticket_records, root, manifest["ticket"], records, report)
+        try:
+            records = load_external_ticket_records(args, root, manifest["ticket"])
+        except Exception:
+            report.add("GOV-INTENT-002", "Ticket input is missing, invalid or untrusted for this validation mode.",
+                "Use initialized local SQLite for local checks, or an independently acquired exact-subject snapshot and digest for CI.")
+            return None
+        if records is None:
+            directories = ticket_directories(root, manifest["ticket"])
+            records = load_ticket_records(directories, manifest["ticket"])
+        else:
+            directories = [record.directory for record in records]
+        active = timed_step(report, "active_ticket_records", active_ticket_records, root, manifest["ticket"], records, report)
     base = timed_step(report, "resolve_validation_base", resolve_validation_base, args.base, root, records, manifest["ticket"], args.head, active)
     changed = timed_step(report, "resolve_changed_paths", resolve_changed_paths, args, root, base, report)
     historical_tickets, migration_repairs = prepare_snapshot_migrations(args, root, records, base, changed, report)

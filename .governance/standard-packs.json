@@ -34,7 +34,8 @@
         {"id": "wellmanifest/merge", "minimumLevel": "S4"},
         {"id": "wellmanifest/validation-attestation", "minimumLevel": "S4"},
         {"id": "wellmanifest/ticket-lifecycle", "minimumLevel": "S3"},
-        {"id": "wellmanifest/logs", "minimumLevel": "S3"}
+        {"id": "wellmanifest/logs", "minimumLevel": "S3"},
+        {"id": "wellmanifest/docs", "minimumLevel": "S3"}
       ]
     },
     "domain-pack": {
@@ -86,6 +87,7 @@
     {"id": "wellmanifest/authority-lifecycle", "owns": ["authority lease semantics", "fencing and expiry semantics"]},
     {"id": "wellmanifest/llm", "owns": ["LLM policy boundary"], "excludes": ["runtime provider credentials", "runtime model routing"]},
     {"id": "wellmanifest/logs", "owns": ["structured log contract", "diagnostic event vocabulary"]},
+    {"id": "wellmanifest/docs", "owns": ["documentation ownership", "canonical document paths", "documentation gate"]},
     {"id": "wellmanifest/poa", "owns": ["plan of action contract"]},
     {"id": "wellmanifest/dsl", "owns": ["DSL interoperability contract"]},
     {"id": "wellmanifest/code-dsl", "owns": ["code-level semantic query contract", "AST diagnostics model"]},

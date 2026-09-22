@@ -13,6 +13,7 @@ from typing import Any
 LEVELS = {f"S{index}": index for index in range(6)}
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA64 = re.compile(r"^[0-9a-f]{64}$")
+DIAGNOSTIC_CODE = "GOV-STANDARD-PACK-001"
 
 
 def load_json(path: Path) -> Any:
@@ -29,7 +30,12 @@ def sha256(path: Path) -> str:
 
 
 def finding(code: str, message: str, path: str = "") -> dict[str, str]:
-    return {"code": code, "message": message, "path": path}
+    return {
+        "code": code,
+        "diagnostic": DIAGNOSTIC_CODE,
+        "message": message,
+        "path": path,
+    }
 
 
 def catalog_ownership_findings(packs, pack_ids, concerns, findings) -> None:
@@ -200,6 +206,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--catalog", default=".governance/standard-packs.json")
     parser.add_argument("--adoption", default=".governance/standard-adoption.json")
     parser.add_argument("--format", choices=("text", "json"), default="text")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="return non-zero for findings even when the adoption record is in audit mode",
+    )
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
     catalog_path = root / args.catalog
@@ -217,7 +228,14 @@ def main(argv: list[str] | None = None) -> int:
     else:
         adoption = load_json(adoption_path)
     findings = structural or adoption_findings(root, catalog, adoption)
-    result = {"schema": "wellmanifest.standard-adoption-report/v1", "mode": adoption.get("mode", "enforce"), "profile": adoption.get("profile"), "ok": not findings, "findings": findings}
+    result = {
+        "schema": "wellmanifest.standard-adoption-report/v1",
+        "mode": adoption.get("mode", "enforce"),
+        "profile": adoption.get("profile"),
+        "strict": args.strict,
+        "ok": not findings,
+        "findings": findings,
+    }
     if args.format == "json":
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
@@ -227,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{item['code']}: {item['message']}{suffix}")
     if structural:
         return 2
-    return 1 if findings and adoption.get("mode") == "enforce" else 0
+    return 1 if findings and (args.strict or adoption.get("mode") == "enforce") else 0
 
 
 if __name__ == "__main__":

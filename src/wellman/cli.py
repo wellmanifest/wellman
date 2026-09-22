@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional, Set
@@ -26,6 +28,143 @@ from wellman.validator import Finding, StandardsValidator, load_bundled_schema, 
 from wellman.docs_adoption import render_adoption
 from wellman.fleet import apply_plan, build_plan, check_fleet, discover_repositories
 from wellman.repository import RepositoryIdentityError
+
+
+_CANONICAL_WORKTREE = re.compile(
+    r"^ticket-(?P<number>[0-9]{3,})--(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$"
+)
+_CANONICAL_BRANCH = re.compile(
+    r"^refs/heads/ticket-(?P<number>[0-9]{3,})-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$"
+)
+
+
+def _git_worktree_records(root: Path) -> list[dict[str, str]]:
+    """Read Git's registered worktrees without repairing or mutating them."""
+    result = subprocess.run(
+        ["git", "-C", str(root), "worktree", "list", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if result.returncode != 0:
+        raise ValueError("Git could not enumerate registered worktrees")
+
+    records: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    for line in result.stdout.splitlines() + [""]:
+        if not line:
+            if current.get("path"):
+                records.append(current)
+            current = {}
+            continue
+        key, _, value = line.partition(" ")
+        if key in {"worktree", "branch"}:
+            current["path" if key == "worktree" else key] = value
+    return records
+
+
+def _worktree_admission(root: Path) -> Optional[Finding]:
+    """Reject execution from an unregistered or system-temporary checkout.
+
+    A plain clone is a valid Git repository from Git's perspective, so Git
+    alone cannot distinguish it from the adopter's primary checkout. The
+    explicit system-temp rejection closes the failure mode that caused agents
+    to work from ``/tmp``; linked delivery worktrees additionally require the
+    v5 directory/branch identity.
+    """
+    if not (root / ".git").exists():
+        return None
+
+    try:
+        top_level = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        if top_level.returncode != 0:
+            raise ValueError("Git checkout is not readable")
+        observed_root = Path(top_level.stdout.strip()).resolve()
+        if observed_root != root:
+            raise ValueError("requested root is not the Git checkout root")
+
+        try:
+            root.relative_to(Path("/tmp"))
+        except ValueError:
+            pass
+        else:
+            return Finding(
+                code="GOV-WORKTREE-ADMISSION-001",
+                message="Refusing to run from a Git checkout below /tmp.",
+                path=str(root),
+                remediation=(
+                    "Use the registered primary checkout or create "
+                    "<primary>/.worktrees/ticket-NNN--slug through the allocator."
+                ),
+            )
+
+        records = _git_worktree_records(root)
+        canonical_root = next(
+            (Path(record["path"]).resolve() for record in records
+             if Path(record["path"]).resolve() == root),
+            None,
+        )
+        if canonical_root is None:
+            return Finding(
+                code="GOV-WORKTREE-ADMISSION-002",
+                message="Checkout is not registered in Git's worktree set.",
+                path=str(root),
+                remediation=(
+                    "Use git worktree add --relative-paths from the registered "
+                    "primary checkout; do not use a standalone clone."
+                ),
+            )
+
+        primary = Path(records[0]["path"]).resolve() if records else None
+        if primary is None or root == primary:
+            return None
+
+        try:
+            relative = root.relative_to(primary / ".worktrees")
+        except ValueError:
+            return Finding(
+                code="GOV-WORKTREE-ADMISSION-003",
+                message="Linked checkout is outside the canonical .worktrees directory.",
+                path=str(root),
+                remediation="Use <primary>/.worktrees/ticket-NNN--slug.",
+            )
+        if len(relative.parts) != 1:
+            return Finding(
+                code="GOV-WORKTREE-ADMISSION-003",
+                message="Linked checkout is nested below the canonical .worktrees directory.",
+                path=str(root),
+                remediation="Use one direct <primary>/.worktrees/ticket-NNN--slug directory.",
+            )
+
+        directory_match = _CANONICAL_WORKTREE.fullmatch(relative.name)
+        branch = next(
+            (record.get("branch") for record in records
+             if Path(record["path"]).resolve() == root),
+            None,
+        )
+        branch_match = _CANONICAL_BRANCH.fullmatch(branch or "")
+        if not directory_match or not branch_match or directory_match.groupdict() != branch_match.groupdict():
+            return Finding(
+                code="GOV-WORKTREE-ADMISSION-004",
+                message="Linked checkout directory and ticket branch do not share a v5 identity.",
+                path=str(root),
+                remediation="Use ticket-NNN--slug with branch ticket/NNN-slug.",
+            )
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        return Finding(
+            code="GOV-WORKTREE-ADMISSION-005",
+            message=f"Cannot verify canonical worktree admission: {error}",
+            path=str(root),
+            remediation="Re-enter through the Wellmanifest allocator and registered worktree.",
+        )
+    return None
 
 
 def print_banner() -> None:
@@ -127,8 +266,11 @@ def cmd_check(args: argparse.Namespace) -> int:
     root = Path(args.root or ".").resolve()
     runner = ConformanceRunner(root)
 
+    admission = _worktree_admission(root)
     selected_standard = get_standard(args.standard) if args.standard else None
-    if args.standard and selected_standard is None:
+    if admission is not None:
+        findings = [admission]
+    elif args.standard and selected_standard is None:
         findings = [
             Finding(
                 code="GOV-STANDARD-UNKNOWN",
@@ -175,6 +317,12 @@ def cmd_check(args: argparse.Namespace) -> int:
 def cmd_gate(args: argparse.Namespace) -> int:
     """Run canonical deterministic governance gate."""
     root = Path(args.root or ".").resolve()
+    admission = _worktree_admission(root)
+    if admission is not None:
+        print(f"❌ {admission}", file=sys.stderr)
+        if admission.remediation:
+            print(f"   Remediation: {admission.remediation}", file=sys.stderr)
+        return 1
     runner = ConformanceRunner(root)
     extra_args = []
     if args.preflight:

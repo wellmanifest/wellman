@@ -336,6 +336,11 @@
       "remediation": "Install a compatible Goal release and use one active standard-adoption ticket to prepare, review and restage the immutable update.",
       "documentation": "error/GOV-STANDARD-UPDATE.md"
     },
+    "GOV-STANDARD-PACK-001": {
+      "message": "The repository does not satisfy the standard-pack baseline selected by its governance profile.",
+      "remediation": "Adopt every pack required by the selected profile at or above its minimum level, then rerun standard_pack_check.py --strict.",
+      "documentation": null
+    },
     "GOV-SYNC-001": {
       "message": "A managed governance file does not match its pinned SHA-256 digest.",
       "remediation": "Adopt or upgrade the complete immutable package through Goal; do not patch managed payload files manually.",
@@ -345,6 +350,11 @@
       "message": "Implementation changed without exactly one active ticket.",
       "remediation": "Keep the owning ticket IN_PROGRESS through implementation publication; after merge, let the protected controller emit the external terminal receipt without a repository closure commit.",
       "documentation": "error/GOV-TICKET-001.md"
+    },
+    "GOV-TICKET-EXTERNAL-001": {
+      "message": "The selected external ticket backend has no valid active local adapter.",
+      "remediation": "Refresh the repository-local adapter from the external ticket system and keep its bounded scope, state and source evidence consistent.",
+      "documentation": null
     },
     "GOV-TICKET-ACTIVITY-001": {
       "message": "Ticket activity cannot be resolved safely from the managed policy and clone-external terminal receipt registry.",

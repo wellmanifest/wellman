@@ -19,6 +19,7 @@ navigation only and are never fetched or executed by an agent.
 - Ticket lifecycle: [ticket-lifecycle.schema.json](https://github.com/wellmanifest/ticket-lifecycle/blob/main/standard/ticket-lifecycle.schema.json)
 - Policy DSL: [POLICY_DSL.md](https://github.com/wellmanifest/policy-dsl/blob/main/spec/POLICY_DSL.md)
 - Logs contract: [logs.contract.json](https://github.com/wellmanifest/logs/blob/main/contracts/logs.contract.json)
+- Docs contract: [wellmanifest/docs POLICY.md](https://github.com/wellmanifest/docs/blob/main/docs/standard/POLICY.md)
 - Agent contract: [agent.schema.json](https://github.com/wellmanifest/agent/blob/main/standard/agent.schema.json)
 - LLM policy boundary: [wellmanifest/llm README](https://github.com/wellmanifest/llm/blob/main/README.md)
 - Offer pointer: [wellmanifest/offer README](https://github.com/wellmanifest/offer/blob/main/README.md)

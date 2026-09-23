@@ -428,6 +428,12 @@
       "executable": true
     },
     {
+      "source": "scripts/repository_policy.py",
+      "target": ".governance/repository_policy.py",
+      "strategy": "managed",
+      "executable": true
+    },
+    {
       "source": "template/files/new-project-governance.workflow.yml",
       "target": ".github/workflows/new-project-governance.yml",
       "strategy": "managed",
@@ -646,6 +652,12 @@
     {
       "source": "docs/information/snapshot-migration.md",
       "target": ".governance/docs/SNAPSHOT_MIGRATION.md",
+      "strategy": "managed",
+      "executable": false
+    },
+    {
+      "source": "governance/managed-copies.json",
+      "target": ".governance/managed-copies.json",
       "strategy": "managed",
       "executable": false
     },

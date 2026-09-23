@@ -1,0 +1,92 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-005",
+  "summary": "Adopt Wellmanifest 0.20.50 multi-agent WIP capacity",
+  "workstream": "integration",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-005/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    ".githooks/pre-commit",
+    ".github/workflows/new-project-governance.yml",
+    ".governance/**",
+    "AGENTS.md",
+    "project/readme.sh",
+    "project.bat",
+    "project.sh",
+    "wellmanifest_governance.py",
+    "pyproject.toml"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "2f8a0b73ce552c78498629469c839d1860c478d2",
+    "targetBranch": "main",
+    "outcome": "Adopt the published immutable Wellmanifest 0.20.50 standard, including canonical worktree admission and multi-agent WIP capacity, then deliver it through the protected ticket branch.",
+    "nonGoals": [
+      "Modify another repository without its own ticket and lease",
+      "Edit managed manifest hashes or lease state by hand",
+      "Delete or normalize unknown, dirty or legacy worktrees"
+    ],
+    "complexity": "L",
+    "estimatedMinutes": 90,
+    "budgets": {
+      "maxImplementationFiles": 15,
+      "maxAffectedComponents": 5,
+      "maxPublicInterfaceChanges": 2,
+      "maxRuntimeDependencies": 0
+    },
+    "standardAdoption": {
+      "sourceRepository": "wellmanifest/new-project",
+      "fromRevision": "e2fd653ff801fb228fca818e1d874ee685a4da62",
+      "toRevision": "42dce766825f35b2a97cf16c9bf72e80a4a0c2d3"
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Adopt the immutable standard projection through Goal so canonical linked-worktree admission, lease fencing and the multi-agent WIP default are updated together. Preserve unrelated repository state and do not hand-edit managed hashes or leases.",
+      "components": [
+        {
+          "name": "governance-projection",
+          "paths": [".governance/**", ".githooks/pre-commit", ".github/workflows/new-project-governance.yml", "AGENTS.md"]
+        },
+        {
+          "name": "project-launchers",
+          "paths": ["project.bat", "project.sh", "project/readme.sh", "wellmanifest_governance.py"]
+        },
+        {
+          "name": "package-binding",
+          "paths": ["pyproject.toml"]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": ["Adopt Wellmanifest 0.20.50", "Reject non-canonical Git checkouts at agent entry"],
+      "dataChanges": [
+        {
+          "kind": "component-local-state",
+          "component": "governance-projection",
+          "description": "Refresh the repository-local immutable governance projection."
+        }
+      ],
+      "ui": {"impact": "none", "states": [], "evidence": []},
+      "rollback": "Revert the ticket branch before merge; immutable upstream releases and existing leases remain unchanged."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": ["python3 -m pytest -q", "./project/governance-check.sh", "git diff --check"],
+        "evidence": "Wellman regression tests, governance enforcement and whitespace checks pass."
+      }
+    ]
+  }
+}

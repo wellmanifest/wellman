@@ -116,7 +116,9 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          wellman check --root . --json
+          # CI has no local clone hook; checks bound to a developer clone are
+          # skipped for the ci actor, exactly as for governance_check.py below.
+          wellman check --root . --actor ci --json
           # The adopter's standard-adoption.json mode decides: "enforce" fails on
           # missing packs, "audit" reports them without failing the gate.
           python3 .governance/standard_pack_check.py --root . --format json

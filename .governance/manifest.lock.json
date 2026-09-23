@@ -5,7 +5,7 @@
     ".githooks/pre-commit": "5ff77238cbdc3c09ff6a6d800487a7b01471be7925417eff35fd9eac026996be",
     ".github/copilot-instructions.md": "08330b67c95c3c175573fe1bec06c21a2f49e6c419164d04980d4f81b4efb8a8",
     ".github/workflows/new-project-branch-hygiene.yml": "ee765e68f8a8a2febf468da8301566e0676cffb46fbef0ba96cd756f742a30a2",
-    ".github/workflows/new-project-governance.yml": "8c642e131b84a5d0d4c471fa393bf1fcba1890a1d37e267b311f676dc765d96d",
+    ".github/workflows/new-project-governance.yml": "1b5f79887ca91ca3035c20894ecedb408f1c1482f8a9ba8092e143b16794ad0e",
     ".governance/AGENT_DECISIONS.md": "853c5282e44321cd5cd895f41627fc4c5bb98774cd6e726ee1ccf319582f8407",
     ".governance/adoption-bindings.json": "9a6015fde26226d4c55764c81c1ab8e8d42fcf64661533a71d90fcc488edaeb3",
     ".governance/adoption-bindings.schema.json": "0fbad765ca67924b7b3340dcad09f262b62c979740a291da7dacd8e48d28241c",
@@ -49,7 +49,7 @@
     ".governance/intent.schema.json": "c70b7f210c9f4f549870e2bda0f765e882b85cc75dd481250b36b7be8d3d2ef9",
     ".governance/lock.schema.json": "ad80c98f800a4a3310870336dcdaf0aa689cc4988f71084d25d76bea2df1242f",
     ".governance/managed-copies.json": "7c8f4f340b862df4207f565a02aab3427292a2b976bad9a270984efcc0607316",
-    ".governance/manifest.base.json": "f9cb66923be54ba07a8ccc06243ca18b65f7392018111e27dcda091fe6155f8d",
+    ".governance/manifest.base.json": "0301533189a4696a45c8f7b76363244ee9500e2f1b05d72fc97c4f76a23fd58c",
     ".governance/manifest.schema.json": "6caeb5295678e15427daacc92c60c2a06d2279964ed965e08207b11a2b846f3e",
     ".governance/package-manifest.json": "ff4f2cd5f6f41e90338f936303334866f31b4f409958c8315fc3b88874ce26e6",
     ".governance/precommit_standard_update.py": "c91e2bf9ae9d6ccc77bce0e61450c818a5961edee5bfde3b60426da88e296b0f",
@@ -110,7 +110,7 @@
     "id": "wellmanifest/new-project",
     "publicationStatus": "published",
     "sourceRepository": "wellmanifest/new-project",
-    "sourceRevision": "a939efa78049d9a62414671b4cd026c548a025da",
-    "version": "0.20.49"
+    "sourceRevision": "42dce766825f35b2a97cf16c9bf72e80a4a0c2d3",
+    "version": "0.20.50"
   }
 }

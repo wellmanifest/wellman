@@ -1,7 +1,7 @@
 {
   "schema": "new-project.intent/v3",
   "ticket": "ticket-005",
-  "summary": "Adopt Wellmanifest 0.20.48 multi-agent WIP capacity",
+  "summary": "Adopt Wellmanifest 0.20.49 multi-agent WIP capacity",
   "workstream": "integration",
   "classification": {
     "kind": "SERVICE",
@@ -32,7 +32,7 @@
   "delivery": {
     "acceptedBaseSha": "2f8a0b73ce552c78498629469c839d1860c478d2",
     "targetBranch": "main",
-    "outcome": "Adopt the published immutable Wellmanifest 0.20.48 standard, including canonical worktree admission and multi-agent WIP capacity, then deliver it through the protected ticket branch.",
+    "outcome": "Adopt the published immutable Wellmanifest 0.20.49 standard, including canonical worktree admission and multi-agent WIP capacity, then deliver it through the protected ticket branch.",
     "nonGoals": [
       "Modify another repository without its own ticket and lease",
       "Edit managed manifest hashes or lease state by hand",
@@ -49,7 +49,7 @@
     "standardAdoption": {
       "sourceRepository": "wellmanifest/new-project",
       "fromRevision": "e2fd653ff801fb228fca818e1d874ee685a4da62",
-      "toRevision": "26cbecf4d461250a5b696d573dc300b2acd1b929"
+      "toRevision": "a939efa78049d9a62414671b4cd026c548a025da"
     },
     "architecture": {
       "status": "accepted",
@@ -69,7 +69,7 @@
         }
       ],
       "responsibilityChanges": false,
-      "interfaceChanges": ["Adopt Wellmanifest 0.20.48", "Reject non-canonical Git checkouts at agent entry"],
+      "interfaceChanges": ["Adopt Wellmanifest 0.20.49", "Reject non-canonical Git checkouts at agent entry"],
       "dataChanges": [
         {
           "kind": "component-local-state",

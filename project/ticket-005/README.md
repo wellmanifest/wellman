@@ -1,4 +1,4 @@
-# Ticket 005: Adopt Wellmanifest 0.20.48 multi-agent WIP capacity
+# Ticket 005: Adopt Wellmanifest 0.20.49 multi-agent WIP capacity
 
 - **ID**: ticket-005
 - **Owner**: codex
@@ -9,7 +9,7 @@
 
 ## Goal and scope
 
-Adopt the published immutable `wellmanifest/new-project` 0.20.48 standard
+Adopt the published immutable `wellmanifest/new-project` 0.20.49 standard
 through `goal governance adopt`. This carries the multi-agent WIP default of
 8 per workstream and the canonical worktree admission/lease guardrails into
 this Wellman repository. The adoption must remain a standard projection; no
@@ -20,7 +20,7 @@ managed manifest hashes or lease state may be edited by hand.
 - [x] AC-01: Scope is approved by the requesting human and allocated through
       the canonical ticket/worktree lifecycle.
 - [x] AC-02: The adoption plan is generated from published revision
-      `26cbecf4d461250a5b696d573dc300b2acd1b929` and applies only the files
+      `a939efa78049d9a62414671b4cd026c548a025da` and applies only the files
       selected by the standard's immutable managed-file projection.
 - [ ] AC-03: Governance, package, and project tests pass in the canonical
       worktree and the delivery is merged to `main`.
@@ -28,7 +28,8 @@ managed manifest hashes or lease state may be edited by hand.
 
 - 0.20.46 was superseded before merge: its `wellman` runtime was never
   installable (PyPI publisher misconfigured, incomplete bundled checker).
-  0.20.48 installs the runtime from the immutable `wellman-v0.20.48` Git tag.
+  0.20.49 installs the runtime from the immutable `wellman-v0.20.49` Git tag
+  and applies the pack baseline by the declared audit/enforce mode.
 
 ## Delivery contract
 

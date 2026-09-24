@@ -193,5 +193,10 @@ def register(root, profiles=(), *, standards=(), dry_run=False):
             if temporary is not None and temporary.exists():
                 temporary.unlink()
             lock.unlink()
-    return {'changed': changed, 'dry_run': dry_run, 'path': str(path),
-            'registration': result, 'conformance': 'unverified'}
+    # Local OneDev + Validator publication is the default for every repository;
+    # only an existing adopter restriction is kept, never replaced.
+    from wellman.local_ci import ensure_default_policy
+    local_ci = ensure_default_policy(root, dry_run=dry_run)
+    return {'changed': changed or local_ci['changed'], 'dry_run': dry_run, 'path': str(path),
+            'registration': result, 'conformance': 'unverified',
+            'localCiPublication': local_ci}

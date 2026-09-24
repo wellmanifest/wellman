@@ -107,6 +107,13 @@ wellman adopt baseline
 wellman adopt auto --root /path/to/new-project --bootstrap
 ```
 
+Adoption also writes `.governance/local-ci-publication.json`
+(`new-project.local-ci-publication/v1`) with `scope.mode: "all"` when it is
+absent: local OneDev verification plus the independent Validator is the default
+publication route for every repository. An existing `mode: "restricted"`
+allowlist is kept; it only narrows that default and grants no authority.
+`wellman check` reports an invalid file as `GOV-LOCAL-CI-001`.
+
 Automatic registration writes `.governance/standard-requirements.json`, not an
 adoption certificate. It works for any language, mixed-language repositories,
 documentation-only projects and unknown project types. Every project gets the

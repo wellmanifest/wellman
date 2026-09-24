@@ -10,6 +10,8 @@ from wellman.fleet import (
     discover_repositories,
     emit_standardization_tickets,
     feed_to_planfile,
+    sync_agent_instructions,
+    sync_fleet_agents,
 )
 from wellman.cli import main
 
@@ -136,4 +138,61 @@ def test_fleet_check_cli_emit_planfile(tmp_path, capsys):
     assert data["schema"] == "planfile.tickets/v1"
     assert data["count"] >= 1
     assert data["tickets"][0]["executor_kind"] == "koru"
+
+
+def test_discover_repositories_contextual_auto_recursive(tmp_path):
+    org_a = tmp_path / "org_a"
+    org_b = tmp_path / "org_b"
+    org_a.mkdir()
+    org_b.mkdir()
+    repo_1 = make_repository(org_a, "repo_1", "https://github.com/org_a/repo_1.git")
+    repo_2 = make_repository(org_b, "repo_2", "https://github.com/org_b/repo_2.git")
+
+    # When run on tmp_path (which has no direct .git repos, only org dirs),
+    # contextual auto-discovery should find both nested repositories automatically.
+    discovered = discover_repositories(tmp_path)
+    assert repo_1 in discovered
+    assert repo_2 in discovered
+    assert len(discovered) == 2
+
+    # With explicit recursive=False, it strictly returns direct children (0).
+    assert discover_repositories(tmp_path, recursive=False) == []
+
+
+def test_sync_agent_instructions(tmp_path):
+    repo = make_repository(tmp_path, "ai_repo", "https://github.com/acme/ai_repo.git")
+    updated = sync_agent_instructions(repo)
+
+    assert "AGENTS.md" in updated
+    assert "GEMINI.md" in updated
+    assert "CLAUDE.md" in updated
+    assert ".cursor/rules/new-project-standard.mdc" in updated
+    assert ".github/copilot-instructions.md" in updated
+    assert ".aider.conf.yml" in updated
+
+    assert (repo / "AGENTS.md").is_file()
+    assert (repo / "GEMINI.md").is_file()
+    assert (repo / "CLAUDE.md").is_file()
+    assert (repo / ".cursor/rules/new-project-standard.mdc").is_file()
+    assert (repo / ".github/copilot-instructions.md").is_file()
+    assert (repo / ".aider.conf.yml").is_file()
+
+    gemini_content = (repo / "GEMINI.md").read_text(encoding="utf-8")
+    assert "new-project" in gemini_content
+    assert "new-ticket.sh" in gemini_content
+
+
+def test_fleet_sync_agents_cli(tmp_path, capsys):
+    org = tmp_path / "org"
+    org.mkdir()
+    repo = make_repository(org, "repo", "https://github.com/acme/repo.git")
+
+    ret = main(["fleet", "sync-agents", "--root", str(tmp_path), "--json"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["schema"] == "wellman.fleet-agent-sync/v1"
+    assert payload["synchronized_count"] >= 1
+    assert (repo / "GEMINI.md").is_file()
+
 

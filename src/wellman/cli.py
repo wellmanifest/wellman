@@ -33,6 +33,7 @@ from wellman.fleet import (
     discover_repositories,
     emit_standardization_tickets,
     feed_to_planfile,
+    sync_fleet_agents,
 )
 from wellman.repository import RepositoryIdentityError
 
@@ -535,6 +536,12 @@ def cmd_fleet_discover(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fleet_sync_agents(args: argparse.Namespace) -> int:
+    payload = sync_fleet_agents(Path(args.root), args.recursive)
+    _print_fleet_payload(payload, args.json)
+    return 0
+
+
 def cmd_fleet_plan(args: argparse.Namespace) -> int:
     try:
         payload = build_plan(
@@ -659,9 +666,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_fleet_discover = fleet_commands.add_parser("discover", help="List repositories below a directory")
     p_fleet_discover.add_argument("--root", "-r", default=".")
-    p_fleet_discover.add_argument("--recursive", action="store_true")
+    p_fleet_discover.add_argument("--recursive", dest="recursive", action="store_true", default=None, help="Force recursive repository search")
+    p_fleet_discover.add_argument("--no-recursive", dest="recursive", action="store_false", help="Disable recursive search")
     p_fleet_discover.add_argument("--json", action="store_true")
     p_fleet_discover.set_defaults(func=cmd_fleet_discover)
+
+    p_fleet_sync = fleet_commands.add_parser("sync-agents", help="Project and sync agent instructions across repositories")
+    p_fleet_sync.add_argument("--root", "-r", default=".")
+    p_fleet_sync.add_argument("--recursive", dest="recursive", action="store_true", default=None, help="Force recursive repository search")
+    p_fleet_sync.add_argument("--no-recursive", dest="recursive", action="store_false", help="Disable recursive search")
+    p_fleet_sync.add_argument("--json", action="store_true")
+    p_fleet_sync.set_defaults(func=cmd_fleet_sync_agents)
 
     for command, handler, help_text in (
         ("plan", cmd_fleet_plan, "Create a read-only fleet adoption plan"),
@@ -670,7 +685,8 @@ def build_parser() -> argparse.ArgumentParser:
         fleet_parser = fleet_commands.add_parser(command, help=help_text)
         fleet_parser.add_argument("target", help="Standard ID or profile name, e.g. baseline")
         fleet_parser.add_argument("--root", "-r", default=".")
-        fleet_parser.add_argument("--recursive", action="store_true")
+        fleet_parser.add_argument("--recursive", dest="recursive", action="store_true", default=None, help="Force recursive repository search")
+        fleet_parser.add_argument("--no-recursive", dest="recursive", action="store_false", help="Disable recursive search")
         fleet_parser.add_argument("--allow-dirty", action="store_true", help="Allow writes to dirty repositories")
         fleet_parser.add_argument("--update-manifests", action="store_true", help="Update only wellman-owned manifest version fields")
         fleet_parser.add_argument("--json", action="store_true")
@@ -680,7 +696,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_fleet_check = fleet_commands.add_parser("check", help="Run wellman checks across repositories")
     p_fleet_check.add_argument("--root", "-r", default=".")
-    p_fleet_check.add_argument("--recursive", action="store_true")
+    p_fleet_check.add_argument("--recursive", dest="recursive", action="store_true", default=None, help="Force recursive repository search")
+    p_fleet_check.add_argument("--no-recursive", dest="recursive", action="store_false", help="Disable recursive search")
     p_fleet_check.add_argument("--json", action="store_true")
     p_fleet_check.add_argument("--emit-planfile", help="Export compliance findings as Planfile tickets JSON")
     p_fleet_check.add_argument("--koru-handoff", action="store_true", help="Add koru refactor executor and remediation intent metadata")

@@ -42,39 +42,55 @@ def is_repository(path: Path) -> bool:
     return path.is_dir() and (path / ".git").exists()
 
 
-def discover_repositories(root: Path, recursive: bool = False) -> List[Path]:
-    """Discover direct child repositories, optionally walking descendants."""
+def discover_repositories(root: Path, recursive: Optional[bool] = None) -> List[Path]:
+    """Discover repositories contextually based on directory structure.
 
+    - If *root* is a repository, returns [root].
+    - If *recursive* is True, always walks all descendants.
+    - If *recursive* is False, strictly checks only direct children.
+    - If *recursive* is None (auto mode / default):
+      * If direct child repositories exist, returns them.
+      * If no direct repositories exist, but subdirectories contain repositories
+        (e.g., umbrella or organization folders like ~/github/org/repo),
+        automatically discovers them recursively.
+    """
     root = root.resolve()
     if is_repository(root):
         return [root]
     if not root.is_dir():
         return []
 
-    if not recursive:
-        return sorted(
-            (
-                child
-                for child in root.iterdir()
-                if not child.name.startswith(".") and is_repository(child)
-            ),
-            key=lambda item: item.as_posix(),
-        )
+    direct = sorted(
+        (
+            child
+            for child in root.iterdir()
+            if not child.name.startswith(".") and is_repository(child)
+        ),
+        key=lambda item: item.as_posix(),
+    )
 
-    found: List[Path] = []
-    for current, directories, _files in os.walk(root):
-        current_path = Path(current)
-        if current_path != root and is_repository(current_path):
-            found.append(current_path)
-            directories[:] = []
-            continue
-        directories[:] = [
-            name
-            for name in directories
-            if name not in {".git", ".subactor", "node_modules"}
-            and not name.startswith(".")
-        ]
-    return sorted(found, key=lambda item: item.as_posix())
+    if recursive is False:
+        return direct
+
+    if recursive is True or not direct:
+        found: List[Path] = []
+        for current, directories, _files in os.walk(root):
+            current_path = Path(current)
+            if current_path != root and is_repository(current_path):
+                found.append(current_path)
+                directories[:] = []
+                continue
+            directories[:] = [
+                name
+                for name in directories
+                if name not in {".git", ".subactor", "node_modules", ".worktrees", "worktrees"}
+                and not name.startswith(".")
+            ]
+        nested = sorted(found, key=lambda item: item.as_posix())
+        if recursive is True or not direct:
+            return nested
+
+    return direct
 
 
 def _is_dirty(path: Path) -> bool:
@@ -194,6 +210,9 @@ def _plan_record(record: RepositoryRecord, target: str, allow_dirty: bool, updat
             actions.append("write .governance/docs.json")
             if (record.path / ".governance" / "manifest.lock.json").is_file():
                 actions.append("refresh docs.json digest in manifest.lock.json")
+    missing_agents = [f for f in ["AGENTS.md", "GEMINI.md", "CLAUDE.md"] if not (record.path / f).exists()]
+    if missing_agents:
+        actions.append(f"project agent host instruction contracts ({', '.join(missing_agents)})")
     return {
         "path": str(record.path),
         "repository": record.repository,
@@ -204,7 +223,7 @@ def _plan_record(record: RepositoryRecord, target: str, allow_dirty: bool, updat
     }
 
 
-def build_plan(root: Path, target: str, recursive: bool = False, allow_dirty: bool = False, update_manifests: bool = False) -> Dict[str, Any]:
+def build_plan(root: Path, target: str, recursive: Optional[bool] = None, allow_dirty: bool = False, update_manifests: bool = False) -> Dict[str, Any]:
     if not target_is_valid(target):
         raise ValueError(f"unknown standard or profile: {target}")
     records = [inspect_repository(path) for path in discover_repositories(root, recursive)]
@@ -219,7 +238,7 @@ def build_plan(root: Path, target: str, recursive: bool = False, allow_dirty: bo
     }
 
 
-def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False) -> Dict[str, Any]:
+def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False, sync_agents: bool = True) -> Dict[str, Any]:
     """Apply only the actions present in a previously built plan."""
 
     results: List[Dict[str, Any]] = []
@@ -261,12 +280,97 @@ def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False
                 if isinstance(managed, dict):
                     managed[".governance/docs.json"] = hashlib.sha256(docs_content.encode("utf-8")).hexdigest()
                     _atomic_write(lock_path, _json_bytes(lock))
+
+        if sync_agents:
+            agent_updates = sync_agent_instructions(path, item["repository"])
+            if agent_updates:
+                result["agent_instructions"] = agent_updates
+
         result["status"] = "updated"
         results.append(result)
     return {"schema": REPORT_SCHEMA, "target": target, "repositories": results}
 
 
-def check_fleet(root: Path, recursive: bool = False) -> Dict[str, Any]:
+def _render_agent_instructions(repo_path: Path, host_id: str) -> str:
+    """Render the standard agent contract instructions for a specific host ID."""
+    header = (
+        "<!-- wellmanifest:source-links:v1 -->\n"
+        "## Managed standard sources\n\n"
+        "- Local adoption manifest: [.governance/manifest.json](.governance/manifest.json)\n"
+        "- Host contract: [.governance/agent-hosts.json](.governance/agent-hosts.json)\n\n"
+        "<!-- end wellmanifest:source-links:v1 -->\n\n"
+    )
+    contract_body = (
+        "This repository follows the `wellmanifest/new-project` policy-as-code standard.\n"
+        "Fail-closed. Do not write code until this contract is followed.\n\n"
+        "1. Read `AGENTS.md` and `.governance/manifest.json`.\n"
+        "2. Allocate tickets only through `./project/new-ticket.sh`. Never commit on `main` or a dirty primary checkout.\n"
+        "3. Work in a canonical worktree v5 (`.worktrees/ticket-NNN--slug`).\n"
+        "4. Stay inside that ticket's `intent.json` `allowedPaths`.\n"
+        "5. Run `./project/governance-check.sh` before claiming done.\n"
+    )
+
+    if host_id == "generic":
+        return f"# AGENTS.md\n\n{header}{contract_body}"
+    elif host_id == "gemini":
+        return f"# GEMINI.md\n\n{header}This file is the Gemini / Antigravity entry; the same rules are in `AGENTS.md`.\n\n{contract_body}"
+    elif host_id == "claude":
+        return f"# CLAUDE.md\n\n{header}This file is the Claude Code entry; the same rules are in `AGENTS.md`.\n\n{contract_body}"
+    elif host_id == "cursor":
+        return (
+            "---\n"
+            "description: Wellmanifest new-project standard governance rules\n"
+            "globs: *\n"
+            "alwaysApply: true\n"
+            "---\n\n"
+            f"# Cursor Standard Governance\n\n{contract_body}"
+        )
+    elif host_id == "copilot":
+        return f"# GitHub Copilot Instructions\n\n{header}{contract_body}"
+    return contract_body
+
+
+def sync_agent_instructions(repo_path: Path, repository_name: Optional[str] = None) -> List[str]:
+    """Synchronize standard instruction and learning files for all registered LLM agent hosts."""
+    updated: List[str] = []
+    agent_hosts_files = {
+        "AGENTS.md": _render_agent_instructions(repo_path, "generic"),
+        "GEMINI.md": _render_agent_instructions(repo_path, "gemini"),
+        "CLAUDE.md": _render_agent_instructions(repo_path, "claude"),
+        ".cursor/rules/new-project-standard.mdc": _render_agent_instructions(repo_path, "cursor"),
+        ".github/copilot-instructions.md": _render_agent_instructions(repo_path, "copilot"),
+        ".aider.conf.yml": "read:\n  - AGENTS.md\n  - .governance/manifest.json\n",
+    }
+    for relative_path, content in agent_hosts_files.items():
+        target = repo_path / relative_path
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(target, content.encode("utf-8"))
+            updated.append(relative_path)
+    return updated
+
+
+def sync_fleet_agents(root: Path, recursive: Optional[bool] = None) -> Dict[str, Any]:
+    """Synchronize agent instructions across all discovered repositories in a fleet."""
+    repositories: List[Dict[str, Any]] = []
+    for path in discover_repositories(root, recursive):
+        record = inspect_repository(path)
+        updated = sync_agent_instructions(path, record.repository)
+        repositories.append({
+            "path": str(path),
+            "repository": record.repository,
+            "updated_files": updated,
+            "status": "synchronized" if updated else "up-to-date",
+        })
+    return {
+        "schema": "wellman.fleet-agent-sync/v1",
+        "root": str(root.resolve()),
+        "repositories": repositories,
+        "synchronized_count": sum(1 for item in repositories if item["updated_files"]),
+    }
+
+
+def check_fleet(root: Path, recursive: Optional[bool] = None) -> Dict[str, Any]:
     repositories: List[Dict[str, Any]] = []
     for path in discover_repositories(root, recursive):
         record = inspect_repository(path)

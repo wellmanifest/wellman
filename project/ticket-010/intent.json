@@ -1,0 +1,83 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-010",
+  "summary": "Validate pinned Docs 0.5 adoption without forcing a downgrade",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-010/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/docs_adoption.py",
+    "tests/test_validator.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "6d485255441021de4d989b1c3cb8334cbcd893db",
+    "targetBranch": "main",
+    "outcome": "Recognize the published Docs 0.5 adoption used by C2004 and retain exact revision/digest/repository validation; publish through the independent Validator.",
+    "nonGoals": [
+      "Changing C2004 history gate or writing in its occupied checkout",
+      "Granting execution or merge authority",
+      "Full documentation-content conformance"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Allow only explicit published revision/hash pairs with unchanged exact repository-bound adoption record checks. Use Docs 0.5 for new adoption records; retain the previous pinned revision for compatibility.",
+      "components": [
+        {
+          "name": "docs-adoption",
+          "paths": [
+            "src/wellman/docs_adoption.py",
+            "tests/test_validator.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert this change; adoption files remain untouched."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest tests/test_validator.py -q"
+        ],
+        "evidence": "Published current/legacy pairs accepted; wrong repository, hashes, unknown pins and malformed records rejected."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full tests and governance pass; C2004 Docs adoption accepted without rewriting its policy."
+      }
+    ]
+  }
+}

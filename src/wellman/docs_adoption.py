@@ -12,8 +12,14 @@ from wellman.repository import RepositoryIdentityError, canonical_repository
 # These values are copied from the published wellmanifest/docs policy and are
 # deliberately immutable in a wellman release.  Updating the policy requires
 # a new wellman release and a new adoption revision.
-DOCS_STANDARD_REVISION = "19efafbeb18923cfd51cc69bd519330488500137"
-DOCS_POLICY_SHA256 = "fac05e720ec49370ba393e817a4a03b895d7ed33828e09b3420f9fcfb09264b0"
+DOCS_STANDARD_REVISION = "aa92136b4e94f48355c39fb206286aba024c6aa4"
+DOCS_POLICY_SHA256 = "af5fde2d52e1c292e569cd47a4068f0e42181a8f8fb9fc21737a569bee9a206f"
+SUPPORTED_DOCS_POLICIES = {
+    DOCS_STANDARD_REVISION: DOCS_POLICY_SHA256,
+    # Existing adopters keep their published policy until an explicit upgrade.
+    "19efafbeb18923cfd51cc69bd519330488500137":
+        "fac05e720ec49370ba393e817a4a03b895d7ed33828e09b3420f9fcfb09264b0",
+}
 DOCS_ADOPTION_SCHEMA = "wellmanifest.docs/adoption/v1"
 DOCS_STANDARD_ID = "wellmanifest/docs"
 
@@ -77,12 +83,16 @@ def validate_adoption(
             }
         ]
 
-    if actual != expected:
+    supported_records = (
+        dict(expected, source_revision=revision, policy_sha256=digest)
+        for revision, digest in SUPPORTED_DOCS_POLICIES.items()
+    )
+    if actual not in supported_records:
         return [
             {
                 "code": "GOV-DOCS-DRIFT",
-                "message": "Documentation adoption is not bound to this repository and pinned docs policy.",
-                "remediation": "Regenerate .governance/docs.json; never copy it from another repository.",
+                "message": "Documentation adoption does not match this repository and a supported published docs policy.",
+                "remediation": "Use a supported revision with its matching policy digest and canonical repository; never copy another repository's adoption record.",
             }
         ]
     return []

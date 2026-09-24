@@ -1,0 +1,29 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-009",
+  "summary": "align-planfile-ticket-export-and-koru-execution-contract",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-009/**",
+    "project/ticket-006/README.md",
+    "project/ticket-007/README.md",
+    "project/ticket-008/README.md",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/cli.py",
+    "src/wellman/fleet.py",
+    "tests/test_fleet.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

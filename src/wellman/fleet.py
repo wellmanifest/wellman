@@ -474,15 +474,16 @@ def emit_standardization_tickets(
         ])
 
         ticket: Dict[str, Any] = {
+            "name": title,
             "title": title,
             "description": "\n".join(desc_lines),
             "priority": priority,
             "tier": tier,
-            "labels": ["wellmanifest", "standardization", "waiting-input"],
+            "labels": ["wellmanifest", "standardization"],
             "target_repo": repo_name,
             "target_path": repo_path,
             "findings_count": len(findings),
-            "source": "wellman.fleet-check",
+            "source": {"tool": "wellman"},
             "schema": "planfile.tickets/v1",
         }
 
@@ -495,8 +496,17 @@ def emit_standardization_tickets(
 
         if koru_ready:
             ticket["labels"].extend(["koru-refactor", "governance-handoff"])
+            ticket["executor"] = {"kind": "shell", "mode": "autonomous"}
             ticket["executor_kind"] = "koru"
             ticket["executor_mode"] = "autonomous"
+            ticket["inputs"] = {
+                "script": f"wellman adopt --root '{repo_path}' wellmanifest/new-project && wellman check --root '{repo_path}'",
+                "expect_files_changed": True,
+            }
+            ticket["execution"] = {
+                "queue": "governance-handoff",
+                "state": "ready",
+            }
             ticket["source_tool"] = "wellman-fleet-watcher"
             ticket["remediation_intent"] = {
                 "schema": "new-project.remediation-intent/v1",
@@ -516,27 +526,138 @@ def emit_standardization_tickets(
     }
 
 
-def feed_to_planfile(tickets_doc: Dict[str, Any], planfile_project: Optional[Path] = None) -> Dict[str, Any]:
-    """Feed generated standardization tickets into Planfile if available."""
+def feed_to_planfile(
+    tickets_doc: Dict[str, Any],
+    planfile_project: Optional[Path] = None,
+    per_repo: bool = True,
+) -> Dict[str, Any]:
+    """Feed generated standardization tickets into Planfile if available.
+
+    Pipes the ticket list directly as JSON to satisfy Planfile schema validation.
+    If per_repo is True and repositories have local .planfile directories,
+    tickets are distributed to their respective repositories. Otherwise, tickets
+    are imported into planfile_project or current working directory.
+    """
     import shutil
     if not shutil.which("planfile"):
         return {"ok": False, "error": "planfile executable not found on PATH"}
-    cmd = ["planfile", "ticket", "import", "--source", "wellman"]
-    cwd = str(planfile_project) if planfile_project else None
+
+    tickets = tickets_doc.get("tickets", [])
+    if not tickets:
+        return {"ok": True, "count": 0, "output": "no tickets to import", "target_projects": []}
+
+    target_projects: List[str] = []
+
+    # If an explicit central project was given and not per_repo mode:
+    if planfile_project is not None and not per_repo:
+        cmd = ["planfile", "ticket", "import", "--source", "wellman"]
+        try:
+            input_data = json.dumps(tickets)
+            proc = subprocess.run(
+                cmd,
+                input=input_data,
+                cwd=str(planfile_project),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                return {"ok": False, "error": proc.stderr.strip() or f"exit code {proc.returncode}"}
+            return {
+                "ok": True,
+                "count": len(tickets),
+                "output": proc.stdout.strip(),
+                "target_projects": [str(planfile_project)],
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    # Group tickets by target repo if possible
+    repo_tickets: Dict[Path, List[Dict[str, Any]]] = {}
+    default_dir = planfile_project if planfile_project else Path.cwd()
+
+    for t in tickets:
+        target_path_str = t.get("target_path")
+        target_dir = Path(target_path_str) if target_path_str else default_dir
+        if (target_dir / ".planfile").is_dir() or (target_dir / "planfile.yaml").is_file():
+            repo_tickets.setdefault(target_dir, []).append(t)
+        else:
+            repo_tickets.setdefault(default_dir, []).append(t)
+
+    imported_count = 0
+    errors: List[str] = []
+
+    for target_dir, tkts in repo_tickets.items():
+        cmd = ["planfile", "ticket", "import", "--source", "wellman"]
+        try:
+            input_data = json.dumps(tkts)
+            proc = subprocess.run(
+                cmd,
+                input=input_data,
+                cwd=str(target_dir),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                errors.append(f"{target_dir.name}: {proc.stderr.strip()}")
+            else:
+                imported_count += len(tkts)
+                target_projects.append(str(target_dir))
+        except Exception as exc:
+            errors.append(f"{target_dir.name}: {exc}")
+
+    if errors and imported_count == 0:
+        return {"ok": False, "error": "; ".join(errors), "target_projects": target_projects}
+    return {
+        "ok": True,
+        "count": imported_count,
+        "target_projects": target_projects,
+        "errors": errors if errors else None,
+    }
+
+
+def trigger_koru_execution(
+    project_path: Path,
+    queue_name: str = "governance-handoff",
+    dry_run: bool = False,
+    max_iterations: int = 10,
+) -> Dict[str, Any]:
+    """Trigger autonomous koru queue drain on the target project."""
+    import shutil
+    if not shutil.which("koru"):
+        return {"ok": False, "error": "koru executable not found on PATH"}
+
+    cmd = [
+        "koru",
+        "--queue",
+        "--loop",
+        "--queue-name",
+        queue_name,
+        "--project",
+        str(project_path),
+        "--max-iterations",
+        str(max_iterations),
+    ]
+    if dry_run:
+        cmd.append("--dry-run")
+
     try:
-        input_data = json.dumps(tickets_doc)
         proc = subprocess.run(
             cmd,
-            input=input_data,
-            cwd=cwd,
             capture_output=True,
             text=True,
             check=False,
-            timeout=30,
+            timeout=120,
         )
-        if proc.returncode != 0:
-            return {"ok": False, "error": proc.stderr.strip() or f"exit code {proc.returncode}"}
-        return {"ok": True, "count": tickets_doc.get("count", 0), "output": proc.stdout.strip()}
+        return {
+            "ok": proc.returncode == 0,
+            "exit_code": proc.returncode,
+            "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr.strip(),
+        }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 

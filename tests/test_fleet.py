@@ -116,12 +116,18 @@ def test_emit_standardization_tickets_with_findings():
     assert result["count"] == 1
     ticket = result["tickets"][0]
     assert "[STANDARDIZATION]" in ticket["title"]
+    assert ticket["name"] == ticket["title"]
     assert "repo-a" in ticket["title"]
     assert ticket["priority"] == "critical"
     assert ticket["tier"] == "floor"
     assert "wellmanifest" in ticket["labels"]
     assert "koru-refactor" in ticket["labels"]
     assert "governance-handoff" in ticket["labels"]
+    assert ticket["source"] == {"tool": "wellman"}
+    assert ticket["executor"]["kind"] == "shell"
+    assert "script" in ticket["inputs"]
+    assert ticket["execution"]["queue"] == "governance-handoff"
+    assert ticket["execution"]["state"] == "ready"
     assert ticket["executor_kind"] == "koru"
     assert ticket["remediation_intent"]["schema"] == "new-project.remediation-intent/v1"
     assert len(ticket["remediation_intent"]["findings"]) == 2
@@ -194,5 +200,93 @@ def test_fleet_sync_agents_cli(tmp_path, capsys):
     assert payload["schema"] == "wellman.fleet-agent-sync/v1"
     assert payload["synchronized_count"] >= 1
     assert (repo / "GEMINI.md").is_file()
+
+
+def test_fleet_discover_cli_text_output(tmp_path, capsys):
+    org = tmp_path / "org"
+    org.mkdir()
+    repo = make_repository(org, "repo", "https://github.com/acme/repo.git")
+
+    ret = main(["fleet", "discover", "--root", str(tmp_path)])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert str(repo) in captured.out
+
+
+def test_feed_to_planfile_pipes_array(monkeypatch, tmp_path):
+    from wellman.fleet import feed_to_planfile
+    captured_stdin = []
+
+    def fake_run(cmd, input=None, cwd=None, **kwargs):
+        captured_stdin.append(input)
+        class Dummy:
+            returncode = 0
+            stdout = "✓ Created 1 tickets"
+            stderr = ""
+        return Dummy()
+
+    monkeypatch.setattr("shutil.which", lambda prog: "/bin/planfile")
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    tickets_doc = {
+        "schema": "planfile.tickets/v1",
+        "tickets": [
+            {
+                "name": "test ticket",
+                "target_path": str(tmp_path),
+                "executor": {"kind": "shell"},
+            }
+        ],
+    }
+
+    res = feed_to_planfile(tickets_doc, planfile_project=tmp_path, per_repo=False)
+    assert res["ok"] is True
+    assert len(captured_stdin) == 1
+    loaded = json.loads(captured_stdin[0])
+    assert isinstance(loaded, list)
+    assert loaded[0]["name"] == "test ticket"
+
+
+def test_trigger_koru_execution(monkeypatch, tmp_path):
+    from wellman.fleet import trigger_koru_execution
+    ran_cmds = []
+
+    def fake_run(cmd, **kwargs):
+        ran_cmds.append(cmd)
+        class Dummy:
+            returncode = 0
+            stdout = "koru completed"
+            stderr = ""
+        return Dummy()
+
+    monkeypatch.setattr("shutil.which", lambda prog: "/bin/koru")
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    res = trigger_koru_execution(tmp_path, queue_name="governance-handoff", dry_run=True)
+    assert res["ok"] is True
+    assert len(ran_cmds) == 1
+    assert "koru" in ran_cmds[0]
+    assert "--queue-name" in ran_cmds[0]
+    assert "governance-handoff" in ran_cmds[0]
+    assert "--dry-run" in ran_cmds[0]
+
+
+def test_fleet_check_cli_auto_remediate(monkeypatch, tmp_path, capsys):
+    make_repository(tmp_path, "subrepo", "https://github.com/acme/subrepo.git")
+
+    monkeypatch.setattr("shutil.which", lambda prog: f"/bin/{prog}")
+
+    def fake_run(cmd, input=None, cwd=None, **kwargs):
+        class Dummy:
+            returncode = 0
+            stdout = "ok"
+            stderr = ""
+        return Dummy()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    ret = main(["fleet", "check", "--root", str(tmp_path), "--auto-remediate"])
+    captured = capsys.readouterr()
+    assert "Fed" in captured.out or "Triggering autonomous Koru remediation" in captured.out
 
 

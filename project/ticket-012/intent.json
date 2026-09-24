@@ -1,0 +1,85 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-012",
+  "summary": "Write the local OneDev and Validator publication default on fleet adopt",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-012/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/fleet.py",
+    "tests/test_fleet.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "95a1f52cdd49da04835dba2defd34c071e4d67ca",
+    "targetBranch": "main",
+    "outcome": "wellman fleet adopt --apply writes the unrestricted local OneDev + Validator publication default into every updated repository that has none and keeps existing restrictions.",
+    "nonGoals": [
+      "Change single-repository adopt (ticket-011)",
+      "Grant or change publication authority",
+      "Release a new wellman version"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "apply_plan calls wellman.local_ci.ensure_default_policy per ready repository and reports local_ci_publication=created.",
+      "components": [
+        {
+          "name": "fleet",
+          "paths": [
+            "src/wellman/fleet.py",
+            "tests/test_fleet.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "fleet adopt report gains local_ci_publication"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the commit; written files are the documented default."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q tests/test_fleet.py"
+        ],
+        "evidence": "Default created in an unrestricted repository; restriction kept."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full suite and governance pass."
+      }
+    ]
+  }
+}

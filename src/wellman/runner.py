@@ -168,7 +168,27 @@ class ConformanceRunner:
         findings.extend(self.check_ticket_lifecycle())
         # 5. Agent host checks
         findings.extend(self.check_agent_hosts())
+        # 6. Local OneDev + Validator publication scope
+        findings.extend(self.check_local_ci_publication())
         return findings
+
+    def check_local_ci_publication(self) -> List[Finding]:
+        """Report the publication route scope; the unrestricted default needs no file."""
+        from wellman.local_ci import POLICY_PATH, read_policy
+
+        _policy, problem = read_policy(self.root)
+        if problem is None:
+            return []
+        return [Finding(
+            code="GOV-LOCAL-CI-001",
+            message=f"Invalid {POLICY_PATH}: {problem}. The unrestricted local OneDev + Validator default applies.",
+            severity="WARNING",
+            path=str(POLICY_PATH),
+            remediation=(
+                'Fix it to {"schema": "new-project.local-ci-publication/v1", "scope": {"mode": "all"}} '
+                "or a restricted OWNER/REPO allowlist, or delete it."
+            ),
+        )]
 
     def run_standard(self, standard_id: str) -> List[Finding]:
         """Run the concrete conformance check implemented for one standard.

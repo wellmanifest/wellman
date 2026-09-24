@@ -1,0 +1,92 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-008",
+  "summary": "Check the local OneDev and Validator publication scope",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-008/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/local_ci.py",
+    "src/wellman/runner.py",
+    "tests/test_local_ci.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "43f15e9012fdfa5c12bbb4f9771d0502a3762ab5",
+    "targetBranch": "main",
+    "outcome": "wellman reads, validates and reports the new-project.local-ci-publication/v1 scope (absent = every repository) and offers an additive writer of the unrestricted default for adoption.",
+    "nonGoals": [
+      "Wire the writer into wellman adopt (dependent integration ticket)",
+      "Grant or change publication authority",
+      "Release a new wellman version"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 4,
+      "maxAffectedComponents": 2,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "A dependency-free local_ci module mirrors the new-project schema; ConformanceRunner.run_all reports an invalid scope file as a WARNING while the unrestricted default applies.",
+      "components": [
+        {
+          "name": "local-ci-policy",
+          "paths": [
+            "src/wellman/local_ci.py",
+            "tests/test_local_ci.py"
+          ]
+        },
+        {
+          "name": "conformance-runner",
+          "paths": [
+            "src/wellman/runner.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "wellman check reports GOV-LOCAL-CI-001 for an invalid .governance/local-ci-publication.json"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the commit; the policy file is optional and absence keeps the default."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q tests/test_local_ci.py"
+        ],
+        "evidence": "Absent policy applies everywhere; restriction narrows; invalid documents rejected."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full suite and governance pass."
+      }
+    ]
+  }
+}

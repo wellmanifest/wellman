@@ -4,7 +4,14 @@ import json
 import subprocess
 
 from wellman import __version__
-from wellman.fleet import apply_plan, build_plan, discover_repositories
+from wellman.fleet import (
+    apply_plan,
+    build_plan,
+    discover_repositories,
+    emit_standardization_tickets,
+    feed_to_planfile,
+)
+from wellman.cli import main
 
 
 def make_repository(parent, name, remote="git@github.com:acme/example.git"):
@@ -65,3 +72,68 @@ def test_fleet_manifest_update_preserves_custom_fields(tmp_path):
 
     assert updated["standard"]["version"] == __version__
     assert updated["custom"] == {"keep": True}
+
+
+def test_emit_standardization_tickets_empty():
+    report = {
+        "schema": "wellman.fleet-report/v1",
+        "repositories": [{"path": "/path/repo", "repository": "org/repo", "findings": []}],
+    }
+    result = emit_standardization_tickets(report)
+    assert result["schema"] == "planfile.tickets/v1"
+    assert result["count"] == 0
+    assert result["tickets"] == []
+
+
+def test_emit_standardization_tickets_with_findings():
+    report = {
+        "schema": "wellman.fleet-report/v1",
+        "repositories": [
+            {
+                "path": "/path/to/repo-a",
+                "repository": "org/repo-a",
+                "findings": [
+                    {
+                        "code": "GOV-MANIFEST-MISSING",
+                        "severity": "ERROR",
+                        "message": "Missing .governance/manifest.json",
+                        "remediation": "Run wellman adopt baseline",
+                    },
+                    {
+                        "code": "GOV-WORKTREE-OVERLAP",
+                        "severity": "WARNING",
+                        "message": "Active worktree overlap detected",
+                        "remediation": "Prune stale worktrees",
+                    },
+                ],
+            }
+        ],
+    }
+    result = emit_standardization_tickets(report, koru_ready=True)
+    assert result["schema"] == "planfile.tickets/v1"
+    assert result["count"] == 1
+    ticket = result["tickets"][0]
+    assert "[STANDARDIZATION]" in ticket["title"]
+    assert "repo-a" in ticket["title"]
+    assert ticket["priority"] == "critical"
+    assert ticket["tier"] == "floor"
+    assert "wellmanifest" in ticket["labels"]
+    assert "koru-refactor" in ticket["labels"]
+    assert "governance-handoff" in ticket["labels"]
+    assert ticket["executor_kind"] == "koru"
+    assert ticket["remediation_intent"]["schema"] == "new-project.remediation-intent/v1"
+    assert len(ticket["remediation_intent"]["findings"]) == 2
+
+
+def test_fleet_check_cli_emit_planfile(tmp_path, capsys):
+    make_repository(tmp_path, "subrepo", "https://github.com/acme/subrepo.git")
+    out_file = tmp_path / "planfile-tickets.json"
+
+    # subrepo is missing governance files, so findings will be detected
+    ret = main(["fleet", "check", "--root", str(tmp_path), "--emit-planfile", str(out_file), "--koru-handoff"])
+    assert out_file.exists()
+    data = json.loads(out_file.read_text(encoding="utf-8"))
+    assert data["schema"] == "planfile.tickets/v1"
+    assert data["count"] >= 1
+    assert data["tickets"][0]["executor_kind"] == "koru"
+

@@ -3,8 +3,8 @@
 - **ID**: ticket-005
 - **Owner**: codex
 - **Workstream**: integration (the package binding is an integration-owned dependency declaration)
-- **Status**: IN_PROGRESS
-- **Workflow state**: EDIT
+- **Status**: DONE
+- **Workflow state**: DONE
 - **Created**: 2026-09-22
 
 ## Goal and scope

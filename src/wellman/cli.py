@@ -26,7 +26,14 @@ from wellman.registry import (
 from wellman.runner import ConformanceRunner
 from wellman.validator import Finding, StandardsValidator, load_bundled_schema, validate_json_structure
 from wellman.docs_adoption import render_adoption
-from wellman.fleet import apply_plan, build_plan, check_fleet, discover_repositories
+from wellman.fleet import (
+    apply_plan,
+    build_plan,
+    check_fleet,
+    discover_repositories,
+    emit_standardization_tickets,
+    feed_to_planfile,
+)
 from wellman.repository import RepositoryIdentityError
 
 
@@ -562,6 +569,34 @@ def cmd_fleet_adopt(args: argparse.Namespace) -> int:
 def cmd_fleet_check(args: argparse.Namespace) -> int:
     payload = check_fleet(Path(args.root), args.recursive)
     _print_fleet_payload(payload, args.json)
+
+    emit_planfile = getattr(args, "emit_planfile", None)
+    feed_planfile_arg = getattr(args, "feed_planfile", None)
+    koru_handoff = getattr(args, "koru_handoff", False)
+    monag_triage = getattr(args, "monag_triage", False)
+
+    if emit_planfile or feed_planfile_arg is not None or koru_handoff:
+        tickets_doc = emit_standardization_tickets(
+            payload,
+            koru_ready=koru_handoff,
+            monag_triage=monag_triage,
+        )
+        if emit_planfile:
+            target_path = Path(emit_planfile)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_text(json.dumps(tickets_doc, indent=2) + "\n", encoding="utf-8")
+            if not args.json:
+                print(f"Emitted {tickets_doc.get('count', 0)} standardization tickets to {target_path}")
+
+        if feed_planfile_arg is not None:
+            project_dir = Path(feed_planfile_arg) if feed_planfile_arg else None
+            feed_result = feed_to_planfile(tickets_doc, project_dir)
+            if not args.json:
+                if feed_result.get("ok"):
+                    print(f"Fed {feed_result.get('count', 0)} tickets to Planfile")
+                else:
+                    print(f"Failed to feed Planfile: {feed_result.get('error')}", file=sys.stderr)
+
     return 0 if payload["valid"] else 1
 
 
@@ -647,6 +682,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_fleet_check.add_argument("--root", "-r", default=".")
     p_fleet_check.add_argument("--recursive", action="store_true")
     p_fleet_check.add_argument("--json", action="store_true")
+    p_fleet_check.add_argument("--emit-planfile", help="Export compliance findings as Planfile tickets JSON")
+    p_fleet_check.add_argument("--koru-handoff", action="store_true", help="Add koru refactor executor and remediation intent metadata")
+    p_fleet_check.add_argument("--feed-planfile", nargs="?", const="", help="Feed tickets directly to Planfile backlog")
+    p_fleet_check.add_argument("--monag-triage", action="store_true", help="Cross-check scope conflicts via monag if installed")
     p_fleet_check.set_defaults(func=cmd_fleet_check)
 
     # gate

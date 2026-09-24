@@ -1,7 +1,7 @@
 # ticket-002: Complete automatic standards registration and self-adoption with repository-local path safety
 
-- **Status**: IN_PROGRESS
-- **Workflow state**: PUBLICATION
+- **Status**: DONE
+- **Workflow state**: DONE
 
 ## Recovery boundary
 

@@ -292,3 +292,147 @@ def check_fleet(root: Path, recursive: bool = False) -> Dict[str, Any]:
         "repositories": repositories,
         "valid": all(item["valid"] for item in repositories),
     }
+
+
+def check_monag_conflict(target_path: str) -> Optional[Dict[str, Any]]:
+    """Check target path against MONAG conflict detection if monag is installed."""
+    import shutil
+    if not shutil.which("monag"):
+        return None
+    try:
+        proc = subprocess.run(
+            ["monag", "triage", "--limit", "1"],
+            cwd=target_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if proc.returncode == 0 and "Declared conflict" in proc.stdout:
+            return {"has_conflict": True, "details": "MONAG detected active scope conflict or lease"}
+        return {"has_conflict": False}
+    except Exception:
+        return None
+
+
+def emit_standardization_tickets(
+    fleet_report: Dict[str, Any],
+    koru_ready: bool = True,
+    monag_triage: bool = False,
+) -> Dict[str, Any]:
+    """Convert fleet check findings into actionable, Planfile/Koru-compatible tickets.
+
+    Produces a 'planfile.tickets/v1' structure where each non-compliant repository
+    receives an actionable ticket with diagnostic findings and remediation steps.
+    """
+    tickets: List[Dict[str, Any]] = []
+
+    for repo_entry in fleet_report.get("repositories", []):
+        findings = repo_entry.get("findings", [])
+        if not findings:
+            continue
+
+        repo_path = repo_entry.get("path")
+        repo_name = repo_entry.get("repository") or (Path(repo_path).name if repo_path else "unknown")
+        error_findings = [f for f in findings if f.get("severity") == "ERROR"]
+        warn_findings = [f for f in findings if f.get("severity") == "WARNING"]
+
+        if not error_findings and not warn_findings:
+            continue
+
+        codes = sorted(list({f.get("code") for f in error_findings + warn_findings if f.get("code")}))
+        codes_str = ", ".join(codes[:3]) + ("..." if len(codes) > 3 else "")
+        priority = "critical" if error_findings else "medium"
+        tier = "floor" if priority == "critical" else "hygiene"
+
+        title = f"[STANDARDIZATION] {repo_name}: fix conformance ({codes_str})"
+
+        desc_lines = [
+            f"**Repository**: `{repo_name}` ({repo_path})",
+            f"**Standardization Findings**: {len(findings)} detected ({len(error_findings)} errors, {len(warn_findings)} warnings)",
+            "",
+            "### Detected Non-Compliance:",
+        ]
+        for f in findings:
+            desc_lines.append(f"- `[{f.get('code')}]` ({f.get('severity')}) {f.get('message')}")
+            if f.get("remediation"):
+                desc_lines.append(f"  *Remediation*: {f.get('remediation')}")
+
+        desc_lines.extend([
+            "",
+            "### Satisfied When:",
+            f"- `wellman check --root {repo_path}` exits with code 0 (no ERROR findings).",
+            "",
+            "### Remediation Guidance:",
+            "- Adopt missing standard packs via `wellman adopt` or sync `.governance/` files.",
+            "- Work inside a designated Wellmanifest worktree v5.",
+            "- Validate clean conformance before commit.",
+        ])
+
+        ticket: Dict[str, Any] = {
+            "title": title,
+            "description": "\n".join(desc_lines),
+            "priority": priority,
+            "tier": tier,
+            "labels": ["wellmanifest", "standardization", "waiting-input"],
+            "target_repo": repo_name,
+            "target_path": repo_path,
+            "findings_count": len(findings),
+            "source": "wellman.fleet-check",
+            "schema": "planfile.tickets/v1",
+        }
+
+        if monag_triage and repo_path:
+            conflict = check_monag_conflict(repo_path)
+            if conflict:
+                ticket["monag_conflict"] = conflict
+                if conflict.get("has_conflict"):
+                    ticket["labels"].append("monag:scope-conflict")
+
+        if koru_ready:
+            ticket["labels"].extend(["koru-refactor", "governance-handoff"])
+            ticket["executor_kind"] = "koru"
+            ticket["executor_mode"] = "autonomous"
+            ticket["source_tool"] = "wellman-fleet-watcher"
+            ticket["remediation_intent"] = {
+                "schema": "new-project.remediation-intent/v1",
+                "repository": repo_name,
+                "status": "READY",
+                "objective": f"Remediate Wellmanifest standard compliance findings for {repo_name}",
+                "findings": findings,
+            }
+
+        tickets.append(ticket)
+
+    return {
+        "schema": "planfile.tickets/v1",
+        "source": "wellman.fleet-check",
+        "count": len(tickets),
+        "tickets": tickets,
+    }
+
+
+def feed_to_planfile(tickets_doc: Dict[str, Any], planfile_project: Optional[Path] = None) -> Dict[str, Any]:
+    """Feed generated standardization tickets into Planfile if available."""
+    import shutil
+    if not shutil.which("planfile"):
+        return {"ok": False, "error": "planfile executable not found on PATH"}
+    cmd = ["planfile", "ticket", "import", "--source", "wellman"]
+    cwd = str(planfile_project) if planfile_project else None
+    try:
+        input_data = json.dumps(tickets_doc)
+        proc = subprocess.run(
+            cmd,
+            input=input_data,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            return {"ok": False, "error": proc.stderr.strip() or f"exit code {proc.returncode}"}
+        return {"ok": True, "count": tickets_doc.get("count", 0), "output": proc.stdout.strip()}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+

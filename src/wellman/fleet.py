@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from wellman import __version__
 from wellman.docs_adoption import render_adoption, validate_adoption
+from wellman.local_ci import ensure_default_policy
 from wellman.registry import get_profile, get_standard
 from wellman.repository import RepositoryIdentityError, canonical_repository
 from wellman.runner import ConformanceRunner
@@ -280,6 +281,12 @@ def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False
                 if isinstance(managed, dict):
                     managed[".governance/docs.json"] = hashlib.sha256(docs_content.encode("utf-8")).hexdigest()
                     _atomic_write(lock_path, _json_bytes(lock))
+
+        # Local OneDev + Validator publication is the default for every
+        # repository; an existing adopter restriction is kept.
+        local_ci = ensure_default_policy(path)
+        if local_ci["changed"]:
+            result["local_ci_publication"] = "created"
 
         if sync_agents:
             agent_updates = sync_agent_instructions(path, item["repository"])

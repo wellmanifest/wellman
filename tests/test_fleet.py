@@ -290,3 +290,23 @@ def test_fleet_check_cli_auto_remediate(monkeypatch, tmp_path, capsys):
     assert "Fed" in captured.out or "Triggering autonomous Koru remediation" in captured.out
 
 
+
+
+def test_fleet_apply_writes_local_ci_default_and_keeps_restrictions(tmp_path):
+    open_repo = make_repository(tmp_path, "open", "https://github.com/acme/open.git")
+    narrowed = make_repository(tmp_path, "narrowed", "https://github.com/acme/narrowed.git")
+    restriction = {"schema": "new-project.local-ci-publication/v1",
+                   "scope": {"mode": "restricted", "repositories": ["acme/narrowed"]}}
+    (narrowed / ".governance").mkdir()
+    (narrowed / ".governance/local-ci-publication.json").write_text(json.dumps(restriction), encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=narrowed, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"], cwd=narrowed, check=True)
+
+    result = apply_plan(build_plan(tmp_path, "baseline"), "baseline")
+
+    by_name = {item["repository"]: item for item in result["repositories"]}
+    assert by_name["acme/open"]["local_ci_publication"] == "created"
+    assert "local_ci_publication" not in by_name["acme/narrowed"]
+    assert json.loads((open_repo / ".governance/local-ci-publication.json").read_text()) == {
+        "schema": "new-project.local-ci-publication/v1", "scope": {"mode": "all"}}
+    assert json.loads((narrowed / ".governance/local-ci-publication.json").read_text()) == restriction

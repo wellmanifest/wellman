@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- `wellman adopt` writes `.governance/local-ci-publication.json` with the
+  unrestricted default (local OneDev + Validator for every repository) when it
+  is absent, and keeps an existing adopter restriction [ticket-011].
+- `wellman check` reports an invalid local CI publication scope as
+  `GOV-LOCAL-CI-001` while the unrestricted default applies [ticket-008].
+
 ## [0.20.37] - 2026-09-19
 
 ### Added

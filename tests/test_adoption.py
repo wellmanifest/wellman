@@ -181,3 +181,26 @@ def test_registration_api_rejects_symlink_ancestor(tmp_path):
     with pytest.raises(ValueError, match='symlink'):
         register(alias)
     assert not (real / '.governance').exists()
+
+
+def test_adopt_writes_unrestricted_local_ci_default_once(tmp_path):
+    policy = tmp_path / '.governance' / 'local-ci-publication.json'
+    preview = register(tmp_path, dry_run=True)
+    assert preview['localCiPublication']['changed'] and not policy.exists()
+    first = register(tmp_path)
+    assert first['localCiPublication']['changed']
+    assert json.loads(policy.read_text()) == {
+        'schema': 'new-project.local-ci-publication/v1', 'scope': {'mode': 'all'}}
+    again = register(tmp_path)
+    assert not again['changed'] and not again['localCiPublication']['changed']
+
+
+def test_adopt_keeps_an_existing_local_ci_restriction(tmp_path):
+    (tmp_path / '.governance').mkdir()
+    policy = tmp_path / '.governance' / 'local-ci-publication.json'
+    restricted = {'schema': 'new-project.local-ci-publication/v1',
+                  'scope': {'mode': 'restricted', 'repositories': ['maskservice/*']}}
+    policy.write_text(json.dumps(restricted))
+    result = register(tmp_path)
+    assert not result['localCiPublication']['changed']
+    assert json.loads(policy.read_text()) == restricted

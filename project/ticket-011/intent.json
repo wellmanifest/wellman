@@ -1,0 +1,94 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-011",
+  "summary": "Write the local OneDev and Validator publication default on adopt",
+  "workstream": "integration",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-011/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "CHANGELOG.md",
+    "README.md",
+    "src/wellman/adoption.py",
+    "tests/test_adoption.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "95a1f52cdd49da04835dba2defd34c071e4d67ca",
+    "targetBranch": "main",
+    "outcome": "wellman adopt (register) writes the unrestricted local OneDev + Validator publication default when absent and never replaces an adopter restriction.",
+    "nonGoals": [
+      "Change wellman fleet adopt (separate application ticket)",
+      "Grant or change publication authority",
+      "Release a new wellman version"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 4,
+      "maxAffectedComponents": 2,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "register() calls wellman.local_ci.ensure_default_policy with the same dry_run flag and reports it as localCiPublication.",
+      "components": [
+        {
+          "name": "adoption",
+          "paths": [
+            "src/wellman/adoption.py",
+            "tests/test_adoption.py"
+          ]
+        },
+        {
+          "name": "docs",
+          "paths": [
+            "README.md",
+            "CHANGELOG.md"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "register() result gains localCiPublication; adopt writes .governance/local-ci-publication.json when absent"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the commit; the written file is the documented default and may be deleted."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q tests/test_adoption.py"
+        ],
+        "evidence": "Default written once, dry-run writes nothing, restriction kept."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full suite and governance pass."
+      }
+    ]
+  }
+}

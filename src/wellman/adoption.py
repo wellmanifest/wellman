@@ -136,9 +136,35 @@ def register(root, profiles=(), *, standards=(), dry_run=False):
         role = manifest.get('repositoryRole')
         if isinstance(role, str) and role in PROFILES_CATALOG:
             selected.add(role)
-    if any((root / marker).is_file() for marker in
-           ('Dockerfile', 'compose.yml', 'compose.yaml', 'docker-compose.yml', 'docker-compose.yaml')):
-        selected.add('deployment')
+        stacks = manifest.get('stacks')
+        if isinstance(stacks, list) and any(s in ('docker', 'kubernetes', 'deployment') for s in stacks if isinstance(s, str)):
+            selected.add('deployment')
+        docker_cfg = manifest.get('docker')
+        if isinstance(docker_cfg, dict):
+            if docker_cfg.get('required') is True:
+                selected.add('deployment')
+            for path_key in ('dockerfiles', 'composeFiles'):
+                paths = docker_cfg.get(path_key)
+                if isinstance(paths, list) and any(paths):
+                    selected.add('deployment')
+    deployment_dirs = ('', 'deploy', 'deployment', 'infra', 'docker')
+    deployment_markers = (
+        'Dockerfile', 'compose.yml', 'compose.yaml', 'docker-compose.yml', 'docker-compose.yaml'
+    )
+    for d in deployment_dirs:
+        target_dir = root / d if d else root
+        if not target_dir.is_dir() or target_dir.is_symlink():
+            continue
+        if any((target_dir / marker).is_file() for marker in deployment_markers):
+            selected.add('deployment')
+            break
+        try:
+            if any(f.is_file() and (f.name.startswith('Dockerfile.') or (f.name.startswith(('compose.', 'docker-compose.')) and f.suffix in ('.yml', '.yaml')))
+                   for f in target_dir.iterdir()):
+                selected.add('deployment')
+                break
+        except OSError:
+            pass
     if (root / 'operations' / 'index.json').is_file():
         selected.add('domain-pack')
     if existing and existing.get('schema') != SCHEMA:

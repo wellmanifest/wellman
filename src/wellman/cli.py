@@ -390,7 +390,7 @@ def cmd_adopt(args: argparse.Namespace) -> int:
         try:
             if args.force:
                 raise ValueError('--force is not supported by additive auto registration')
-            result = register(root, args.profile, dry_run=args.dry_run)
+            result = register(root, args.profile, standards=args.standard, dry_run=args.dry_run)
         except (OSError, ValueError, UnicodeError) as error:
             print(f'Error: {error}', file=sys.stderr)
             return 1
@@ -401,8 +401,8 @@ def cmd_adopt(args: argparse.Namespace) -> int:
             print(f"{action} {len(result['registration']['requirements'])} required standards: {result['path']}")
             print('Requirements only: adoption pins, conformance and protected enforcement remain unverified.')
         return 0
-    if args.dry_run or args.profile or args.json:
-        print('Error: --dry-run, --profile and --json require adopt auto.', file=sys.stderr)
+    if args.dry_run or args.profile or args.standard or args.json:
+        print('Error: --dry-run, --profile, --standard and --json require adopt auto.', file=sys.stderr)
         return 1
     std = get_standard(args.standard_id)
     profile = get_profile(args.standard_id)
@@ -706,6 +706,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_adopt.add_argument("--repository", help="Canonical GitHub owner/name when origin is unavailable")
     p_adopt.add_argument("--force", action="store_true", help="Replace an existing adoption manifest")
     p_adopt.add_argument('--profile', action='append', default=[], help='Additional capability profile for auto registration')
+    p_adopt.add_argument('--standard', '-s', action='append', default=[], help='Additional standard ID for auto registration')
     p_adopt.add_argument('--dry-run', action='store_true', help='Preview auto registration without writes')
     p_adopt.add_argument('--json', action='store_true', help='Return auto registration as JSON')
     p_adopt.set_defaults(func=cmd_adopt)

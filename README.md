@@ -97,8 +97,8 @@ wellman check --json
 ```bash
 # Default: register baseline and inferred capability requirements, additively.
 wellman adopt --root /path/to/project
-# Preview without changing any files; optional explicit capability profile.
-wellman adopt auto --profile agent-executor --dry-run --json
+# Preview without changing any files; optional explicit capability profile and individual standards.
+wellman adopt auto --profile agent-executor --standard wellmanifest/nl-dsl-llm --dry-run --json
 
 wellman adopt wellmanifest/git-lifecycle
 # or adopt a profile
@@ -117,10 +117,12 @@ allowlist is kept; it only narrows that default and grants no authority.
 Automatic registration writes `.governance/standard-requirements.json`, not an
 adoption certificate. It works for any language, mixed-language repositories,
 documentation-only projects and unknown project types. Every project gets the
-baseline; declared profiles/roles, Docker/Compose files and domain operation
-catalogs add capability profiles. Profile inheritance is transitive and the
-strongest required level wins. `--profile` can supply capabilities that cannot
-be inferred from these signals.
+baseline; declared profiles/roles, Docker/Compose files (in the root or
+conventional directories such as `deploy/`, `deployment/`, `infra/`, `docker/`),
+declared stack profiles, and domain operation catalogs add capability profiles.
+Profile inheritance is transitive and the strongest required level wins.
+`--profile` and repeatable `--standard` (`-s`) can supply profiles or individual
+standards that cannot be inferred from these signals.
 
 The CLI discovers the Git root from the current directory or `--root` argument.
 A nested directory writes to its repository root; a linked worktree writes to

@@ -35,6 +35,7 @@ from wellman.fleet import (
     feed_to_planfile,
     sync_fleet_agents,
     trigger_koru_execution,
+    trigger_taskand_execution,
 )
 from wellman.repository import RepositoryIdentityError
 
@@ -585,19 +586,27 @@ def cmd_fleet_check(args: argparse.Namespace) -> int:
     emit_planfile = getattr(args, "emit_planfile", None)
     feed_planfile_arg = getattr(args, "feed_planfile", None)
     koru_handoff = getattr(args, "koru_handoff", False)
+    taskand_handoff = getattr(args, "taskand_handoff", False)
+    taskand_exec = getattr(args, "taskand_exec", False)
     monag_triage = getattr(args, "monag_triage", False)
     auto_remediate = getattr(args, "auto_remediate", False) or getattr(args, "koru_exec", False)
+
+    if taskand_exec:
+        taskand_handoff = True
+        if feed_planfile_arg is None:
+            feed_planfile_arg = ""
 
     if auto_remediate:
         koru_handoff = True
         if feed_planfile_arg is None:
             feed_planfile_arg = ""
 
-    if emit_planfile or feed_planfile_arg is not None or koru_handoff:
+    if emit_planfile or feed_planfile_arg is not None or koru_handoff or taskand_handoff:
         tickets_doc = emit_standardization_tickets(
             payload,
             koru_ready=koru_handoff,
             monag_triage=monag_triage,
+            taskand_ready=taskand_handoff,
         )
         if emit_planfile:
             target_path = Path(emit_planfile)
@@ -627,6 +636,21 @@ def cmd_fleet_check(args: argparse.Namespace) -> int:
                         else:
                             print(
                                 f"✗ Koru remediation failed for {proj_path.name}: {exec_result.get('stderr') or exec_result.get('error')}",
+                                file=sys.stderr,
+                            )
+
+            if taskand_exec and feed_result.get("ok"):
+                for proj_path_str in feed_result.get("target_projects", []):
+                    proj_path = Path(proj_path_str)
+                    if not args.json:
+                        print(f"Triggering autonomous Taskand remediation for {proj_path.name}...")
+                    exec_result = trigger_taskand_execution(proj_path)
+                    if not args.json:
+                        if exec_result.get("ok"):
+                            print(f"✓ Taskand remediation completed for {proj_path.name}")
+                        else:
+                            print(
+                                f"✗ Taskand remediation failed for {proj_path.name}",
                                 file=sys.stderr,
                             )
 
@@ -727,10 +751,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_fleet_check.add_argument("--json", action="store_true")
     p_fleet_check.add_argument("--emit-planfile", help="Export compliance findings as Planfile tickets JSON")
     p_fleet_check.add_argument("--koru-handoff", action="store_true", help="Add koru refactor executor and remediation intent metadata")
+    p_fleet_check.add_argument("--taskand-handoff", action="store_true", help="Add taskand typed operations executor and metadata")
     p_fleet_check.add_argument("--feed-planfile", nargs="?", const="", help="Feed tickets directly to Planfile backlog")
     p_fleet_check.add_argument("--monag-triage", action="store_true", help="Cross-check scope conflicts via monag if installed")
     p_fleet_check.add_argument("--auto-remediate", action="store_true", help="Trigger autonomous Koru execution for imported remediation tickets")
     p_fleet_check.add_argument("--koru-exec", action="store_true", help="Alias for --auto-remediate")
+    p_fleet_check.add_argument("--taskand-exec", action="store_true", help="Trigger autonomous Taskand execution for imported remediation tickets")
     p_fleet_check.set_defaults(func=cmd_fleet_check)
 
     # gate

@@ -240,3 +240,36 @@ def test_bootstrap_does_not_hide_broken_or_bare_git_metadata(tmp_path):
     for root in (broken, bare):
         assert main(['adopt', '--root', str(root), '--bootstrap']) == 1
         assert not (root / '.governance').exists()
+
+
+def test_cli_adopt_auto_with_repeatable_standard_flag(tmp_path, capsys):
+    ret = main([
+        'adopt', 'auto', '--root', str(tmp_path), '--bootstrap',
+        '--standard', 'wellmanifest/nl-dsl-llm',
+        '-s', 'wellmanifest/twin-lifecycle',
+        '--json',
+    ])
+    assert ret == 0
+    result = json.loads(capsys.readouterr().out)
+    req_ids = {r['id'] for r in result['registration']['requirements']}
+    assert 'wellmanifest/nl-dsl-llm' in req_ids
+    assert 'wellmanifest/twin-lifecycle' in req_ids
+
+
+def test_cli_adopt_auto_rejects_unknown_standard_flag(tmp_path, capsys):
+    ret = main([
+        'adopt', 'auto', '--root', str(tmp_path), '--bootstrap',
+        '--standard', 'unknown/nonexistent-standard',
+    ])
+    assert ret == 1
+    assert 'Unknown standard' in capsys.readouterr().err
+
+
+def test_cli_adopt_explicit_rejects_standard_flag(tmp_path, capsys):
+    ret = main([
+        'adopt', 'baseline', '--root', str(tmp_path), '--bootstrap',
+        '--standard', 'wellmanifest/nl-dsl-llm',
+    ])
+    assert ret == 1
+    assert '--standard' in capsys.readouterr().err
+

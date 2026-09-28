@@ -204,3 +204,47 @@ def test_adopt_keeps_an_existing_local_ci_restriction(tmp_path):
     result = register(tmp_path)
     assert not result['localCiPublication']['changed']
     assert json.loads(policy.read_text()) == restricted
+
+
+@pytest.mark.parametrize('subdir,filename', [
+    ('deploy', 'compose.yml'),
+    ('deployment', 'docker-compose.yaml'),
+    ('infra', 'Dockerfile'),
+    ('docker', 'Dockerfile.prod'),
+    ('deploy', 'compose.local.yml'),
+    ('', 'compose.override.yaml'),
+])
+def test_infer_deployment_profile_from_conventional_directories(tmp_path, subdir, filename):
+    target_dir = tmp_path / subdir if subdir else tmp_path
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / filename).touch()
+    result = register(tmp_path)['registration']
+    assert 'deployment' in result['profiles']
+    levels = {r['id']: r['minimumLevel'] for r in result['requirements']}
+    assert 'wellmanifest/deployment' in levels
+
+
+@pytest.mark.parametrize('manifest_payload', [
+    {'stacks': ['docker']},
+    {'stacks': ['kubernetes']},
+    {'docker': {'required': True, 'dockerfiles': [], 'composeFiles': []}},
+    {'docker': {'required': False, 'dockerfiles': ['custom/Dockerfile'], 'composeFiles': []}},
+    {'docker': {'required': False, 'dockerfiles': [], 'composeFiles': ['custom/compose.yml']}},
+])
+def test_infer_deployment_profile_from_manifest(tmp_path, manifest_payload):
+    folder = tmp_path / '.governance'
+    folder.mkdir()
+    (folder / 'manifest.json').write_text(json.dumps(manifest_payload))
+    result = register(tmp_path)['registration']
+    assert 'deployment' in result['profiles']
+    levels = {r['id']: r['minimumLevel'] for r in result['requirements']}
+    assert 'wellmanifest/deployment' in levels
+
+
+def test_register_with_explicit_standards(tmp_path):
+    result = register(tmp_path, standards=['wellmanifest/nl-dsl-llm', 'wellmanifest/twin-lifecycle'])['registration']
+    levels = {r['id']: r['minimumLevel'] for r in result['requirements']}
+    assert levels.get('wellmanifest/nl-dsl-llm') == 'S4'
+    assert levels.get('wellmanifest/twin-lifecycle') == 'S4'
+    assert set(expand_profiles(['baseline'])) <= set(levels.keys())
+

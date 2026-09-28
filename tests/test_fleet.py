@@ -113,8 +113,12 @@ def test_emit_standardization_tickets_with_findings():
     }
     result = emit_standardization_tickets(report, koru_ready=True)
     assert result["schema"] == "planfile.tickets/v1"
-    assert result["count"] == 1
-    ticket = result["tickets"][0]
+    assert result["count"] == 3
+    # Parent ticket is the last one appended, subtasks are 0 and 1
+    subtask_remed = result["tickets"][0]
+    subtask_cicd = result["tickets"][1]
+    ticket = result["tickets"][2]
+
     assert "[STANDARDIZATION]" in ticket["title"]
     assert ticket["name"] == ticket["title"]
     assert "repo-a" in ticket["title"]
@@ -126,11 +130,22 @@ def test_emit_standardization_tickets_with_findings():
     assert ticket["source"] == {"tool": "wellman"}
     assert ticket["executor"]["kind"] == "shell"
     assert "script" in ticket["inputs"]
+    assert "git" in ticket["inputs"]["script"]
     assert ticket["execution"]["queue"] == "governance-handoff"
     assert ticket["execution"]["state"] == "ready"
     assert ticket["executor_kind"] == "koru"
     assert ticket["remediation_intent"]["schema"] == "new-project.remediation-intent/v1"
     assert len(ticket["remediation_intent"]["findings"]) == 2
+    assert "strategy" in ticket
+    assert "phases" in ticket["strategy"]
+    assert len(ticket["children"]) == 2
+
+    # Check subtasks
+    assert subtask_remed["parent"] == ticket["id"]
+    assert "subtask:remediation" in subtask_remed["labels"]
+    assert subtask_cicd["parent"] == ticket["id"]
+    assert subtask_cicd["blocked_by"] == [subtask_remed["id"]]
+    assert "subtask:cicd" in subtask_cicd["labels"]
 
 
 def test_fleet_check_cli_emit_planfile(tmp_path, capsys):

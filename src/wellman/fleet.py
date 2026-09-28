@@ -480,7 +480,13 @@ def emit_standardization_tickets(
             "- Validate clean conformance before commit.",
         ])
 
+        parent_ticket_id = f"GOV-{hashlib.sha256(f'{repo_name}:{repo_path}'.encode()).hexdigest()[:8]}"
+        remediation_ticket_id = f"{parent_ticket_id}-1-remediate"
+        cicd_ticket_id = f"{parent_ticket_id}-2-cicd"
+
+        # Parent / Epic coordination ticket
         ticket: Dict[str, Any] = {
+            "id": parent_ticket_id,
             "name": title,
             "title": title,
             "description": "\n".join(desc_lines),
@@ -492,6 +498,12 @@ def emit_standardization_tickets(
             "findings_count": len(findings),
             "source": {"tool": "wellman"},
             "schema": "planfile.tickets/v1",
+            "children": [remediation_ticket_id, cicd_ticket_id],
+            "strategy": {
+                "phases": ["remediation", "ci_cd_verification"],
+                "deliverables": [".governance/manifest.json", ".governance/standard-packs.json", ".governance/manifest.lock.json"],
+                "gate_command": f"wellman check --root '{repo_path}'",
+            },
         }
 
         if monag_triage and repo_path:
@@ -507,7 +519,13 @@ def emit_standardization_tickets(
             ticket["executor_kind"] = "koru"
             ticket["executor_mode"] = "autonomous"
             ticket["inputs"] = {
-                "script": f"wellman adopt --root '{repo_path}' wellmanifest/new-project && wellman check --root '{repo_path}'",
+                "script": (
+                    f"wellman adopt --root '{repo_path}' wellmanifest/new-project && "
+                    f"wellman check --root '{repo_path}' && "
+                    f"git -C '{repo_path}' add .governance/ && "
+                    f"git -C '{repo_path}' diff --staged --quiet || "
+                    f"git -C '{repo_path}' commit -m 'chore(governance): adopt wellmanifest standards [skip ci]'"
+                ),
                 "expect_files_changed": True,
             }
             ticket["execution"] = {
@@ -522,6 +540,67 @@ def emit_standardization_tickets(
                 "objective": f"Remediate Wellmanifest standard compliance findings for {repo_name}",
                 "findings": findings,
             }
+
+            # Subtask 1: Concrete remediation task
+            remediation_subtask: Dict[str, Any] = {
+                "id": remediation_ticket_id,
+                "parent": parent_ticket_id,
+                "name": f"[REMEDIATION] {repo_name}: apply wellmanifest adoption",
+                "title": f"[REMEDIATION] {repo_name}: apply wellmanifest adoption",
+                "description": f"Bootstrap governance baseline for {repo_name} using wellman adopt.",
+                "priority": priority,
+                "tier": tier,
+                "labels": ["wellmanifest", "standardization", "subtask:remediation"],
+                "target_repo": repo_name,
+                "target_path": repo_path,
+                "executor": {"kind": "shell", "mode": "autonomous"},
+                "executor_kind": "koru",
+                "executor_mode": "autonomous",
+                "inputs": {
+                    "script": (
+                        f"wellman adopt --root '{repo_path}' wellmanifest/new-project && "
+                        f"git -C '{repo_path}' add .governance/ && "
+                        f"git -C '{repo_path}' diff --staged --quiet || "
+                        f"git -C '{repo_path}' commit -m 'chore(governance): adopt wellmanifest standards [skip ci]'"
+                    ),
+                    "expect_files_changed": True,
+                },
+                "execution": {
+                    "queue": "governance-handoff",
+                    "state": "ready",
+                },
+                "schema": "planfile.tickets/v1",
+            }
+
+            # Subtask 2: CI/CD validation and verification gate
+            cicd_subtask: Dict[str, Any] = {
+                "id": cicd_ticket_id,
+                "parent": parent_ticket_id,
+                "blocked_by": [remediation_ticket_id],
+                "name": f"[CI/CD] {repo_name}: verify standards gate & pipeline conformance",
+                "title": f"[CI/CD] {repo_name}: verify standards gate & pipeline conformance",
+                "description": f"Run complete governance gate checks and verify CI/CD readiness for {repo_name}.",
+                "priority": priority,
+                "tier": tier,
+                "labels": ["wellmanifest", "standardization", "subtask:cicd", "qa"],
+                "target_repo": repo_name,
+                "target_path": repo_path,
+                "executor": {"kind": "shell", "mode": "autonomous"},
+                "executor_kind": "koru",
+                "executor_mode": "autonomous",
+                "inputs": {
+                    "script": f"wellman check --root '{repo_path}'",
+                    "expect_files_changed": False,
+                },
+                "execution": {
+                    "queue": "governance-handoff",
+                    "state": "blocked",
+                },
+                "schema": "planfile.tickets/v1",
+            }
+
+            tickets.append(remediation_subtask)
+            tickets.append(cicd_subtask)
 
         tickets.append(ticket)
 

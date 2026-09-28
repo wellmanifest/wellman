@@ -207,6 +207,27 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         schemas=[],
         docs_url="https://github.com/wellmanifest/nl-dsl-llm",
     ),
+    "wellmanifest/nl-api-llm": StandardPack(
+        id="wellmanifest/nl-api-llm",
+        name="Natural Language to Multi-Protocol API via LLM",
+        owner="wellmanifest/nl-api-llm",
+        description="Tripartite NL-API-LLM architecture, universal API registry, dynamic frontend menu tree, multi-protocol dispatch",
+        minimum_level="S4",
+        execution_model="protected-conformance",
+        owns=[
+            "tripartite NL-API-LLM architecture",
+            "universal API registry",
+            "dynamic frontend menu tree",
+            "multi-protocol dispatch",
+        ],
+        schemas=[
+            "api-registry.schema.json",
+            "menu-tree.schema.json",
+            "nl-api-query.schema.json",
+            "api-action-result.schema.json",
+        ],
+        docs_url="https://github.com/wellmanifest/nl-api-llm",
+    ),
     "wellmanifest/repair-lifecycle": StandardPack(
         id="wellmanifest/repair-lifecycle",
         name="Repair and Remediation Lifecycle",
@@ -419,6 +440,10 @@ def get_standard(standard_id: str) -> Optional[StandardPack]:
         "agent": "wellmanifest/agent",
         "merge": "wellmanifest/merge",
         "dsl": "wellmanifest/dsl",
+        "nl-dsl": "wellmanifest/nl-dsl-llm",
+        "nl-dsl-llm": "wellmanifest/nl-dsl-llm",
+        "nl-api": "wellmanifest/nl-api-llm",
+        "nl-api-llm": "wellmanifest/nl-api-llm",
     }
     normalized = aliases.get(standard_id, standard_id)
     return STANDARDS_CATALOG.get(normalized)

@@ -1,0 +1,85 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-013",
+  "summary": "Register wellmanifest/nl-api-llm standard pack in fleet catalog",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-013/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/schemas/standard-packs.json",
+    "src/wellman/registry.py",
+    "tests/test_registry.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "8a4ba89b7c460755bc1c5e2de8add7a2f1daa546",
+    "targetBranch": "main",
+    "outcome": "Register wellmanifest/nl-api-llm standard pack in standard-packs.json catalog and Python registry with S4 conformance level.",
+    "nonGoals": [
+      "Modify unrelated standard packs",
+      "Release new package version"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 20,
+    "budgets": {
+      "maxImplementationFiles": 3,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Add wellmanifest/nl-api-llm to standard-packs.json catalog and STANDARDS_CATALOG in registry.py, add alias in get_standard, and verify via test_registry.py.",
+      "components": [
+        {
+          "name": "registry",
+          "paths": [
+            "src/wellman/schemas/standard-packs.json",
+            "src/wellman/registry.py",
+            "tests/test_registry.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "STANDARDS_CATALOG and get_standard resolve wellmanifest/nl-api-llm"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert commit on ticket branch."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "pytest tests/test_registry.py"
+        ],
+        "evidence": "test_registry.py passes with wellmanifest/nl-api-llm assert."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Governance check passes with 0 errors and 0 warnings."
+      }
+    ]
+  }
+}

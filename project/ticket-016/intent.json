@@ -1,0 +1,79 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-016",
+  "summary": "fleet-planfile-strategy-and-cicd-subtasks",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-016/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/fleet.py",
+    "tests/test_fleet.py"
+  ],
+  "forbiddenPaths": ["project/ticket-*/user-*.md"],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "c06c31947d4fcec2a31cb1a62abd97370c113bdc",
+    "targetBranch": "main",
+    "outcome": "Emit structured multi-stage execution strategy and CI/CD subtasks in standardization tickets.",
+    "nonGoals": [
+      "Modify external planfile or koru code"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 20,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Enrich emit_standardization_tickets with execution strategy phases (remediation, cicd verification, git finalization) and subtask tickets linked via parent/children and blocked_by.",
+      "components": [
+        {
+          "name": "fleet",
+          "paths": [
+            "src/wellman/fleet.py",
+            "tests/test_fleet.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert commit on ticket branch."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "pytest tests/test_fleet.py"
+        ],
+        "evidence": "Fleet tests verify strategy phases, script with lock/commit, and subtasks."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Governance check passes with 0 errors and 0 warnings."
+      }
+    ]
+  }
+}
+

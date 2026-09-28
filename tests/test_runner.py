@@ -34,3 +34,16 @@ def test_runner_selected_docs_requires_adoption(tmp_path):
     findings = runner.run_standard("wellmanifest/docs")
 
     assert [finding.code for finding in findings] == ["GOV-DOCS-MISSING"]
+
+
+def test_runner_git_lifecycle_accepts_plf_ticket_branch(tmp_path, monkeypatch):
+    import subprocess
+    runner = ConformanceRunner(tmp_path)
+
+    class DummyResult:
+        stdout = "ticket/PLF-013-feature-description\n"
+
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: DummyResult())
+    findings = runner.check_git_lifecycle()
+    assert not any(f.code == "GOV-GIT-001" for f in findings)
+

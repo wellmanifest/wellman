@@ -1,0 +1,89 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-014",
+  "summary": "support-legacy-docs-and-plf-branches",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-014/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/docs_adoption.py",
+    "src/wellman/runner.py",
+    "tests/test_validator.py",
+    "tests/test_runner.py"
+  ],
+  "forbiddenPaths": ["project/ticket-*/user-*.md"],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "5a410957db3aa6f3fc38d8d7298349e27141d890",
+    "targetBranch": "main",
+    "outcome": "Support legacy published Docs adoption pins and planfile ticket branches in Wellman validator and runner.",
+    "nonGoals": [
+      "Change single-repository adopt logic",
+      "Release a new wellman version"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 20,
+    "budgets": {
+      "maxImplementationFiles": 4,
+      "maxAffectedComponents": 2,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Add adopted legacy doc pins to SUPPORTED_DOCS_POLICIES and extend ticket_pattern in ConformanceRunner to accept ticket/PLF-NNN branch names.",
+      "components": [
+        {
+          "name": "adoption",
+          "paths": [
+            "src/wellman/docs_adoption.py",
+            "tests/test_validator.py"
+          ]
+        },
+        {
+          "name": "runner",
+          "paths": [
+            "src/wellman/runner.py",
+            "tests/test_runner.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert commit on ticket branch."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "pytest tests/test_validator.py tests/test_runner.py"
+        ],
+        "evidence": "Validation and runner tests pass with new pins and PLF branch pattern."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Governance check passes with 0 errors and 0 warnings."
+      }
+    ]
+  }
+}
+

@@ -51,14 +51,14 @@ class ConformanceRunner:
                 branch = res.stdout.strip()
                 # If branch is not main/master, check ticket binding format
                 if branch not in ("main", "master", "HEAD"):
-                    ticket_pattern = re.compile(r"^(ticket/\d+|feature/|fix/|chore/|release/|governance/)")
+                    ticket_pattern = re.compile(r"^(ticket/(\d+|PLF-\d+)|feature/|fix/|chore/|release/|governance/)")
                     if not ticket_pattern.match(branch):
                         findings.append(Finding(
                             code="GOV-GIT-001",
                             message=f"Branch '{branch}' does not conform to Wellmanifest git-lifecycle naming.",
                             severity="WARNING",
                             path=f"branch:{branch}",
-                            remediation="Use conventional branch prefix: ticket/NNN-*, feature/*, fix/*, chore/*, or release/*.",
+                            remediation="Use conventional branch prefix: ticket/NNN-*, ticket/PLF-NNN-*, feature/*, fix/*, chore/*, or release/*.",
                         ))
         except Exception as e:
             findings.append(Finding("GOV-GIT-ERROR", f"Git check error: {e}", severity="WARNING"))

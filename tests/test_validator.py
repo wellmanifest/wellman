@@ -34,6 +34,10 @@ def docs_repository(tmp_path):
      "f6ba9c011ea1d9260e7fac3a1638a767d5ebc9f7d9b32ed51cc3aea22fe95d8c"),
     ("9fb5fc4d99afb70ca577b84b0bf115e52e43a1c6",
      "fac05e720ec49370ba393e817a4a03b895d7ed33828e09b3420f9fcfb09264b0"),
+    ("0714f71462202788e6b775ed145e9e61a7d5c366",
+     "fac05e720ec49370ba393e817a4a03b895d7ed33828e09b3420f9fcfb09264b0"),
+    ("fdb0fcaa7c606dc2503cabb71eff64d5f86ee659",
+     "affe2ca5700b8225829d110ef704c793e280efae2349751ab7e3f3ef3303126e"),
 ])
 def test_published_docs_adoption_is_preserved(docs_repository, revision, digest):
     path = docs_repository / ".governance/docs.json"

@@ -91,6 +91,7 @@
     {"id": "wellmanifest/dsl", "owns": ["DSL interoperability contract"]},
     {"id": "wellmanifest/code-dsl", "owns": ["code-level semantic query contract", "AST diagnostics model"]},
     {"id": "wellmanifest/nl-dsl-llm", "owns": ["tripartite natural-language, canonical DSL, and adaptive LLM contract", "universal MCP/CLI parity"]},
+    {"id": "wellmanifest/nl-api-llm", "owns": ["tripartite NL-API-LLM architecture", "universal API registry", "dynamic frontend menu tree", "multi-protocol dispatch"]},
     {"id": "wellmanifest/repair-lifecycle", "owns": ["repair and remediation lifecycle"]},
     {"id": "wellmanifest/deployment", "owns": ["deployment contract", "deployment verification"]}
   ]

@@ -20,6 +20,8 @@ def test_standards_catalog_not_empty():
     assert "wellmanifest/ticket-lifecycle" in STANDARDS_CATALOG
     assert "wellmanifest/merge" in STANDARDS_CATALOG
     assert "wellmanifest/agent" in STANDARDS_CATALOG
+    assert "wellmanifest/nl-dsl-llm" in STANDARDS_CATALOG
+    assert "wellmanifest/nl-api-llm" in STANDARDS_CATALOG
 
 
 def test_conformance_levels():
@@ -40,6 +42,14 @@ def test_get_standard_alias_resolution():
     s3 = get_standard("worktrees")
     assert s3 is not None
     assert s3.id == "wellmanifest/worktrees"
+
+    s4 = get_standard("nl-api-llm")
+    assert s4 is not None
+    assert s4.id == "wellmanifest/nl-api-llm"
+
+    s5 = get_standard("nl-api")
+    assert s5 is not None
+    assert s5.id == "wellmanifest/nl-api-llm"
 
 
 def test_profiles_catalog():

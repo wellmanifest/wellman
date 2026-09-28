@@ -430,8 +430,9 @@ def emit_standardization_tickets(
     fleet_report: Dict[str, Any],
     koru_ready: bool = True,
     monag_triage: bool = False,
+    taskand_ready: bool = False,
 ) -> Dict[str, Any]:
-    """Convert fleet check findings into actionable, Planfile/Koru-compatible tickets.
+    """Convert fleet check findings into actionable, Planfile/Koru/Taskand-compatible tickets.
 
     Produces a 'planfile.tickets/v1' structure where each non-compliant repository
     receives an actionable ticket with diagnostic findings and remediation steps.
@@ -513,10 +514,13 @@ def emit_standardization_tickets(
                 if conflict.get("has_conflict"):
                     ticket["labels"].append("monag:scope-conflict")
 
-        if koru_ready:
-            ticket["labels"].extend(["koru-refactor", "governance-handoff"])
+        if koru_ready or taskand_ready:
+            active_executor = "taskand" if taskand_ready else "koru"
+            ticket["labels"].extend([f"{active_executor}-refactor", "governance-handoff"])
+            if taskand_ready:
+                ticket["labels"].append("taskand-job")
             ticket["executor"] = {"kind": "shell", "mode": "autonomous"}
-            ticket["executor_kind"] = "koru"
+            ticket["executor_kind"] = active_executor
             ticket["executor_mode"] = "autonomous"
             ticket["inputs"] = {
                 "script": (
@@ -528,6 +532,15 @@ def emit_standardization_tickets(
                 ),
                 "expect_files_changed": True,
             }
+            if taskand_ready:
+                ticket["taskand"] = {
+                    "operation": "git.commit",
+                    "ref": f"artifact://{repo_name}",
+                    "steps": [
+                        {"op": "artifact.update", "args": {"title": f"Standardize {repo_name}"}},
+                        {"op": "git.commit", "args": {"message": "chore(governance): adopt wellmanifest standards [skip ci]"}},
+                    ],
+                }
             ticket["execution"] = {
                 "queue": "governance-handoff",
                 "state": "ready",
@@ -554,7 +567,7 @@ def emit_standardization_tickets(
                 "target_repo": repo_name,
                 "target_path": repo_path,
                 "executor": {"kind": "shell", "mode": "autonomous"},
-                "executor_kind": "koru",
+                "executor_kind": active_executor,
                 "executor_mode": "autonomous",
                 "inputs": {
                     "script": (
@@ -571,6 +584,11 @@ def emit_standardization_tickets(
                 },
                 "schema": "planfile.tickets/v1",
             }
+            if taskand_ready:
+                remediation_subtask["taskand"] = {
+                    "operation": "git.commit",
+                    "args": {"message": "chore(governance): adopt wellmanifest standards [skip ci]"},
+                }
 
             # Subtask 2: CI/CD validation and verification gate
             cicd_subtask: Dict[str, Any] = {
@@ -586,7 +604,7 @@ def emit_standardization_tickets(
                 "target_repo": repo_name,
                 "target_path": repo_path,
                 "executor": {"kind": "shell", "mode": "autonomous"},
-                "executor_kind": "koru",
+                "executor_kind": active_executor,
                 "executor_mode": "autonomous",
                 "inputs": {
                     "script": f"wellman check --root '{repo_path}'",
@@ -598,6 +616,11 @@ def emit_standardization_tickets(
                 },
                 "schema": "planfile.tickets/v1",
             }
+            if taskand_ready:
+                cicd_subtask["taskand"] = {
+                    "operation": "ci.status",
+                    "args": {"provider": "github"},
+                }
 
             tickets.append(remediation_subtask)
             tickets.append(cicd_subtask)
@@ -746,4 +769,98 @@ def trigger_koru_execution(
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+def trigger_taskand_execution(
+    project_path: Path,
+    queue_name: str = "governance-handoff",
+    dry_run: bool = False,
+    engine_runner: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Execute standardization tasks using taskand typed operations engine."""
+    planfile_tickets = project_path / ".planfile" / "tickets.json"
+    if not planfile_tickets.is_file():
+        # Check tickets in repo root
+        planfile_tickets = project_path / "planfile-tickets.json"
+
+    tickets_data: List[Dict[str, Any]] = []
+    if planfile_tickets.is_file():
+        try:
+            loaded = json.loads(planfile_tickets.read_text(encoding="utf-8"))
+            tickets_data = loaded if isinstance(loaded, list) else loaded.get("tickets", [])
+        except Exception:
+            pass
+
+    executed_steps: List[Dict[str, Any]] = []
+    repo_name = project_path.name
+
+    if dry_run:
+        return {
+            "ok": True,
+            "dry_run": True,
+            "project": str(project_path),
+            "tickets_found": len(tickets_data),
+            "operations_planned": ["artifact.update", "git.commit"],
+        }
+
+    # Execute deterministic standardization adoption
+    res_adopt = subprocess.run(
+        ["wellman", "adopt", "--root", str(project_path), "wellmanifest/new-project"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    executed_steps.append({"op": "wellman.adopt", "code": res_adopt.returncode, "stdout": res_adopt.stdout})
+
+    res_check = subprocess.run(
+        ["wellman", "check", "--root", str(project_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    executed_steps.append({"op": "wellman.check", "code": res_check.returncode, "stdout": res_check.stdout})
+
+    # Perform Git commit if changes exist
+    git_add = subprocess.run(
+        ["git", "add", ".governance/"],
+        cwd=str(project_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    git_diff = subprocess.run(
+        ["git", "diff", "--staged", "--quiet"],
+        cwd=str(project_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    commit_sha = None
+    if git_diff.returncode != 0:
+        git_commit = subprocess.run(
+            ["git", "commit", "-m", "chore(governance): adopt wellmanifest standards via taskand [skip ci]"],
+            cwd=str(project_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if git_commit.returncode == 0:
+            rev_proc = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(project_path),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            commit_sha = rev_proc.stdout.strip()
+        executed_steps.append({"op": "git.commit", "code": git_commit.returncode, "commit": commit_sha})
+
+    success = res_check.returncode == 0
+    return {
+        "ok": success,
+        "executor": "taskand",
+        "project": str(project_path),
+        "steps": executed_steps,
+        "commit": commit_sha,
+    }
 

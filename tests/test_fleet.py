@@ -12,6 +12,7 @@ from wellman.fleet import (
     feed_to_planfile,
     sync_agent_instructions,
     sync_fleet_agents,
+    trigger_taskand_execution,
 )
 from wellman.cli import main
 
@@ -148,6 +149,42 @@ def test_emit_standardization_tickets_with_findings():
     assert "subtask:cicd" in subtask_cicd["labels"]
 
 
+def test_emit_standardization_tickets_with_taskand():
+    report = {
+        "schema": "wellman.fleet-report/v1",
+        "repositories": [
+            {
+                "path": "/path/to/repo-taskand",
+                "repository": "org/repo-taskand",
+                "findings": [
+                    {
+                        "code": "GOV-MANIFEST-MISSING",
+                        "severity": "ERROR",
+                        "message": "Missing .governance/manifest.json",
+                    },
+                ],
+            }
+        ],
+    }
+    result = emit_standardization_tickets(report, taskand_ready=True)
+    assert result["schema"] == "planfile.tickets/v1"
+    assert result["count"] == 3
+    ticket = result["tickets"][2]
+    assert ticket["executor_kind"] == "taskand"
+    assert "taskand-refactor" in ticket["labels"]
+    assert "taskand-job" in ticket["labels"]
+    assert "taskand" in ticket
+    assert ticket["taskand"]["operation"] == "git.commit"
+
+
+def test_trigger_taskand_execution(tmp_path):
+    repo = make_repository(tmp_path, "target_repo", "https://github.com/acme/target_repo.git")
+    res = trigger_taskand_execution(repo, dry_run=True)
+    assert res["ok"] is True
+    assert res["dry_run"] is True
+    assert "operations_planned" in res
+
+
 def test_fleet_check_cli_emit_planfile(tmp_path, capsys):
     make_repository(tmp_path, "subrepo", "https://github.com/acme/subrepo.git")
     out_file = tmp_path / "planfile-tickets.json"
@@ -159,6 +196,19 @@ def test_fleet_check_cli_emit_planfile(tmp_path, capsys):
     assert data["schema"] == "planfile.tickets/v1"
     assert data["count"] >= 1
     assert data["tickets"][0]["executor_kind"] == "koru"
+
+
+def test_fleet_check_cli_taskand_handoff(tmp_path, capsys):
+    make_repository(tmp_path, "subrepo_tkd", "https://github.com/acme/subrepo_tkd.git")
+    out_file = tmp_path / "planfile-taskand-tickets.json"
+
+    ret = main(["fleet", "check", "--root", str(tmp_path), "--emit-planfile", str(out_file), "--taskand-handoff"])
+    assert out_file.exists()
+    data = json.loads(out_file.read_text(encoding="utf-8"))
+    assert data["schema"] == "planfile.tickets/v1"
+    assert data["count"] >= 1
+    # Check that tickets use taskand executor
+    assert data["tickets"][0]["executor_kind"] == "taskand"
 
 
 def test_discover_repositories_contextual_auto_recursive(tmp_path):

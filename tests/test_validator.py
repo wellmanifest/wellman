@@ -83,6 +83,18 @@ def test_new_docs_adoption_uses_published_050(docs_repository):
     assert record["policy_sha256"] == "af5fde2d52e1c292e569cd47a4068f0e42181a8f8fb9fc21737a569bee9a206f"
 
 
+def test_docs_adoption_accepts_v050_release_revision(docs_repository):
+    from wellman.docs_adoption import expected_adoption
+
+    record = expected_adoption(docs_repository)
+    record["source_revision"] = "6f475fb223e7a259d514b5483fb0d62f0e80a46e"
+    (docs_repository / ".governance/docs.json").write_text(json.dumps(record))
+
+    findings = StandardsValidator(docs_repository).validate_docs(required=True)
+
+    assert findings == []
+
+
 def test_bundled_schemas_directory():
     d = get_schemas_dir()
     assert d.is_dir()

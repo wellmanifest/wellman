@@ -16,6 +16,8 @@ DOCS_STANDARD_REVISION = "aa92136b4e94f48355c39fb206286aba024c6aa4"
 DOCS_POLICY_SHA256 = "af5fde2d52e1c292e569cd47a4068f0e42181a8f8fb9fc21737a569bee9a206f"
 SUPPORTED_DOCS_POLICIES = {
     DOCS_STANDARD_REVISION: DOCS_POLICY_SHA256,
+    # Upstream wellmanifest/docs 0.5.0 tag/release revision
+    "6f475fb223e7a259d514b5483fb0d62f0e80a46e": DOCS_POLICY_SHA256,
     # Existing adopters keep their published policy until an explicit upgrade.
     "19efafbeb18923cfd51cc69bd519330488500137":
         "fac05e720ec49370ba393e817a4a03b895d7ed33828e09b3420f9fcfb09264b0",

@@ -1,0 +1,1 @@
+SESSION_EXECUTION_AUTHORIZATION: User requested sequential Wellman repairs, tests, push and protected merges; continued on 2026-10-02. This bounded upstream repair addresses the reproduced canonical v5 branch rejection blocking IMGL adoption. No review bypass or deployment from unmerged source is authorized.

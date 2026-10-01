@@ -9,6 +9,14 @@
 - `wellman check` reports an invalid local CI publication scope as
   `GOV-LOCAL-CI-001` while the unrestricted default applies [ticket-008].
 
+## [0.20.38] - 2026-10-02
+
+### Fixed
+- Admit registered Worktrees v5 branches named `ticket/NNN-slug`, matching
+  their `ticket-NNN--slug` directory. Keep rejecting mismatched identities,
+  legacy branch spellings, detached delivery worktrees and noncanonical paths
+  [ticket-021].
+
 ## [0.20.37] - 2026-09-19
 
 ### Added

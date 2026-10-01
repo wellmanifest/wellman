@@ -44,7 +44,7 @@ _CANONICAL_WORKTREE = re.compile(
     r"^ticket-(?P<number>[0-9]{3,})--(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$"
 )
 _CANONICAL_BRANCH = re.compile(
-    r"^refs/heads/ticket-(?P<number>[0-9]{3,})-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$"
+    r"^refs/heads/ticket/(?P<number>[0-9]{3,})-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$"
 )
 
 

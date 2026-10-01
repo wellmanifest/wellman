@@ -2,11 +2,14 @@
 
 import json
 import subprocess
+import tempfile
+from pathlib import Path
 
 import pytest
 
 from wellman import __version__
 from wellman.cli import main
+from wellman.cli import _worktree_admission
 
 
 def test_cli_version(capsys):
@@ -141,6 +144,40 @@ def git(root, *args):
                           capture_output=True, text=True).stdout.strip()
 
 
+@pytest.mark.parametrize(
+    "directory,branch,expected_code",
+    [
+        (".worktrees/ticket-021--admission", "ticket/021-admission", None),
+        (".worktrees/ticket-1000--admission", "ticket/1000-admission", None),
+        (".worktrees/ticket-021--admission", "ticket/022-admission", "GOV-WORKTREE-ADMISSION-004"),
+        (".worktrees/ticket-021--admission", "ticket/021-other", "GOV-WORKTREE-ADMISSION-004"),
+        (".worktrees/ticket-021--admission", "ticket-021-admission", "GOV-WORKTREE-ADMISSION-004"),
+        (".worktrees/ticket-021--admission", None, "GOV-WORKTREE-ADMISSION-004"),
+        (".worktrees/nested/ticket-021--admission", "ticket/021-admission", "GOV-WORKTREE-ADMISSION-003"),
+        ("legacy/ticket-021--admission", "ticket/021-admission", "GOV-WORKTREE-ADMISSION-003"),
+    ],
+)
+def test_registered_worktree_admission_uses_canonical_v5_identity(directory, branch, expected_code):
+    # Admission deliberately rejects /tmp. Keep actual Git fixtures in ignored
+    # repository-local storage, then remove their entire temporary registration.
+    cache = Path.cwd() / ".subactor" / "cache" / "admission-tests"
+    cache.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=cache) as temporary:
+        primary = Path(temporary) / "primary"
+        primary.mkdir()
+        git(primary, "init", "-q")
+        git(primary, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+            "commit", "--allow-empty", "-qm", "fixture")
+        linked = primary / directory
+        linked.parent.mkdir(parents=True, exist_ok=True)
+        args = ["worktree", "add"]
+        args += ["-b", branch] if branch else ["--detach"]
+        git(primary, *args, str(linked), "HEAD")
+        assert _worktree_admission(primary) is None
+        finding = _worktree_admission(linked)
+        assert (finding.code if finding else None) == expected_code
+
+
 @pytest.mark.parametrize('target', ['auto', 'baseline'])
 def test_adopt_requires_explicit_non_git_bootstrap(tmp_path, capsys, target):
     assert main(['adopt', target, '--root', str(tmp_path)]) == 1
@@ -272,4 +309,3 @@ def test_cli_adopt_explicit_rejects_standard_flag(tmp_path, capsys):
     ])
     assert ret == 1
     assert '--standard' in capsys.readouterr().err
-

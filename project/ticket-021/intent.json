@@ -1,0 +1,90 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-021",
+  "summary": "Accept canonical Worktrees v5 branch identities in Wellman checks",
+  "workstream": "integration",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-021/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "CHANGELOG.md",
+    "VERSION",
+    "pyproject.toml",
+    "src/wellman/__init__.py",
+    "src/wellman/cli.py",
+    "tests/test_cli.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "58d7ae1ba768ead256e0e9a05fd641a0d8faec28",
+    "targetBranch": "main",
+    "outcome": "Publish Wellman 0.20.38 with canonical ticket/NNN-slug worktree admission and adversarial Git-backed regression tests.",
+    "nonGoals": [
+      "No legacy worktree normalization",
+      "No bypass of Git registration, matching ticket and slug, or system-temp rejection",
+      "No unrelated adoption or application behavior changes"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 25,
+    "budgets": {
+      "maxImplementationFiles": 9,
+      "maxAffectedComponents": 3,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Use the published Worktrees v5 branch spelling ticket/NNN-slug; preserve exact identity comparison and other admission guards.",
+      "components": [
+        {
+          "name": "wellman",
+          "paths": [
+            "src/wellman/**",
+            "tests/test_cli.py",
+            "VERSION",
+            "pyproject.toml",
+            "CHANGELOG.md"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the adoption commit; preserve existing immutable governance pin."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest tests/test_cli.py -q"
+        ],
+        "evidence": "Canonical slash branch accepted; mismatched, legacy, detached and noncanonical Git worktrees rejected."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest tests -q",
+          "bash project/governance-check.sh --actor agent"
+        ],
+        "evidence": "Full regressions and managed governance pass."
+      }
+    ]
+  }
+}

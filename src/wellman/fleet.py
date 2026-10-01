@@ -190,6 +190,25 @@ def _atomic_write(path: Path, content: bytes) -> None:
     temporary.replace(path)
 
 
+
+def _docs_lock_refreshable(path: Path) -> bool:
+    """Only refresh Docs already tracked by a legacy, non-package lock.
+
+    A package map gives its pinned adopter ownership of the entire lock. Fleet
+    adoption must not add targets or rewrite that adopter's digest projection.
+    """
+    gov_dir = path / ".governance"
+    package_map = gov_dir / "package-manifest.json"
+    if package_map.exists() or package_map.is_symlink():
+        return False
+    lock_path = gov_dir / "manifest.lock.json"
+    if not lock_path.is_file():
+        return False
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    managed = lock.get("managedFiles") if isinstance(lock, dict) else None
+    return isinstance(managed, dict) and ".governance/docs.json" in managed
+
+
 def _plan_record(record: RepositoryRecord, target: str, allow_dirty: bool, update_manifests: bool) -> Dict[str, Any]:
     actions: List[str] = []
     blockers: List[str] = []
@@ -209,7 +228,7 @@ def _plan_record(record: RepositoryRecord, target: str, allow_dirty: bool, updat
         docs_findings = validate_adoption(record.path, required=True, repository=record.repository)
         if docs_findings:
             actions.append("write .governance/docs.json")
-            if (record.path / ".governance" / "manifest.lock.json").is_file():
+            if _docs_lock_refreshable(record.path):
                 actions.append("refresh docs.json digest in manifest.lock.json")
     missing_agents = [f for f in ["AGENTS.md", "GEMINI.md", "CLAUDE.md"] if not (record.path / f).exists()]
     if missing_agents:
@@ -275,7 +294,7 @@ def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False
             docs_content = render_adoption(path, item["repository"])
             _atomic_write(docs_path, docs_content.encode("utf-8"))
             lock_path = gov_dir / "manifest.lock.json"
-            if lock_path.is_file():
+            if _docs_lock_refreshable(path):
                 lock = json.loads(lock_path.read_text(encoding="utf-8"))
                 managed = lock.get("managedFiles")
                 if isinstance(managed, dict):

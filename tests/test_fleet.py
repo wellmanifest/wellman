@@ -1,6 +1,9 @@
 """Tests for safe repository-fleet discovery and adoption."""
 
+import hashlib
 import json
+
+import pytest
 import subprocess
 
 from wellman import __version__
@@ -54,6 +57,77 @@ def test_fleet_apply_creates_repository_bound_adoption(tmp_path):
     docs = json.loads((repo / ".governance/docs.json").read_text(encoding="utf-8"))
     assert manifest["standard"] == {"id": "profile:baseline", "version": __version__}
     assert docs["repository"] == "acme/visible"
+
+
+
+@pytest.mark.parametrize("package_mapped", [False, True])
+@pytest.mark.parametrize("docs_tracked", [False, True])
+def test_fleet_docs_adoption_preserves_package_lock_ownership(
+    tmp_path, package_mapped, docs_tracked
+):
+    repo = make_repository(tmp_path, "visible", "https://github.com/acme/visible.git")
+    gov = repo / ".governance"
+    gov.mkdir()
+    managed = {"AGENTS.md": "a" * 64}
+    if docs_tracked:
+        managed[".governance/docs.json"] = "b" * 64
+    lock = {"schema": "new-project.adoption-lock/v1", "managedFiles": managed}
+    lock_path = gov / "manifest.lock.json"
+    original = json.dumps(lock, indent=4) + "\n"
+    lock_path.write_text(original, encoding="utf-8")
+    if package_mapped:
+        (gov / "package-manifest.json").write_text(
+            json.dumps({"schema": "new-project.package-manifest/v1", "files": [
+                {"target": name, "strategy": "managed"} for name in managed
+            ]}), encoding="utf-8"
+        )
+
+    plan = build_plan(repo, "baseline", allow_dirty=True)
+    refresh = "refresh docs.json digest in manifest.lock.json"
+    assert (refresh in plan["repositories"][0]["actions"]) == (
+        docs_tracked and not package_mapped
+    )
+    apply_plan(plan, "baseline", sync_agents=False)
+
+    updated = json.loads(lock_path.read_text(encoding="utf-8"))
+    assert set(updated["managedFiles"]) == set(managed)
+    assert updated["managedFiles"]["AGENTS.md"] == "a" * 64
+    if package_mapped or not docs_tracked:
+        assert lock_path.read_text(encoding="utf-8") == original
+    else:
+        assert updated["managedFiles"][".governance/docs.json"] == hashlib.sha256(
+            (gov / "docs.json").read_bytes()
+        ).hexdigest()
+    assert json.loads((gov / "docs.json").read_text())["repository"] == "acme/visible"
+
+
+
+def test_fleet_preserves_lock_with_dangling_package_map(tmp_path):
+    repo = make_repository(tmp_path, "visible")
+    gov = repo / ".governance"
+    gov.mkdir()
+    (gov / "package-manifest.json").symlink_to("missing-package.json")
+    lock_path = gov / "manifest.lock.json"
+    original = json.dumps({"managedFiles": {".governance/docs.json": "a" * 64}})
+    lock_path.write_text(original, encoding="utf-8")
+    plan = build_plan(repo, "baseline", allow_dirty=True)
+    assert "refresh docs.json digest in manifest.lock.json" not in plan["repositories"][0]["actions"]
+    apply_plan(plan, "baseline", sync_agents=False)
+    assert lock_path.read_text(encoding="utf-8") == original
+
+
+
+def test_fleet_non_docs_target_leaves_docs_lock_untouched(tmp_path):
+    repo = make_repository(tmp_path, "visible")
+    gov = repo / ".governance"
+    gov.mkdir()
+    lock_path = gov / "manifest.lock.json"
+    original = json.dumps({"managedFiles": {".governance/docs.json": "a" * 64}})
+    lock_path.write_text(original, encoding="utf-8")
+    plan = build_plan(repo, "wellmanifest/worktrees", allow_dirty=True)
+    apply_plan(plan, "wellmanifest/worktrees", sync_agents=False)
+    assert lock_path.read_text(encoding="utf-8") == original
+    assert not (gov / "docs.json").exists()
 
 
 def test_fleet_manifest_update_preserves_custom_fields(tmp_path):

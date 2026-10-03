@@ -68,6 +68,10 @@ def test_fleet_docs_adoption_preserves_package_lock_ownership(
     repo = make_repository(tmp_path, "visible", "https://github.com/acme/visible.git")
     gov = repo / ".governance"
     gov.mkdir()
+    (gov / "manifest.json").write_text(json.dumps({
+        "schema": "new-project.governance/v2",
+        "standard": {"id": "wellmanifest/new-project", "version": "0.20.80"},
+    }))
     managed = {"AGENTS.md": "a" * 64}
     if docs_tracked:
         managed[".governance/docs.json"] = "b" * 64
@@ -106,6 +110,10 @@ def test_fleet_preserves_lock_with_dangling_package_map(tmp_path):
     repo = make_repository(tmp_path, "visible")
     gov = repo / ".governance"
     gov.mkdir()
+    (gov / "manifest.json").write_text(json.dumps({
+        "schema": "new-project.governance/v2",
+        "standard": {"id": "wellmanifest/new-project", "version": "0.20.80"},
+    }))
     (gov / "package-manifest.json").symlink_to("missing-package.json")
     lock_path = gov / "manifest.lock.json"
     original = json.dumps({"managedFiles": {".governance/docs.json": "a" * 64}})
@@ -121,6 +129,10 @@ def test_fleet_non_docs_target_leaves_docs_lock_untouched(tmp_path):
     repo = make_repository(tmp_path, "visible")
     gov = repo / ".governance"
     gov.mkdir()
+    (gov / "manifest.json").write_text(json.dumps({
+        "schema": "new-project.governance/v2",
+        "standard": {"id": "wellmanifest/new-project", "version": "0.20.80"},
+    }))
     lock_path = gov / "manifest.lock.json"
     original = json.dumps({"managedFiles": {".governance/docs.json": "a" * 64}})
     lock_path.write_text(original, encoding="utf-8")
@@ -136,8 +148,8 @@ def test_fleet_manifest_update_preserves_custom_fields(tmp_path):
     gov.mkdir()
     (gov / "manifest.json").write_text(
         json.dumps({
-            "schema": "new-project.governance/v2",
-            "standard": {"id": "wellmanifest/new-project", "version": "0.20.32"},
+            "schema": "wellmanifest.manifest/v1",
+            "standard": {"id": "profile:baseline", "version": "0.20.32"},
             "custom": {"keep": True},
         }),
         encoding="utf-8",
@@ -149,6 +161,95 @@ def test_fleet_manifest_update_preserves_custom_fields(tmp_path):
 
     assert updated["standard"]["version"] == __version__
     assert updated["custom"] == {"keep": True}
+
+
+@pytest.mark.parametrize("schema", ["new-project.governance/v2", "new-project.governance/v3"])
+@pytest.mark.parametrize("locked", [False, True])
+def test_fleet_rejects_native_version_updates_before_writes(tmp_path, schema, locked):
+    repo = make_repository(tmp_path, "native")
+    gov = repo / ".governance"
+    gov.mkdir()
+    manifest = gov / "manifest.json"
+    manifest.write_text(json.dumps({
+        "schema": schema,
+        "standard": {"id": "wellmanifest/new-project", "version": "0.20.80"},
+        "standards": [{"id": "wellmanifest/new-project", "version": "0.20.80"}],
+    }) + "\n")
+    if locked:
+        (gov / "manifest.lock.json").write_text('{"managedFiles": {}}\n')
+    before = {p.relative_to(repo): p.read_bytes() for p in gov.iterdir()}
+
+    plan = build_plan(repo, "baseline", allow_dirty=True, update_manifests=True)
+    result = apply_plan(plan, "baseline", update_manifests=True)
+
+    assert plan["blocked"] == 1
+    assert "pinned new-project" in " ".join(plan["repositories"][0]["blockers"])
+    assert result["repositories"][0]["status"] == "skipped"
+    assert {p.relative_to(repo): p.read_bytes() for p in gov.iterdir()} == before
+    assert not (repo / "AGENTS.md").exists()
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_fleet_rechecks_native_adoption_when_applying_stale_plan(tmp_path, partial):
+    repo = make_repository(tmp_path, "native")
+    plan = build_plan(repo, "baseline", update_manifests=True)
+    assert plan["ready"] == 1
+    gov = repo / ".governance"
+    gov.mkdir()
+    if not partial:
+        (gov / "manifest.json").write_text(json.dumps({
+            "schema": "new-project.governance/v2",
+            "standard": {"id": "wellmanifest/new-project", "version": "0.20.80"},
+        }) + "\n")
+    (gov / "manifest.lock.json").write_text('{"managedFiles": {}}\n')
+    before = {p.relative_to(repo): p.read_bytes() for p in gov.iterdir()}
+
+    result = apply_plan(plan, "baseline", update_manifests=True)
+
+    assert result["repositories"][0]["status"] == "skipped"
+    assert result["repositories"][0]["ready"] is False
+    assert "pinned new-project" in " ".join(result["repositories"][0]["blockers"])
+    assert {p.relative_to(repo): p.read_bytes() for p in gov.iterdir()} == before
+    assert not (repo / "AGENTS.md").exists()
+
+
+@pytest.mark.parametrize("update_manifests", [False, True])
+def test_fleet_does_not_create_scaffold_over_partial_lock(tmp_path, update_manifests):
+    repo = make_repository(tmp_path, "partial")
+    gov = repo / ".governance"
+    gov.mkdir()
+    lock = gov / "manifest.lock.json"
+    lock.write_text('{"managedFiles": {}}\n')
+    before = lock.read_bytes()
+
+    plan = build_plan(repo, "baseline", allow_dirty=True, update_manifests=update_manifests)
+    result = apply_plan(plan, "baseline", update_manifests=update_manifests)
+
+    assert plan["blocked"] == 1
+    assert result["repositories"][0]["status"] == "skipped"
+    assert list(gov.iterdir()) == [lock]
+    assert lock.read_bytes() == before
+
+
+def test_fleet_additive_adoption_preserves_native_headers(tmp_path):
+    repo = make_repository(tmp_path, "native")
+    gov = repo / ".governance"
+    gov.mkdir()
+    manifest = gov / "manifest.json"
+    original = json.dumps({
+        "schema": "new-project.governance/v2",
+        "standard": {"id": "wellmanifest/new-project", "version": "0.20.80"},
+    }, indent=4) + "\n"
+    manifest.write_text(original)
+    lock = gov / "manifest.lock.json"
+    lock.write_text('{"managedFiles": {}}\n')
+
+    plan = build_plan(repo, "baseline", allow_dirty=True)
+    result = apply_plan(plan, "baseline", sync_agents=False)
+
+    assert result["repositories"][0]["status"] == "updated"
+    assert manifest.read_text() == original
+    assert lock.read_text() == '{"managedFiles": {}}\n'
 
 
 def test_emit_standardization_tickets_empty():

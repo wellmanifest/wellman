@@ -180,6 +180,26 @@ def _manifest_with_updated_headers(manifest: Dict[str, Any]) -> Dict[str, Any]:
     return updated
 
 
+def _manifest_write_blocker(path: Path, manifest: Optional[Dict[str, Any]], update_manifests: bool) -> Optional[str]:
+    """Legacy fleet scaffolding cannot update immutable native adoption pins."""
+    lock = path / ".governance" / "manifest.lock.json"
+    locked = lock.exists() or lock.is_symlink()
+    if manifest is None:
+        if locked:
+            return "partial locked adoption; restore it through the pinned new-project adopter"
+        return None
+    schema = manifest.get("schema")
+    standard = manifest.get("standard")
+    native = locked or (
+        isinstance(schema, str) and schema.startswith("new-project.governance/")
+    ) or (
+        isinstance(standard, dict) and standard.get("id") == "wellmanifest/new-project"
+    )
+    if native and update_manifests:
+        return "native adoption version pins require the pinned new-project adoption/updater"
+    return None
+
+
 def _json_bytes(value: Any) -> bytes:
     return (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
@@ -218,11 +238,14 @@ def _plan_record(record: RepositoryRecord, target: str, allow_dirty: bool, updat
         blockers.append(f"invalid manifest: {record.manifest_error}")
     if record.dirty and not allow_dirty:
         blockers.append("working tree is dirty")
+    manifest_blocker = _manifest_write_blocker(record.path, record.manifest, update_manifests)
+    if manifest_blocker:
+        blockers.append(manifest_blocker)
     if record.manifest is None:
         actions.append("create .governance/manifest.json")
-    elif update_manifests and _manifest_header_requires_update(record.manifest):
+    elif update_manifests and not manifest_blocker and _manifest_header_requires_update(record.manifest):
         actions.append("update managed manifest version headers")
-    elif update_manifests:
+    elif update_manifests and not manifest_blocker:
         blockers.append("manifest has no wellman-owned version header")
     if target_requires_docs(target):
         docs_findings = validate_adoption(record.path, required=True, repository=record.repository)
@@ -270,11 +293,18 @@ def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False
             continue
         path = Path(item["path"])
         gov_dir = path / ".governance"
-        gov_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = gov_dir / "manifest.json"
         manifest = None
         if manifest_path.is_file():
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_blocker = _manifest_write_blocker(path, manifest, update_manifests)
+        if manifest_blocker:
+            result["blockers"] = [*item["blockers"], manifest_blocker]
+            result["ready"] = False
+            result["status"] = "skipped"
+            results.append(result)
+            continue
+        gov_dir.mkdir(parents=True, exist_ok=True)
         if manifest is None:
             manifest = {
                 "schema": "wellmanifest.manifest/v1",
@@ -882,4 +912,3 @@ def trigger_taskand_execution(
         "steps": executed_steps,
         "commit": commit_sha,
     }
-

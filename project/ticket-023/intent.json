@@ -1,0 +1,83 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-023",
+  "summary": "Preserve native standard pins during fleet adoption",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-023/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/fleet.py",
+    "tests/test_fleet.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "1d58e596a1aceab583df364ddc584d2c93618190",
+    "targetBranch": "main",
+    "outcome": "Publish a fleet adopter that preserves native standard pins and refuses legacy manifest creation over partial locked adoption, with regression tests and independent protected merge.",
+    "nonGoals": [
+      "No edits to fleet target repositories or deployed controllers",
+      "No publisher policy changes, credential changes or foreign scope takeover",
+      "No substitute native bootstrap or conformance claim"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 25,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Detect native or locked adoption during planning and recheck immediately before any fleet writes; preserve legacy profile header updates and additive native adoption without version mutation.",
+      "components": [
+        {
+          "name": "fleet-adoption",
+          "paths": [
+            "src/wellman/fleet.py",
+            "tests/test_fleet.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert this bounded fleet guard; no existing target repository is modified."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest tests/test_fleet.py -q"
+        ],
+        "evidence": "Native manifest and lock bytes are preserved during rejected update or stale plan; legacy scaffold updates remain supported."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest tests -q",
+          "./project/governance-check.sh --actor agent"
+        ],
+        "evidence": "All tests and native governance pass on the exact delivered head."
+      }
+    ]
+  }
+}

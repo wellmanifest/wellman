@@ -139,6 +139,60 @@ def test_cli_adopt_uses_running_package_version(capsys, tmp_path):
     assert "Adoption scaffolded" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize('target', ['baseline', 'wellmanifest/new-project', 'wellmanifest/worktrees'])
+@pytest.mark.parametrize('schema', ['new-project.governance/v2', 'new-project.governance/v3'])
+def test_explicit_adoption_cannot_replace_native_governance(tmp_path, capsys, target, schema):
+    gov = tmp_path / '.governance'
+    gov.mkdir()
+    manifest = gov / 'manifest.json'
+    original = json.dumps({'schema': schema, 'approvalEvidence': {'requiredBindings': ['headSha']}}).encode()
+    manifest.write_bytes(original)
+
+    assert main(['adopt', target, '--root', str(tmp_path), '--bootstrap',
+                 '--force', '--repository', 'acme/example']) == 1
+    assert {p.name: p.read_bytes() for p in gov.iterdir()} == {'manifest.json': original}
+    assert 'pinned new-project adoption' in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('target', ['baseline', 'wellmanifest/new-project', 'wellmanifest/worktrees'])
+@pytest.mark.parametrize('manifest_present', [False, True])
+def test_explicit_adoption_preserves_locked_and_partial_adoption(tmp_path, capsys, target, manifest_present):
+    gov = tmp_path / '.governance'
+    gov.mkdir()
+    (gov / 'manifest.lock.json').write_text('{"schema":"new-project.lock/v1"}\n')
+    if manifest_present:
+        (gov / 'manifest.json').write_text('{"schema":"wellmanifest.manifest/v1"}\n')
+    original = {p.name: p.read_bytes() for p in gov.iterdir()}
+
+    assert main(['adopt', target, '--root', str(tmp_path), '--bootstrap',
+                 '--force', '--repository', 'acme/example']) == 1
+    assert {p.name: p.read_bytes() for p in gov.iterdir()} == original
+    assert 'pinned new-project adoption' in capsys.readouterr().err
+
+
+def test_explicit_adoption_preserves_unreadable_manifest(tmp_path, capsys):
+    gov = tmp_path / '.governance'
+    gov.mkdir()
+    (gov / 'manifest.json').write_bytes(b'{"schema":')
+    assert main(['adopt', 'baseline', '--root', str(tmp_path), '--bootstrap',
+                 '--force', '--repository', 'acme/example']) == 1
+    assert {p.name: p.read_bytes() for p in gov.iterdir()} == {'manifest.json': b'{"schema":'}
+    assert 'cannot inspect existing adoption' in capsys.readouterr().err
+
+
+def test_auto_registration_preserves_native_governance_and_lock(tmp_path, capsys):
+    gov = tmp_path / '.governance'
+    gov.mkdir()
+    (gov / 'manifest.json').write_text('{"schema":"new-project.governance/v2"}\n')
+    (gov / 'manifest.lock.json').write_text('{"schema":"new-project.lock/v1"}\n')
+    original = {p.name: p.read_bytes() for p in gov.iterdir()}
+    assert main(['adopt', 'auto', '--root', str(tmp_path), '--bootstrap', '--json']) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result['conformance'] == 'unverified'
+    assert all((gov / name).read_bytes() == content for name, content in original.items())
+    assert (gov / 'standard-requirements.json').is_file()
+
+
 def git(root, *args):
     return subprocess.run(['git', '-C', str(root), *args], check=True,
                           capture_output=True, text=True).stdout.strip()
@@ -226,7 +280,7 @@ def test_adopt_linked_worktree_does_not_write_primary(tmp_path, capsys):
 
 
 @pytest.mark.parametrize('target', ['auto', 'baseline'])
-@pytest.mark.parametrize('link_name', ['.governance', '.governance/manifest.json',
+@pytest.mark.parametrize('link_name', ['.governance', '.governance/manifest.json', '.governance/manifest.lock.json',
                                      '.governance/standard-packs.json',
                                      '.governance/standard-requirements.json'])
 def test_adopt_rejects_symlink_targets_before_any_write(tmp_path, capsys, target, link_name):

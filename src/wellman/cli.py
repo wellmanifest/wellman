@@ -381,7 +381,7 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     from wellman.adoption import register, repository_root, safe_path
     try:
         root = repository_root(args.root or '.', bootstrap=args.bootstrap)
-        for name in ('manifest.json', 'standard-packs.json', 'standard-requirements.json'):
+        for name in ('manifest.json', 'manifest.lock.json', 'standard-packs.json', 'standard-requirements.json'):
             safe_path(root / '.governance' / name)
     except (OSError, ValueError) as error:
         print(f'Error: {error}', file=sys.stderr)
@@ -418,6 +418,24 @@ def cmd_adopt(args: argparse.Namespace) -> int:
             f"Error: {manifest_path} already exists; refusing to overwrite it without --force.",
             file=sys.stderr,
         )
+        return 1
+
+    # A scaffold is not an updater for an immutable native adoption.
+    native_adoption = (gov_dir / 'manifest.lock.json').exists()
+    if manifest_path.exists():
+        try:
+            existing = json.loads(manifest_path.read_text(encoding='utf-8'))
+        except (OSError, ValueError, UnicodeError) as error:
+            print(f'Error: cannot inspect existing adoption: {error}', file=sys.stderr)
+            return 1
+        schema = existing.get('schema') if isinstance(existing, dict) else None
+        native_adoption = native_adoption or (
+            isinstance(schema, str) and schema.startswith('new-project.governance/')
+        )
+    if native_adoption:
+        print('Error: explicit scaffold adoption cannot replace native governance, even with --force; '
+              'use the pinned new-project adoption/updater. '
+              'Use adopt auto for additive requirement registration.', file=sys.stderr)
         return 1
 
     selected_profiles = [profile.name] if profile else []

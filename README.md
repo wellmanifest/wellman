@@ -142,8 +142,12 @@ Repeated registration is idempotent and additive: existing requirements,
 custom metadata, adoption manifests, pinned revisions and evidence are preserved.
 Invalid inputs and concurrent writers fail explicitly. Explicit standard/profile
 adoption also registers the baseline and selected requirements. Existing explicit
-adoption still requires `--force` to replace a scaffold; auto mode never replaces
-it. The command does not scan or modify other repositories, install background
+adoption still requires `--force` to replace a legacy scaffold. Native governance
+manifests and immutable adoption locks are preserved even with `--force`, including
+partial locked adoptions. Update these through the pinned new-project adopter;
+use `adopt auto` to add requirements while preserving the installed governance.
+An unreadable existing manifest fails before any write. Auto mode never replaces
+the manifest. The command does not scan or modify other repositories, install background
 watchers, fetch packages, grant leases, change protected CI or claim S3–S5
 conformance. `minimumLevel` is a requirement, not an observed compliance level.
 

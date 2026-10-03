@@ -1,0 +1,85 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-022",
+  "summary": "Preserve native governance during explicit scaffold adoption",
+  "workstream": "integration",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-022/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "README.md",
+    "src/wellman/cli.py",
+    "tests/test_cli.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "73b4edcf3e74709734c755a4f68cbf328b7d6f5b",
+    "targetBranch": "main",
+    "outcome": "Publish a guarded explicit scaffold adopter that preserves native governance manifests and immutable adoption locks, with real regression tests.",
+    "nonGoals": [
+      "No changes to existing adopter repositories or controller policy",
+      "No deployment or credential changes",
+      "No legacy worktree repair or foreign scope takeover"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 25,
+    "budgets": {
+      "maxImplementationFiles": 5,
+      "maxAffectedComponents": 2,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Reject legacy scaffold replacement before any writes when native governance or an immutable adoption lock is present; retain additive auto registration and explicit replacement of legacy scaffolds.",
+      "components": [
+        {
+          "name": "explicit-adoption",
+          "paths": [
+            "src/wellman/cli.py",
+            "tests/test_cli.py",
+            "README.md"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert this bounded adopter guard without modifying target repositories."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest tests/test_cli.py tests/test_adoption.py -q"
+        ],
+        "evidence": "Native manifest, locked and partial adoption inputs remain byte-identical; legacy explicit replacement and additive registration remain supported."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest tests -q",
+          "./project/governance-check.sh --actor agent"
+        ],
+        "evidence": "Full suite and native governance pass before independent exact-head publication."
+      }
+    ]
+  }
+}

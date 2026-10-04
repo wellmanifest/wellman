@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from wellman import __version__
+from wellman.adoption import register
 from wellman.docs_adoption import render_adoption, validate_adoption
 from wellman.local_ci import ensure_default_policy
 from wellman.registry import get_profile, get_standard
@@ -21,6 +22,11 @@ from wellman.validator import Finding
 
 PLAN_SCHEMA = "wellman.fleet-plan/v1"
 REPORT_SCHEMA = "wellman.fleet-report/v1"
+AGENT_INSTRUCTION_PATHS = (
+    "AGENTS.md", "GEMINI.md", "CLAUDE.md",
+    ".cursor/rules/new-project-standard.mdc", ".github/copilot-instructions.md",
+    ".aider.conf.yml",
+)
 
 
 @dataclass
@@ -238,6 +244,32 @@ def _plan_record(record: RepositoryRecord, target: str, allow_dirty: bool, updat
         blockers.append(f"invalid manifest: {record.manifest_error}")
     if record.dirty and not allow_dirty:
         blockers.append("working tree is dirty")
+    governance = record.path / ".governance"
+    if governance.is_symlink():
+        blockers.append("refusing symlink: .governance")
+    else:
+        try:
+            local_ci = ensure_default_policy(record.path, dry_run=True)
+            if local_ci["problem"]:
+                blockers.append(f"invalid local CI policy: {local_ci['problem']}")
+            elif local_ci["changed"]:
+                actions.append("create .governance/local-ci-publication.json")
+            registration = register(
+                record.path, profiles=[target] if get_profile(target) else [],
+                standards=[] if get_profile(target) else [target], dry_run=True,
+            )
+            requirements = governance / "standard-requirements.json"
+            existing = json.loads(requirements.read_text(encoding="utf-8")) if requirements.exists() else None
+            if existing != registration["registration"]:
+                actions.append("register .governance/standard-requirements.json")
+        except (OSError, ValueError) as exc:
+            blockers.append(f"unsafe local CI adoption: {exc}")
+    packs = Path(__file__).parent / "schemas" / "standard-packs.json"
+    target_packs = governance / "standard-packs.json"
+    if target_packs.is_symlink():
+        blockers.append("refusing symlink: .governance/standard-packs.json")
+    elif packs.is_file() and not target_packs.exists():
+        actions.append("create .governance/standard-packs.json")
     manifest_blocker = _manifest_write_blocker(record.path, record.manifest, update_manifests)
     if manifest_blocker:
         blockers.append(manifest_blocker)
@@ -253,7 +285,7 @@ def _plan_record(record: RepositoryRecord, target: str, allow_dirty: bool, updat
             actions.append("write .governance/docs.json")
             if _docs_lock_refreshable(record.path):
                 actions.append("refresh docs.json digest in manifest.lock.json")
-    missing_agents = [f for f in ["AGENTS.md", "GEMINI.md", "CLAUDE.md"] if not (record.path / f).exists()]
+    missing_agents = [f for f in AGENT_INSTRUCTION_PATHS if not (record.path / f).exists()]
     if missing_agents:
         actions.append(f"project agent host instruction contracts ({', '.join(missing_agents)})")
     return {
@@ -284,6 +316,8 @@ def build_plan(root: Path, target: str, recursive: Optional[bool] = None, allow_
 def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False, sync_agents: bool = True) -> Dict[str, Any]:
     """Apply only the actions present in a previously built plan."""
 
+    if plan.get("schema") != PLAN_SCHEMA or plan.get("target") != target:
+        raise ValueError("fleet plan schema or target does not match requested adoption")
     results: List[Dict[str, Any]] = []
     for item in plan["repositories"]:
         result = dict(item)
@@ -292,6 +326,23 @@ def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False
             results.append(result)
             continue
         path = Path(item["path"])
+        try:
+            current = _plan_record(inspect_repository(path), target, bool(item["dirty"]), update_manifests)
+        except (OSError, ValueError) as exc:
+            current = {"ready": False, "blockers": [f"cannot revalidate fleet plan: {exc}"]}
+        if not current["ready"] or any(
+            current.get(field) != item.get(field) for field in ("repository", "actions", "dirty")
+        ):
+            result["blockers"] = [*item["blockers"], *current["blockers"], "fleet plan is stale; rebuild before applying"]
+            result["ready"] = False
+            result["status"] = "skipped"
+            results.append(result)
+            continue
+        actions = item["actions"]
+        if not actions:
+            result["status"] = "up-to-date"
+            results.append(result)
+            continue
         gov_dir = path / ".governance"
         manifest_path = gov_dir / "manifest.json"
         manifest = None
@@ -305,26 +356,26 @@ def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False
             results.append(result)
             continue
         gov_dir.mkdir(parents=True, exist_ok=True)
-        if manifest is None:
+        if "create .governance/manifest.json" in actions:
             manifest = {
                 "schema": "wellmanifest.manifest/v1",
                 "standard": {"id": f"profile:{target}" if get_profile(target) else get_standard(target).id, "version": __version__},
             }
             _atomic_write(manifest_path, _json_bytes(manifest))
-        elif update_manifests and _manifest_header_requires_update(manifest):
+        elif "update managed manifest version headers" in actions:
             _atomic_write(manifest_path, _json_bytes(_manifest_with_updated_headers(manifest)))
 
         packs = Path(__file__).parent / "schemas" / "standard-packs.json"
         target_packs = gov_dir / "standard-packs.json"
-        if packs.is_file() and not target_packs.exists():
+        if "create .governance/standard-packs.json" in actions:
             _atomic_write(target_packs, packs.read_bytes())
 
-        if target_requires_docs(target):
+        if "write .governance/docs.json" in actions:
             docs_path = gov_dir / "docs.json"
             docs_content = render_adoption(path, item["repository"])
             _atomic_write(docs_path, docs_content.encode("utf-8"))
             lock_path = gov_dir / "manifest.lock.json"
-            if _docs_lock_refreshable(path):
+            if "refresh docs.json digest in manifest.lock.json" in actions:
                 lock = json.loads(lock_path.read_text(encoding="utf-8"))
                 managed = lock.get("managedFiles")
                 if isinstance(managed, dict):
@@ -333,11 +384,18 @@ def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False
 
         # Local OneDev + Validator publication is the default for every
         # repository; an existing adopter restriction is kept.
-        local_ci = ensure_default_policy(path)
-        if local_ci["changed"]:
-            result["local_ci_publication"] = "created"
+        if "create .governance/local-ci-publication.json" in actions:
+            local_ci = ensure_default_policy(path)
+            if local_ci["changed"]:
+                result["local_ci_publication"] = "created"
+        if "register .governance/standard-requirements.json" in actions:
+            registration = register(
+                path, profiles=[target] if get_profile(target) else [],
+                standards=[] if get_profile(target) else [target],
+            )
+            result["conformance"] = registration["conformance"]
 
-        if sync_agents:
+        if sync_agents and any(action.startswith("project agent host instruction contracts (") for action in actions):
             agent_updates = sync_agent_instructions(path, item["repository"])
             if agent_updates:
                 result["agent_instructions"] = agent_updates

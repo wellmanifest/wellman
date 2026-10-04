@@ -46,6 +46,110 @@ def test_fleet_plan_blocks_dirty_repository(tmp_path):
     assert "working tree is dirty" in plan["repositories"][0]["blockers"]
 
 
+def test_fleet_plan_discloses_all_additive_recovery_effects(tmp_path):
+    repo = make_repository(tmp_path, "visible")
+    actions = build_plan(repo, "wellmanifest/merge")["repositories"][0]["actions"]
+    assert "create .governance/local-ci-publication.json" in actions
+    assert "create .governance/standard-packs.json" in actions
+    assert "register .governance/standard-requirements.json" in actions
+    hosts = next(action for action in actions if action.startswith("project agent host"))
+    for name in ("AGENTS.md", "GEMINI.md", "CLAUDE.md", ".aider.conf.yml",
+                 ".cursor/rules/new-project-standard.mdc", ".github/copilot-instructions.md"):
+        assert name in hosts
+
+
+@pytest.mark.parametrize("change", ["policy", "host", "origin", "dirty"])
+def test_fleet_rejects_changed_plan_before_any_writes(tmp_path, change):
+    repo = make_repository(tmp_path, "visible")
+    plan = build_plan(repo, "wellmanifest/merge")
+    if change == "policy":
+        (repo / ".governance").mkdir()
+        (repo / ".governance/local-ci-publication.json").write_text(json.dumps({
+            "schema": "new-project.local-ci-publication/v1",
+            "scope": {"mode": "restricted", "repositories": ["acme/*"]},
+        }))
+    elif change == "origin":
+        subprocess.run(["git", "remote", "set-url", "origin", "https://github.com/other/repo.git"], cwd=repo, check=True)
+    else:
+        (repo / ("AGENTS.md" if change == "host" else "unknown.txt")).write_text("preserve\n")
+    before = {p.relative_to(repo): p.read_bytes() for p in repo.rglob("*") if p.is_file()}
+    result = apply_plan(plan, "wellmanifest/merge")
+    assert result["repositories"][0]["status"] == "skipped"
+    assert "fleet plan is stale" in " ".join(result["repositories"][0]["blockers"])
+    assert {p.relative_to(repo): p.read_bytes() for p in repo.rglob("*") if p.is_file()} == before
+
+
+@pytest.mark.parametrize("unsafe", ["invalid", "policy-symlink", "governance-symlink", "packs-symlink"])
+def test_fleet_recovery_policy_problems_block_all_writes(tmp_path, unsafe):
+    repo = make_repository(tmp_path, "visible")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    if unsafe == "governance-symlink":
+        (repo / ".governance").symlink_to(outside, target_is_directory=True)
+    else:
+        (repo / ".governance").mkdir()
+        policy = repo / ".governance/local-ci-publication.json"
+        if unsafe == "invalid":
+            policy.write_text('{"scope": "broken"}')
+        elif unsafe == "policy-symlink":
+            policy.symlink_to(outside / "missing")
+        else:
+            (repo / ".governance/standard-packs.json").symlink_to(outside / "missing")
+    plan = build_plan(repo, "wellmanifest/merge", allow_dirty=True)
+    assert plan["blocked"] == 1
+    assert apply_plan(plan, "wellmanifest/merge")["repositories"][0]["status"] == "skipped"
+    assert not (repo / ".governance/manifest.json").exists()
+    assert not (repo / "AGENTS.md").exists()
+    assert list(outside.iterdir()) == []
+
+
+def test_fleet_rejects_target_substitution(tmp_path):
+    repo = make_repository(tmp_path, "visible")
+    plan = build_plan(repo, "wellmanifest/merge")
+    with pytest.raises(ValueError, match="target does not match"):
+        apply_plan(plan, "baseline")
+    assert not (repo / ".governance").exists()
+
+
+def test_fleet_noop_preserves_policy_docs_and_locks(tmp_path):
+    repo = make_repository(tmp_path, "visible")
+    apply_plan(build_plan(repo, "baseline"), "baseline")
+    plan = build_plan(repo, "baseline", allow_dirty=True)
+    assert plan["repositories"][0]["actions"] == []
+    before = {p.relative_to(repo): (p.read_bytes(), p.stat().st_mtime_ns)
+              for p in repo.rglob("*") if p.is_file()}
+    assert apply_plan(plan, "baseline")["repositories"][0]["status"] == "up-to-date"
+    assert {p.relative_to(repo): (p.read_bytes(), p.stat().st_mtime_ns)
+            for p in repo.rglob("*") if p.is_file()} == before
+
+
+def test_fleet_registers_merge_requirement_without_replacing_native_pins(tmp_path):
+    repo = make_repository(tmp_path, "native")
+    governance = repo / ".governance"
+    governance.mkdir()
+    manifest = governance / "manifest.json"
+    original = '{"schema":"new-project.governance/v2","standard":{"id":"wellmanifest/new-project","version":"0.20.80"}}\n'
+    manifest.write_text(original)
+    result = apply_plan(build_plan(repo, "wellmanifest/merge", allow_dirty=True), "wellmanifest/merge")
+    requirements = json.loads((governance / "standard-requirements.json").read_text())
+    assert "wellmanifest/merge" in {item["id"] for item in requirements["requirements"]}
+    assert "wellmanifest/validation-attestation" in {item["id"] for item in requirements["requirements"]}
+    assert result["repositories"][0]["conformance"] == "unverified"
+    assert manifest.read_text() == original
+
+
+def test_fleet_does_not_overwrite_malformed_requirements(tmp_path):
+    repo = make_repository(tmp_path, "native")
+    (repo / ".governance").mkdir()
+    requirements = repo / ".governance/standard-requirements.json"
+    requirements.write_text('{"schema":"unknown"}')
+    plan = build_plan(repo, "wellmanifest/merge", allow_dirty=True)
+    assert plan["blocked"] == 1
+    assert apply_plan(plan, "wellmanifest/merge")["repositories"][0]["status"] == "skipped"
+    assert requirements.read_text() == '{"schema":"unknown"}'
+    assert not (repo / ".governance/local-ci-publication.json").exists()
+
+
 def test_fleet_apply_creates_repository_bound_adoption(tmp_path):
     repo = make_repository(tmp_path, "visible", "https://github.com/acme/visible.git")
     plan = build_plan(tmp_path, "baseline")

@@ -4,6 +4,8 @@ Run ``python -m wellman.analyzer_snapshot ROOT --output STORE --python PYTHON``.
 Prepare the separately pinned analyzer environment before scanning. This module
 never installs packages, adopts standards, imports product code or grants trust.
 Process receipts establish local provenance, not independent conformance.
+Analyzer package bytes are observed; transitive dependencies retain version
+metadata only. Before/after observations are not an immutable execution sandbox.
 """
 from __future__ import annotations
 
@@ -87,31 +89,99 @@ def _run(argv, cwd, log, timeout):
     return result
 
 
+# Executed by the pinned interpreter using only its standard library. Resolve
+# top-level packages without importing analyzers, including files absent from
+# distribution RECORD. Bound traversal and reads across the entire observation.
+_ENVIRONMENT_SCRIPT = r'''
+import hashlib, importlib.metadata as m, importlib.machinery as machinery
+import json, os, stat, sys
+from pathlib import Path
+
+versions, implementations = {}, {}
+entries_seen = bytes_seen = 0
+for name in json.loads(sys.argv[1]):
+    try:
+        versions[name] = m.version(name)
+    except m.PackageNotFoundError:
+        versions[name] = implementations[name] = None
+        continue
+    spec = machinery.PathFinder.find_spec(name, sys.path)
+    locations = list(spec.submodule_search_locations or []) if spec else []
+    if len(locations) != 1:
+        raise ValueError('Analyzer package root unavailable or ambiguous')
+    root = Path(locations[0]).absolute()
+    if not root.is_dir() or any(p.is_symlink() for p in (root, *root.parents)):
+        raise ValueError('Unsafe analyzer package root')
+    files = []
+    def walk_error(error):
+        raise error
+    for directory, directories, names in os.walk(root, followlinks=False, onerror=walk_error):
+        entries_seen += len(directories) + len(names)
+        if entries_seen > 5000:
+            raise ValueError('Analyzer package entry budget exceeded')
+        for child in directories:
+            if (Path(directory) / child).is_symlink():
+                raise ValueError('Analyzer package directory symlink')
+        # Commands use a fresh pycache_prefix and -B, so installed caches are
+        # neither read nor written. Legacy .pyc outside __pycache__ stays bound.
+        directories[:] = sorted(d for d in directories if d != '__pycache__')
+        for filename in sorted(names):
+            path = Path(directory) / filename
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(descriptor, 'rb') as stream:
+                before = os.fstat(stream.fileno())
+                if not stat.S_ISREG(before.st_mode):
+                    raise ValueError('Nonregular analyzer package file')
+                if bytes_seen + before.st_size > 128 * 1024 * 1024:
+                    raise ValueError('Analyzer package byte budget exceeded')
+                digest, size = hashlib.sha256(), 0
+                while True:
+                    chunk = stream.read(65536)
+                    if not chunk:
+                        break
+                    bytes_seen += len(chunk)
+                    size += len(chunk)
+                    if bytes_seen > 128 * 1024 * 1024:
+                        raise ValueError('Analyzer package byte budget exceeded')
+                    digest.update(chunk)
+                after = os.fstat(stream.fileno())
+                identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+                if identity(before) != identity(after) or size != before.st_size:
+                    raise ValueError('Analyzer package changed while observed')
+            files.append({'path': path.relative_to(root).as_posix(),
+                          'size_bytes': size, 'sha256': digest.hexdigest()})
+    files.sort(key=lambda f: f['path'])
+    implementations[name] = {
+        'root': str(root), 'files': files,
+        'digest': hashlib.sha256(json.dumps(files, sort_keys=True,
+                    separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()}
+print(json.dumps({'versions': versions, 'implementations': implementations,
+    'implementation_scope': 'analyzer-package-files; transitive dependency versions only',
+    'python': sys.version,
+    'packages': sorted((d.metadata['Name'], d.version) for d in m.distributions())}))
+'''
+
+
 def _environment(python, directory, timeout):
-    script = (
-        'import importlib.metadata as m,json,sys; result={}; '
-        '\nfor n in '+repr(tuple(CONTRACTS))+':\n'
-        ' try: result[n]=m.version(n)\n'
-        ' except m.PackageNotFoundError: result[n]=None\n'
-        'print(json.dumps({"versions":result,"python":sys.version,"packages":sorted((d.metadata["Name"],d.version) for d in m.distributions())}))'
-    )
     log = directory / 'environment.json'
-    outcome = _run([str(python), '-I', '-c', script], directory, log, timeout)
+    outcome = _run([str(python), '-I', '-B', '-X', 'pycache_prefix='+str(directory / 'bytecode'),
+                    '-c', _ENVIRONMENT_SCRIPT, json.dumps(tuple(CONTRACTS))], directory, log, timeout)
     if outcome['exit_code'] or outcome['log_truncated']:
         raise ContractError('Pinned analyzer environment unavailable')
     data = _json(log.read_bytes())
-    if set(data.get('versions', {})) != set(CONTRACTS):
+    if set(data.get('versions', {})) != set(CONTRACTS) or set(data.get('implementations', {})) != set(CONTRACTS):
         raise ContractError('Invalid analyzer version observation')
     return data
 
 
 def _command(python, tool, source, directory):
-    prefix = [str(python), '-I', '-m', tool]
+    interpreter = [str(python), '-I', '-B', '-X', 'pycache_prefix='+str(directory / 'bytecode')]
+    prefix = interpreter + ['-m', tool]
     if tool == 'code2llm':
         return prefix + [str(source), '-f', 'json', '-o', str(directory), '--no-cache', '--no-chunk'], directory / 'analysis.json'
     if tool == 'redup':
         return prefix + ['scan', str(source), '--format', 'json', '--output', str(directory / 'report.json'), '--no-semantic'], directory / 'report.json'
-    return [str(python), '-I', '-c', 'from prefact.cli import main; main()'] + ['scan', '--path', str(source), '--format', 'json', '--output', str(directory / 'report.json')], directory / 'report.json'
+    return interpreter + ['-c', 'from prefact.cli import main; main()'] + ['scan', '--path', str(source), '--format', 'json', '--output', str(directory / 'report.json')], directory / 'report.json'
 
 
 def _copy_source(root, source, files):

@@ -1,0 +1,82 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-046",
+  "summary": "Bind analyzer snapshots to observed tool implementation bytes",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-046/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/analyzer_snapshot.py",
+    "tests/test_analyzer_snapshot.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "92a3621a621009e9a1fe907ad5b11f2c5fc1a8aa",
+    "targetBranch": "main",
+    "outcome": "Bind analyzer observations to bounded installed package-byte fingerprints without imports and prevent installed bytecode caches from shadowing observed sources. Preserve the previous snapshot on same-version code drift; tested independent publication.",
+    "nonGoals": [
+      "No package installation/update, new standard adoption, CI/hooks/permissions edit or dependency",
+      "Preserve active author045 SSOT CLI and all foreign work"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Extend existing environment-before/after artifacts and environment digests with actual analyzer package bytes; use fresh bytecode lookup and no cache writes. Dependency versions remain metadata, not immutable dependency bytes or conformance evidence.",
+      "components": [
+        {
+          "name": "Pinned analyzer provenance",
+          "paths": [
+            "src/wellman/analyzer_snapshot.py",
+            "tests/test_analyzer_snapshot.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of additive scope correction."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest -q tests/test_analyzer_snapshot.py"
+        ],
+        "evidence": "Real isolated implementation probes, stale bytecode isolation, bounded package reads and prior-snapshot preservation."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full test and governance gates; independent exact-head review and merge."
+      }
+    ]
+  }
+}

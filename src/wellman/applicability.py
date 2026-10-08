@@ -9,6 +9,9 @@ from __future__ import annotations
 from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime
+from fnmatch import fnmatchcase
+from pathlib import PurePosixPath
+import re
 
 from wellman.adoption_inspection import current_adoption
 from wellman.registry import PROFILES_CATALOG, STANDARDS_CATALOG
@@ -41,7 +44,8 @@ def build_catalog(pins, *, revision, trusted_source, metadata=None):
     """Bind versioned candidate rules to explicitly supplied immutable targets.
 
     Unpinned standards stay in the registry and receive METADATA_MISSING during
-    resolution. Empty managed scopes/validators cannot yield a ready change.
+    resolution. Empty scopes/validators or missing effect declarations cannot
+    yield a change proposal.
     This function performs no remote lookup and invents no target revisions.
     """
     metadata=metadata or {};standards=[]
@@ -65,6 +69,44 @@ def _combine(values, operator):
     if operator=='all':
         return False if False in values else None if None in values else True
     return True if True in values else None if None in values else False
+
+
+def _managed_control_effects(paths):
+    """Minimum effects evident from managed control paths, never a full audit.
+
+    Directory and overlapping glob scopes can include control files. Unknown
+    runtime effects still require explicit catalog metadata and concrete review.
+    No file is read, validator executed or authority granted by this check.
+    """
+    directories = {
+        '.github/workflows': 'ci', '.circleci': 'ci',
+        '.githooks': 'hooks', '.git/hooks': 'hooks',
+    }
+    files = {
+        '.gitlab-ci.yml': 'ci', 'Jenkinsfile': 'ci',
+        'azure-pipelines.yml': 'ci', '.travis.yml': 'ci',
+        '.pre-commit-config.yaml': 'hooks',
+        'CODEOWNERS': 'permissions', '.github/CODEOWNERS': 'permissions',
+        '.gitlab/CODEOWNERS': 'permissions',
+    }
+    effects = set()
+    for pattern in paths:
+        path = str(PurePosixPath(pattern))
+        if path == '.':
+            effects.update(directories.values())
+            effects.update(files.values())
+            continue
+        prefix = re.split(r'[*?\[]', path, maxsplit=1)[0]
+        glob = prefix != path
+        for root, effect in directories.items():
+            if (glob and (root.startswith(prefix) or prefix.startswith(root + '/'))
+                    or not glob and (path == root or path.startswith(root + '/')
+                                     or root.startswith(path + '/'))):
+                effects.add(effect)
+        for root, effect in files.items():
+            if fnmatchcase(root, path) or not glob and root.startswith(path + '/'):
+                effects.add(effect)
+    return effects
 
 
 def resolve_applicability(observation, catalog, adoptions, *, advisory=None):
@@ -201,7 +243,13 @@ def resolve_applicability(observation, catalog, adoptions, *, advisory=None):
                 if d['action'] in ('add','update','repair'):
                     if not d['managed_files'] or not d['validators']:
                         d.update(action='defer',risk='unknown');d['reasons'].append('MANAGED_SCOPE_OR_VALIDATION_UNKNOWN')
-                    else:
+                    if not m['effects']:
+                        d.update(action='defer',risk='unknown');d['reasons'].append('EFFECTS_UNKNOWN')
+                    undeclared = _managed_control_effects(d['managed_files']) - set(m['effects'])
+                    if undeclared:
+                        d.update(action='defer',risk='unknown')
+                        d['reasons'].extend('MANAGED_EFFECT_UNDECLARED:' + effect for effect in sorted(undeclared))
+                    if d['action'] != 'defer':
                         d['required_authorities']=['review-concrete-plan']
                         if set(m['effects']) & {'ci','hooks','permissions','deployment','removal'}:
                             d['risk']='high';d['required_authorities'].append('approve-declared-effects')

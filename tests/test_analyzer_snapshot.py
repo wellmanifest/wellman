@@ -1,8 +1,10 @@
 import hashlib
 import json
 import os
+import py_compile
 import subprocess
 import sys
+import venv
 
 import pytest
 
@@ -11,6 +13,8 @@ from wellman.selection_contracts import (
     ContractError,
     validate_document,
 )
+
+REAL_ENVIRONMENT = scan._environment
 
 
 def git(root, *args):
@@ -74,6 +78,117 @@ def tools(monkeypatch):
 
     monkeypatch.setattr(scan, '_command', command)
     return environment, modes, calls
+
+
+@pytest.fixture
+def installed_tools(tmp_path):
+    environment = tmp_path / 'analyzer-venv'
+    venv.EnvBuilder(with_pip=False).create(environment)
+    python = environment / 'bin/python'
+    site = subprocess.check_output(
+        [str(python), '-I', '-c', 'import sysconfig; print(sysconfig.get_path("purelib"))'],
+        text=True,
+    ).strip()
+    from pathlib import Path
+    site = Path(site)
+    for name, (version, _) in scan.CONTRACTS.items():
+        package = site / name
+        package.mkdir()
+        (package / '__init__.py').write_text('raise RuntimeError("probe must not import analyzers")\n')
+        distribution = site / (name + '-' + version + '.dist-info')
+        distribution.mkdir()
+        (distribution / 'METADATA').write_text('Metadata-Version: 2.1\nName: ' + name + '\nVersion: ' + version + '\n')
+    return python, site
+
+
+def test_actual_probe_binds_same_version_analyzer_code_without_importing(installed_tools, tmp_path):
+    python, site = installed_tools
+    before_dir, after_dir = tmp_path / 'before', tmp_path / 'after'
+    before_dir.mkdir(); after_dir.mkdir()
+    before = REAL_ENVIRONMENT(python, before_dir, 30)
+    (site / 'code2llm/__init__.py').write_text('raise RuntimeError("different implementation, same version")\n')
+    after = REAL_ENVIRONMENT(python, after_dir, 30)
+    assert before['versions'] == after['versions']
+    assert before['packages'] == after['packages']
+    assert before != after
+
+
+def test_package_cache_changes_do_not_change_observed_implementation(installed_tools, tmp_path):
+    python, site = installed_tools
+    before_dir, after_dir = tmp_path / 'before', tmp_path / 'after'
+    before_dir.mkdir(); after_dir.mkdir()
+    before = REAL_ENVIRONMENT(python, before_dir, 30)
+    cache = site / 'code2llm/__pycache__'
+    cache.mkdir()
+    (cache / 'unused.pyc').write_bytes(b'ordinary unexecuted cache')
+    assert REAL_ENVIRONMENT(python, after_dir, 30) == before
+
+
+def test_probe_rejects_package_symlinks(installed_tools, tmp_path):
+    python, site = installed_tools
+    outside = tmp_path / 'outside.py'
+    outside.write_text('unrelated data')
+    (site / 'code2llm/linked.py').symlink_to(outside)
+    directory = tmp_path / 'probe'; directory.mkdir()
+    with pytest.raises(ContractError):
+        REAL_ENVIRONMENT(python, directory, 30)
+
+
+def test_probe_rejects_oversized_package_without_reading_it(installed_tools, tmp_path):
+    python, site = installed_tools
+    with (site / 'code2llm/oversized.bin').open('wb') as stream:
+        stream.truncate(129 * 1024 * 1024)
+    directory = tmp_path / 'probe'; directory.mkdir()
+    with pytest.raises(ContractError):
+        REAL_ENVIRONMENT(python, directory, 30)
+
+
+def test_command_ignores_valid_stale_installed_bytecode(installed_tools, tmp_path):
+    python, site = installed_tools
+    (site / 'prefact/__init__.py').write_text('')
+    module = site / 'prefact/cli.py'
+    module.write_text('def main(): print("OLD")\n')
+    old_stat = module.stat()
+    py_compile.compile(str(module), doraise=True)
+    module.write_text('def main(): print("NEW")\n')
+    os.utime(module, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
+    # Establish that this cache really shadows the equal-size source normally.
+    assert subprocess.check_output([str(python), '-I', '-c',
+        'from prefact.cli import main; main()'], text=True).strip() == 'OLD'
+    directory = tmp_path / 'stage'; directory.mkdir()
+    argv, _ = scan._command(python, 'prefact', tmp_path / 'input', directory)
+    assert subprocess.check_output(argv, text=True).strip() == 'NEW'
+    assert not (directory / 'bytecode').exists()
+
+
+@pytest.mark.parametrize('tool', list(scan.CONTRACTS))
+def test_analyzer_commands_use_fresh_bytecode_lookup_without_cache_writes(tool, tmp_path):
+    argv, _ = scan._command(sys.executable, tool, tmp_path / 'input', tmp_path / 'stage')
+    assert '-B' in argv and '-I' in argv
+    assert '-X' in argv
+    assert 'pycache_prefix=' + str(tmp_path / 'stage/bytecode') in argv
+
+
+def test_same_version_code_drift_preserves_previous_snapshot(repo, tmp_path, tools, installed_tools, monkeypatch):
+    python, site = installed_tools
+    monkeypatch.setattr(scan, '_environment', REAL_ENVIRONMENT)
+    store = tmp_path / 'store'
+    first = scan.scan_repository(repo, store, python=python)
+    assert first['published']
+    pointer = (store / 'current.json').read_bytes()
+    original = scan._stage
+
+    def changed(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if args[0] == 'prefact':
+            (site / 'code2llm/__init__.py').write_text('raise RuntimeError("same-version drift")\n')
+        return result
+
+    monkeypatch.setattr(scan, '_stage', changed)
+    result = scan.scan_repository(repo, store, python=python)
+    assert not result['published']
+    assert 'ANALYZER_ENVIRONMENT_CHANGED_DURING_SCAN' in result['errors']
+    assert (store / 'current.json').read_bytes() == pointer
 
 
 def run(repo, tmp_path, **kwargs):

@@ -62,3 +62,16 @@ def test_profiles_catalog():
     assert "wellmanifest/git-lifecycle" in req_ids
     assert "wellmanifest/worktrees" in req_ids
     assert "wellmanifest/docs" in req_ids
+
+
+def test_uri_and_configuration_standards_are_reference_candidates_only():
+    for name in ('nohardcode', 'taskand', 'uriprocess', 'nl-uri-dsl-llm'):
+        standard = get_standard(name)
+        assert standard.id == 'wellmanifest/' + name
+        assert standard.minimum_level == 'S0'
+        assert standard.execution_model == 'reference-only'
+        assert standard.schemas
+    # They are component-specific candidates, not mandatory baseline adoption.
+    baseline = {item['id'] for item in get_profile('baseline').requirements}
+    assert not baseline.intersection({'wellmanifest/nohardcode', 'wellmanifest/taskand',
+                                     'wellmanifest/uriprocess', 'wellmanifest/nl-uri-dsl-llm'})

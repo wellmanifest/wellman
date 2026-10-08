@@ -25,6 +25,8 @@ CAPABILITIES = {
     'authority-lifecycle':'runtime:effectful-execution','poa':'runtime:effectful-execution',
     'llm':'usage:model-invocation','dsl':'contract:dsl','code-dsl':'contract:code-dsl',
     'nl-dsl-llm':'usage:nl-to-dsl','nl-api-llm':'usage:nl-to-api',
+    'nohardcode':'quality:configuration-audit', 'taskand':'contract:uri-capsule',
+    'uriprocess':'contract:uri-process-package', 'nl-uri-dsl-llm':'usage:nl-to-uri',
     'repair-lifecycle':'runtime:automatic-repair','deployment':'lifecycle:deployment',
     'agent':'runtime:agent-actions','policy-dsl':'contract:policy-dsl','skills':'runtime:skills',
     'account-runtime':'runtime:accounts','saas-lifecycle':'lifecycle:subscriptions',

@@ -62,6 +62,34 @@ EXECUTION_MODELS: Dict[str, Dict[str, Any]] = {
 
 # Catalog of all Wellmanifest standards
 STANDARDS_CATALOG: Dict[str, StandardPack] = {
+    "wellmanifest/nohardcode": StandardPack(
+        id="wellmanifest/nohardcode", name="Configuration and hardcode detection",
+        owner="wellmanifest/nohardcode", description="Policy and AST detection for hardcoded configuration and brittle runtime assumptions",
+        minimum_level="S0", execution_model="reference-only",
+        owns=["configuration audit"], excludes=["execution authority", "verified runtime conformance"],
+        schemas=['schemas/nohardcode-policy.schema.json', 'schemas/detection-rule.schema.json'], docs_url="https://github.com/wellmanifest/nohardcode",
+    ),
+    "wellmanifest/taskand": StandardPack(
+        id="wellmanifest/taskand", name="URI process capsules",
+        owner="wellmanifest/taskand", description="Capsule contracts, grants and digital-twin gates for autonomous URI process execution",
+        minimum_level="S0", execution_model="reference-only",
+        owns=["capsule contracts"], excludes=["execution authority", "verified runtime conformance"],
+        schemas=['schemas/capsule.v1.json', 'schemas/proc.v1.json', 'schemas/grants.v1.json'], docs_url="https://github.com/wellmanifest/taskand",
+    ),
+    "wellmanifest/uriprocess": StandardPack(
+        id="wellmanifest/uriprocess", name="URI process package manufacturing",
+        owner="wellmanifest/uriprocess", description="Deterministic URI process package manufacture, provenance, verification and delivery",
+        minimum_level="S0", execution_model="reference-only",
+        owns=["package manufacture"], excludes=["execution authority", "verified runtime conformance"],
+        schemas=['schemas/package.schema.json'], docs_url="https://github.com/wellmanifest/uriprocess",
+    ),
+    "wellmanifest/nl-uri-dsl-llm": StandardPack(
+        id="wellmanifest/nl-uri-dsl-llm", name="Natural language to URI and DSL",
+        owner="wellmanifest/nl-uri-dsl-llm", description="Typed action URI and resource URN selection, grammar constraints and capsule handoff",
+        minimum_level="S0", execution_model="reference-only",
+        owns=["NL to URI contracts"], excludes=["execution authority", "verified runtime conformance"],
+        schemas=['schemas/process-uri.schema.json', 'schemas/conversational-process-snapshot.schema.json'], docs_url="https://github.com/wellmanifest/nl-uri-dsl-llm",
+    ),
     "wellmanifest/new-project": StandardPack(
         id="wellmanifest/new-project",
         name="New Project & Repository Bootstrap",
@@ -444,6 +472,11 @@ def get_standard(standard_id: str) -> Optional[StandardPack]:
         "nl-dsl-llm": "wellmanifest/nl-dsl-llm",
         "nl-api": "wellmanifest/nl-api-llm",
         "nl-api-llm": "wellmanifest/nl-api-llm",
+        "nohardcode": "wellmanifest/nohardcode",
+        "taskand": "wellmanifest/taskand",
+        "uriprocess": "wellmanifest/uriprocess",
+        "nl-uri-dsl-llm": "wellmanifest/nl-uri-dsl-llm",
+
     }
     normalized = aliases.get(standard_id, standard_id)
     return STANDARDS_CATALOG.get(normalized)

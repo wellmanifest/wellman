@@ -750,6 +750,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_recommend.add_argument('--export-planfile', help='Explicit local review backlog project outside observed source')
     p_recommend.set_defaults(func=cmd_recommend)
 
+    p_ssot = subparsers.add_parser('ssot', help='Analyze declared domain ownership from an evidence snapshot; no changes')
+    p_ssot.add_argument('--observation', required=True, help='Source-bound wellman.observation/v1 JSON snapshot')
+    p_ssot.add_argument('--declarations', required=True, help='Digest-bound wellman.ssot-declarations/v1 JSON')
+    p_ssot.add_argument('--json', action='store_true', help='Output findings and nonexecutable refactoring proposals as JSON')
+    p_ssot.set_defaults(func=cmd_ssot)
+
     # fleet
     p_fleet = subparsers.add_parser("fleet", help="Discover, plan and check a repository fleet")
     fleet_commands = p_fleet.add_subparsers(dest="fleet_command", required=True)
@@ -906,6 +912,30 @@ def _selection_json(path):
     if len(raw) > MAX_DOCUMENT_BYTES:
         raise ValueError("Selection input is oversized")
     return _json(raw)
+
+
+def cmd_ssot(args):
+    """Analyze explicit declarations; never discover sources or execute proposals."""
+    from wellman.ssot import analyze_ssot
+
+    try:
+        report = analyze_ssot(
+            _selection_json(args.observation), _selection_json(args.declarations)
+        )
+        if args.json:
+            print(json.dumps(report, indent=2, ensure_ascii=False))
+        else:
+            print('SSOT snapshot analysis: declared contracts only; advisory, no changes.')
+            print('Current repository freshness and undeclared contracts are not checked.')
+            for finding in report['findings']:
+                print(f"  {finding['action']}: {finding['code']} "
+                      f"{finding['domain']}/{finding['kind']}/{finding['key']}")
+            print(f"{len(report['findings'])} findings; "
+                  f"{len(report['refactoring_proposals'])} nonexecutable review proposals.")
+        return 0
+    except (OSError, ValueError) as error:
+        print(f'SSOT analysis failed: {error}', file=sys.stderr)
+        return 1
 
 
 def _cmd_evidence_selection(args):

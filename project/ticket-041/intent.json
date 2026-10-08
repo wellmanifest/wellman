@@ -1,0 +1,80 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-041",
+  "summary": "Preserve flat JSON contract for large pinned code2llm exports",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-041/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/analyzer_snapshot.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "e53fdd83de20537fe8c45f628349ff47cf1827e0",
+    "targetBranch": "main",
+    "outcome": "Produce the declared analysis.json artifact even when pinned code2llm would automatically chunk a large Python package export.",
+    "nonGoals": [
+      "No project imports, directory-name guessing, namespace guessing or blanket workspace profile",
+      "No standard/tool installation, CI/hook/permission changes or foreign edits"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 20,
+    "budgets": {
+      "maxImplementationFiles": 1,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Select explicit --no-chunk in the fixed pinned code2llm command. Preserve schema, version, source, shared-scope, atomic publication and byte budget checks.",
+      "components": [
+        {
+          "name": "analyzer-producer",
+          "paths": [
+            "src/wellman/analyzer_snapshot.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this compatibility correction."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python -m wellman.analyzer_snapshot ROOT --output STORE --python PINNED_PYTHON"
+        ],
+        "evidence": "Actual Planfile pinned three-tool scan reproduces missing flat JSON before fix; corrected scan publishes only complete source-bound artifacts."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONPATH=src python -m pytest -q",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Existing meaningful failure regressions, full suite, Ruff/governance, independent protected exact-head delivery."
+      }
+    ]
+  }
+}

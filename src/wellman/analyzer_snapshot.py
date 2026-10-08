@@ -108,7 +108,7 @@ def _environment(python, directory, timeout):
 def _command(python, tool, source, directory):
     prefix = [str(python), '-I', '-m', tool]
     if tool == 'code2llm':
-        return prefix + [str(source), '-f', 'json', '-o', str(directory), '--no-cache'], directory / 'analysis.json'
+        return prefix + [str(source), '-f', 'json', '-o', str(directory), '--no-cache', '--no-chunk'], directory / 'analysis.json'
     if tool == 'redup':
         return prefix + ['scan', str(source), '--format', 'json', '--output', str(directory / 'report.json'), '--no-semantic'], directory / 'report.json'
     return [str(python), '-I', '-c', 'from prefact.cli import main; main()'] + ['scan', '--path', str(source), '--format', 'json', '--output', str(directory / 'report.json')], directory / 'report.json'

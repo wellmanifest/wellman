@@ -216,7 +216,9 @@ def resolve_applicability(observation, catalog, adoptions, *, advisory=None):
     by_target=defaultdict(list)
     for d in decisions:by_target[(d['repository_id'],d['standard_id'])].append(d)
     def targets(d,identifier):
-        return [x for x in by_target.get((d['repository_id'],identifier),[]) if x['scope'] in ('repository','workspace') or x['component_id']==d['component_id']]
+        # Repository decisions use one component as a display anchor. Their
+        # relationships still cover every component in that repository.
+        return [x for x in by_target.get((d['repository_id'],identifier),[]) if d['scope'] in ('repository','workspace') or x['scope'] in ('repository','workspace') or x['component_id']==d['component_id']]
     for d in decisions:
         m=metadata.get(d['standard_id'])
         inspection=adoptions.get(d['repository_id'])

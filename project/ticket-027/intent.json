@@ -1,0 +1,90 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-027",
+  "summary": "Define evidence observation applicability and selection plan contracts",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-027/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/schemas/applicability-catalog.schema.json",
+    "src/wellman/schemas/observation.schema.json",
+    "src/wellman/schemas/selection-plan.schema.json",
+    "src/wellman/selection_contracts.py",
+    "tests/test_selection_contracts.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "bc2a3bab5fe222a9622c72fe6fda3b9d247954f6",
+    "targetBranch": "main",
+    "outcome": "Versioned observation, applicability catalog and recommendation-plan contracts with fail-closed validation and deterministic digest binding; tested and protected merged.",
+    "nonGoals": [
+      "No adoption, tool installation or execution of report contents",
+      "No changes to ticket-026 scope or existing standard-selection/v1"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 5,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Bundle strict JSON schemas and an effect-free standard-library validator/digest API. Existing recommend remains unchanged until the later integration slice.",
+      "components": [
+        {
+          "name": "selection-contracts",
+          "paths": [
+            "src/wellman/selection_contracts.py",
+            "tests/test_selection_contracts.py",
+            "src/wellman/schemas/observation.schema.json",
+            "src/wellman/schemas/applicability-catalog.schema.json",
+            "src/wellman/schemas/selection-plan.schema.json"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "selection_contracts validation and digest API"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this additive contracts slice."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python3 -m pytest -q tests/test_selection_contracts.py"
+        ],
+        "evidence": "Explicit report and feature states, fail-closed schema handling, immutable pins, material digests and no effects."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python3 -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full regression suite and managed governance gate before protected review and merge."
+      }
+    ]
+  }
+}

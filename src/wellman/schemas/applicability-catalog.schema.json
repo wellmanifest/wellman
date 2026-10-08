@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.com/wellman/applicability-catalog.schema.json",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "wellman.applicability-catalog/v1"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "catalog_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rule_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trusted_source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "standards": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/standard"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "revision",
+    "catalog_digest",
+    "rule_version",
+    "trusted_source",
+    "standards"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "predicate": {
+      "type": "object",
+      "properties": {
+        "feature": {
+          "type": "string",
+          "minLength": 1
+        },
+        "is": {
+          "type": "string",
+          "enum": [
+            "present",
+            "absent"
+          ]
+        }
+      },
+      "required": [
+        "feature",
+        "is"
+      ],
+      "additionalProperties": false
+    },
+    "condition": {
+      "type": "object",
+      "properties": {
+        "all": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/predicate"
+          }
+        },
+        "any": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/predicate"
+          }
+        }
+      },
+      "required": [
+        "all",
+        "any"
+      ],
+      "additionalProperties": false
+    },
+    "dependency": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^wellmanifest/[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "revisions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "id",
+        "revisions"
+      ],
+      "additionalProperties": false
+    },
+    "standard": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^wellmanifest/[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "repository",
+            "component",
+            "runtime"
+          ]
+        },
+        "applies_when": {
+          "$ref": "#/$defs/condition"
+        },
+        "requires_evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dependency"
+          }
+        },
+        "conflicts_with": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^wellmanifest/[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "uniqueItems": true
+        },
+        "supersedes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^wellmanifest/[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "uniqueItems": true
+        },
+        "managed_files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\]+$"
+          }
+        },
+        "validators": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "migration": {
+          "type": "object",
+          "properties": {
+            "from_revisions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+              }
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "from_revisions",
+            "description"
+          ],
+          "additionalProperties": false
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "files",
+              "ci",
+              "hooks",
+              "permissions",
+              "deployment",
+              "installation",
+              "removal"
+            ]
+          }
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "scope",
+        "applies_when",
+        "requires_evidence",
+        "depends_on",
+        "conflicts_with",
+        "supersedes",
+        "managed_files",
+        "validators",
+        "migration",
+        "effects"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -11,6 +12,32 @@ from wellman.registry import PROFILES_CATALOG, get_standard
 
 
 SCHEMA = 'wellman.standard-requirements/v1'
+
+# Run the public analyzer in an isolated, timeout-bounded interpreter. Selection
+# needs module evidence, not serialization of functions, nodes or CFG edges.
+_MODULE_ANALYSIS = '''
+import copy, json, sys
+from pathlib import Path
+from code2llm import FAST_CONFIG, ProjectAnalyzer
+root, output = Path(sys.argv[1]), Path(sys.argv[2])
+config = copy.deepcopy(FAST_CONFIG)
+config.no_cache = True
+config.performance.enable_cache = False
+config.performance.parallel_enabled = False
+config.performance.skip_refactoring_analysis = True
+config.quiet = True
+result = ProjectAnalyzer(config=config, project_path=root).analyze_project(str(root))
+if len(result.modules) > 50000:
+    raise ValueError('Too many modules')
+data = {'project_path': str(root), 'modules': {
+    name: {'file': module.file, 'source_kind': getattr(module, 'source_kind', 'source'),
+           'imports': getattr(module, 'imports', [])}
+    for name, module in result.modules.items()}}
+raw = json.dumps(data).encode('utf-8')
+if len(raw) > 20 * 1024 * 1024:
+    raise ValueError('Module evidence exceeds 20 MiB')
+output.write_bytes(raw)
+'''
 
 # Evidence tools are optional inputs, not commands granted by an LLM.
 SELECTION_TOOLS = {
@@ -195,14 +222,13 @@ def recommend(root, *, ast_report=None, analyze=False, evidence=(), hints=(), ll
         if roots & {'ast', 'astroid', 'libcst', 'tree_sitter', 'code2llm', 'code2logic'}:
             add('wellmanifest/code-dsl', 'Source AST consumes or analyzes code structure')
     if analyze:
-        executable = shutil.which('code2llm')
-        if executable is None:
-            raise ValueError('code2llm is not installed; provide --ast instead')
         with tempfile.TemporaryDirectory(prefix='wellman-ast-') as output:
-            result = subprocess.run([executable, str(root), '-f', 'json', '-o', output, '--no-cache'],
-                                    capture_output=True, text=True, timeout=timeout, check=False)
+            result = subprocess.run([sys.executable, '-I', '-c', _MODULE_ANALYSIS,
+                                     str(root), str(Path(output) / 'analysis.json')],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    cwd=output, timeout=timeout, check=False)
             if result.returncode:
-                raise ValueError('code2llm failed; no selection was applied')
+                raise ValueError('code2llm module analysis failed; install code2llm in the Wellman Python environment or provide --ast; no selection was applied')
             consume(Path(output) / 'analysis.json', 'generated-this-run')
     elif ast_report is not None:
         consume(ast_report, 'imported-unverified')

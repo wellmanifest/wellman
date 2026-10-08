@@ -96,3 +96,12 @@ Fleet mode cannot register or reuse one project's imported graph for other
 projects. Apply each reviewed plan through existing `fleet apply`, after owning
 the target ticket/worktree and revalidating its current state. Earlier writes can
 make later plans stale; rebuild them rather than bypassing that check.
+
+Fresh analysis uses the public Code2LLM Python API in a timeout-bounded
+subprocess. Install optional `code2llm` in the Python environment running
+Wellman, or provide an existing report with `--ast`. The worker disables caches
+and parallel workers and exports only module filenames, source kinds and
+imports. Full control-flow graphs are not serialized: large projects can fit
+within the unchanged 20 MiB module-evidence limit. Imported reports and
+supporting evidence retain that same input limit. The analyzed project's code
+is parsed, never imported or executed.

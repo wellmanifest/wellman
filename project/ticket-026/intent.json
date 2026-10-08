@@ -1,0 +1,87 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-026",
+  "summary": "Analyze large Code2LLM reports with bounded module-only export",
+  "workstream": "integration",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-026/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "docs/standard-selection.md",
+    "src/wellman/adoption.py",
+    "tests/test_adoption.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "bc2a3bab5fe222a9622c72fe6fda3b9d247954f6",
+    "targetBranch": "main",
+    "outcome": "Generate bounded module-only Code2LLM evidence for large repositories; test the ten requested projects and publish through the independent Validator.",
+    "nonGoals": [
+      "No fleet-wide implicit writes or package installation",
+      "No LLM-granted authority or automatic new standard creation",
+      "No overwrite of immutable adoption pins or protected policy"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 3,
+      "maxAffectedComponents": 2,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Use Code2LLM public analysis API in a timeout-bounded subprocess and serialize only module identity, file, kind and imports. Preserve the 20 MiB imported-input limit.",
+      "components": [
+        {
+          "name": "standard-selection",
+          "paths": [
+            "src/wellman/adoption.py",
+            "tests/test_adoption.py",
+            "docs/standard-selection.md"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [
+        "Versioned recommendation report with input digest and advisory proposals"
+      ],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Governed revert of recommendation API and CLI."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q tests/test_adoption.py tests/test_cli.py"
+        ],
+        "evidence": "Library/service distinction, malformed input, paths, bounded LLM advisory and no implicit effects."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh",
+          "PYTHONPATH=src python3 -m pytest -q tests"
+        ],
+        "evidence": "Full tests, live code2llm reports and protected publication."
+      }
+    ]
+  }
+}

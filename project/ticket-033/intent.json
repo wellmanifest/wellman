@@ -1,0 +1,88 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-033",
+  "summary": "Compose deterministic evidence selection plans and export proposal backlog",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-033/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/fleet.py",
+    "src/wellman/selection_plan.py",
+    "tests/test_fleet.py",
+    "tests/test_selection_plan.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "0d6ee7fafd18df7971aecbcf864d89569a4bc25d",
+    "targetBranch": "main",
+    "outcome": "Produce source-bound deterministic nonexecutable selection plans and explicit native Planfile review backlog; publish through independent protected review and merge.",
+    "nonGoals": [
+      "No installation, adoption or implicit external effects",
+      "No changes outside the accepted slice"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 4,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Compose existing inventory, adoption inspector and deterministic resolver. Reuse fleet feed_to_planfile with an explicit selection context and pinned native allocator/CAS adapter. Preserve terminal tickets and emit only human review backlog.",
+      "components": [
+        {
+          "name": "Evidence selection planning",
+          "paths": [
+            "src/wellman/selection_plan.py",
+            "tests/test_selection_plan.py",
+            "src/wellman/fleet.py",
+            "tests/test_fleet.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "Add selection_plan query API and an opt-in selection-plan branch to existing feed_to_planfile."
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this additive slice."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python3 -m pytest -q tests/test_selection_plan.py tests/test_fleet.py"
+        ],
+        "evidence": "Deterministic full-payload hashes, live source/index/adoption/evidence stale checks and terminal-preserving deduplicated native backlog export."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python3 -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full suite and managed gate pass; independent protected approval and merge bind the exact source head."
+      }
+    ]
+  }
+}

@@ -367,3 +367,67 @@ def test_selection_rejects_source_paths_outside_repository(tmp_path):
     report.write_text(json.dumps(data))
     with pytest.raises(ValueError, match='escapes'):
         recommend(tmp_path, ast_report=report)
+
+
+def test_generated_module_evidence_omits_cfg_and_disables_project_caches(tmp_path, monkeypatch):
+    from wellman.adoption import recommend
+    _selection_repo(tmp_path)
+    import sys
+    import subprocess
+    from types import SimpleNamespace as N
+    import wellman.adoption as adoption
+    class ProjectAnalyzer:
+        def __init__(self, config, project_path):
+            assert config.no_cache and not config.performance.enable_cache
+            assert not config.performance.parallel_enabled
+            assert config.performance.skip_refactoring_analysis
+        def analyze_project(self, root):
+            return N(nodes=object(), edges=object(), modules={
+                'app': N(file='src/app.py', imports=['subllm'], source_kind='source')})
+    monkeypatch.setitem(sys.modules, 'code2llm', N(
+        FAST_CONFIG=N(performance=N(enable_cache=True, parallel_enabled=True)),
+        ProjectAnalyzer=ProjectAnalyzer))
+    real_run = subprocess.run
+    def run(command, **kwargs):
+        if '-c' not in command:
+            return real_run(command, **kwargs)
+        assert command[1:3] == ['-I', '-c']
+        assert Path(kwargs['cwd']) != tmp_path
+        monkeypatch.setattr(sys, 'argv', ['worker', command[-2], command[-1]])
+        exec(adoption._MODULE_ANALYSIS, {})
+        return N(returncode=0)
+    monkeypatch.setattr(adoption.subprocess, 'run', run)
+    result = recommend(tmp_path, analyze=True)
+    assert result['structure']['moduleCount'] == 1
+    assert result['structure']['imports'] == ['subllm']
+    assert result['evidence'][0]['freshness'] == 'generated-this-run'
+    assert 'wellmanifest/llm' in {item['id'] for item in result['recommendations']}
+    assert not (tmp_path / '.code2llm').exists()
+    assert not (tmp_path / '.governance').exists()
+
+
+def test_generated_analysis_failure_and_timeout_do_not_apply_selection(tmp_path, monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+    import wellman.adoption as adoption
+    _selection_repo(tmp_path)
+    real_run = subprocess.run
+    observed = []
+    def run(command, **kwargs):
+        if '-c' not in command:
+            return real_run(command, **kwargs)
+        observed.append(kwargs)
+        return SimpleNamespace(returncode=1)
+    monkeypatch.setattr(adoption.subprocess, 'run', run)
+    with pytest.raises(ValueError, match='module analysis failed'):
+        adoption.recommend(tmp_path, analyze=True, timeout=2)
+    assert observed[0]['timeout'] == 2
+    assert observed[0]['stderr'] == subprocess.DEVNULL
+    def timeout(command, **kwargs):
+        if '-c' not in command:
+            return real_run(command, **kwargs)
+        raise subprocess.TimeoutExpired(command, kwargs['timeout'])
+    monkeypatch.setattr(adoption.subprocess, 'run', timeout)
+    with pytest.raises(subprocess.TimeoutExpired):
+        adoption.recommend(tmp_path, analyze=True, timeout=2)
+    assert not (tmp_path / '.governance').exists()

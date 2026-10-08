@@ -654,3 +654,222 @@ def test_fleet_apply_writes_local_ci_default_and_keeps_restrictions(tmp_path):
     assert json.loads((open_repo / ".governance/local-ci-publication.json").read_text()) == {
         "schema": "new-project.local-ci-publication/v1", "scope": {"mode": "all"}}
     assert json.loads((narrowed / ".governance/local-ci-publication.json").read_text()) == restriction
+
+
+def _selection_export_fixture(tmp_path):
+    from wellman.applicability import build_catalog
+    from wellman.selection_plan import capture_repository, compose_selection_plan
+
+    source = make_repository(
+        tmp_path, "selection-source", "https://github.com/acme/selection.git"
+    )
+    (source / "pyproject.toml").write_text('[project]\nname="demo"\nversion="1.0"\n')
+    (source / "demo.py").write_text("value=1\n")
+    subprocess.run(["git", "-C", str(source), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(source), "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "Fixture"], check=True)
+    bundle = capture_repository(source)
+    catalog = build_catalog(
+        {"wellmanifest/new-project": "a" * 40},
+        revision="b" * 40,
+        trusted_source="test pins",
+        metadata={
+            "wellmanifest/new-project": {
+                "managed_files": ["AGENTS.md"],
+                "validators": ["review contract"],
+            }
+        },
+    )
+    plan = compose_selection_plan(bundle["observation"], catalog, bundle["adoptions"])
+    context = {
+        "observation": bundle["observation"],
+        "catalog": catalog,
+        "adoptions": bundle["adoptions"],
+        "repository_roots": {"acme/selection": source},
+    }
+    target = tmp_path / "review-backlog"
+    target.mkdir()
+    return source, target, plan, context
+
+
+def test_selection_export_requires_explicit_context_and_preserves_source(tmp_path):
+    source, target, plan, context = _selection_export_fixture(tmp_path)
+    before = {
+        p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()
+    }
+    assert not feed_to_planfile(plan, target)["ok"]
+    assert not (target / ".planfile").exists()
+    pytest.importorskip("planfile.core.store")
+    result = feed_to_planfile(plan, target, selection_context=context)
+    assert result["ok"] and not result["remote_effects"] and not result["executable"]
+    assert {
+        p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()
+    } == before
+
+
+def test_selection_export_native_ids_dedupe_and_no_autonomous_execution(tmp_path):
+    Store = pytest.importorskip("planfile.core.store").Store
+    _, target, plan, context = _selection_export_fixture(tmp_path)
+    first = feed_to_planfile(plan, target, selection_context=context)
+    assert first["ok"] and first["created"] == len(plan["decisions"])
+    store = Store(target)
+    tickets = store.list_tickets(sprint="all")
+    revisions = {t.id: t.updated_at for t in tickets}
+    second = feed_to_planfile(plan, target, selection_context=context)
+    assert second["ok"] and second["created"] == 0
+    assert all(r["state"] == "reused" for r in second["tickets"])
+    assert {t.id: t.updated_at for t in store.list_tickets(sprint="all")} == revisions
+    for t in tickets:
+        assert t.id.startswith("PLF-") and t.sprint == "backlog"
+        assert (t.executor.kind, t.executor.mode) == ("human", "interactive")
+        assert t.execution.state == "pending" and "actor:human" in t.labels
+        assert t.inputs is None
+    assert not (target / ".planfile/sync").exists()
+
+
+@pytest.mark.parametrize("terminal", ["done", "canceled", "failed", "blocked"])
+def test_selection_export_preserves_terminal_key_without_reopening(tmp_path, terminal):
+    Store = pytest.importorskip("planfile.core.store").Store
+    _, target, plan, context = _selection_export_fixture(tmp_path)
+    first = feed_to_planfile(plan, target, selection_context=context)
+    assert first["ok"]
+    store = Store(target)
+    t = store.get_ticket(first["tickets"][0]["id"])
+    t = store.update_ticket(
+        t.id,
+        status=terminal,
+        execution={"state": terminal},
+        expected_updated_at=t.updated_at.isoformat(),
+    )
+    before = t.model_dump(mode="json")
+    second = feed_to_planfile(plan, target, selection_context=context)
+    assert second["ok"] and second["created"] == 0
+    assert (
+        next(r for r in second["tickets"] if r["id"] == t.id)["state"]
+        == "preserved_terminal"
+    )
+    assert store.get_ticket(t.id).model_dump(mode="json") == before
+
+
+def test_selection_export_uses_actual_dependency_ids(tmp_path):
+    Store = pytest.importorskip("planfile.core.store").Store
+    from wellman.applicability import build_catalog
+    from wellman.selection_plan import compose_selection_plan
+
+    _, target, _, context = _selection_export_fixture(tmp_path)
+    ids = ["wellmanifest/new-project", "wellmanifest/docs"]
+    context["catalog"] = build_catalog(
+        {id: "a" * 40 for id in ids},
+        revision="b" * 40,
+        trusted_source="test",
+        metadata={
+            id: {
+                "managed_files": ["AGENTS.md"],
+                "validators": ["review contract"],
+                "depends_on": []
+                if id == ids[0]
+                else [{"id": ids[0], "revisions": ["a" * 40]}],
+            }
+            for id in ids
+        },
+    )
+    plan = compose_selection_plan(
+        context["observation"], context["catalog"], context["adoptions"]
+    )
+    result = feed_to_planfile(plan, target, selection_context=context)
+    assert result["ok"]
+    tickets = Store(target).list_tickets(sprint="all")
+    by_standard = {t.source.context["proposal"]["standard_id"]: t for t in tickets}
+    assert by_standard[ids[1]].blocked_by == [by_standard[ids[0]].id]
+
+
+def test_selection_export_rechecks_cas_and_preserves_owned_ticket(
+    tmp_path, monkeypatch
+):
+    module = pytest.importorskip("planfile.core.store")
+    Store = module.Store
+    from wellman.selection_plan import compose_selection_plan
+
+    _, target, plan, context = _selection_export_fixture(tmp_path)
+    first = feed_to_planfile(plan, target, selection_context=context)
+    assert first["ok"]
+    store = Store(target)
+    t = store.get_ticket(first["tickets"][0]["id"])
+    store.update_ticket(
+        t.id,
+        executor={"kind": "shell", "mode": "automatic"},
+        execution={"state": "running"},
+        expected_updated_at=t.updated_at.isoformat(),
+    )
+    second = feed_to_planfile(plan, target, selection_context=context)
+    assert (
+        next(r for r in second["tickets"] if r["id"] == t.id)["state"]
+        == "preserved_owned"
+    )
+    context["observation"]["quality_issues"].append(
+        {
+            "code": "TEST_NOTE",
+            "severity": "info",
+            "message": "New observation note",
+            "affected_refs": [],
+            "next_action": "Review",
+        }
+    )
+    changed = compose_selection_plan(
+        context["observation"], context["catalog"], context["adoptions"]
+    )
+    original = Store._update_ticket_unlocked
+    seen = []
+
+    def conflicted(self, id, **kwargs):
+        seen.append(kwargs["expected_updated_at"])
+        raise module.TicketUpdatedAtConflictError(
+            "ticket_updated_at_precondition_failed"
+        )
+
+    monkeypatch.setattr(Store, "_update_ticket_unlocked", conflicted)
+    result = feed_to_planfile(changed, target, selection_context=context)
+    assert not result["ok"] and "precondition" in result["error"] and seen
+    monkeypatch.setattr(Store, "_update_ticket_unlocked", original)
+
+
+def test_selection_export_serializes_concurrent_retries(tmp_path):
+    pytest.importorskip("planfile.core.store")
+    from concurrent.futures import ThreadPoolExecutor
+
+    _, target, plan, context = _selection_export_fixture(tmp_path)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                lambda _: feed_to_planfile(plan, target, selection_context=context),
+                range(2),
+            )
+        )
+    assert all(r["ok"] for r in results), results
+    assert sum(r["created"] for r in results) == len(plan["decisions"])
+
+
+def test_selection_export_fails_before_writes_for_stale_or_unsupported_input(
+    tmp_path, monkeypatch
+):
+    planfile = pytest.importorskip("planfile")
+    source, target, plan, context = _selection_export_fixture(tmp_path)
+    monkeypatch.setattr(planfile, "__version__", "unsupported")
+    result = feed_to_planfile(plan, target, selection_context=context)
+    assert not result["ok"] and "Unsupported" in result["error"]
+    assert not (target / ".planfile").exists()
+    (source / "demo.py").write_text("value=2\n")
+    result = feed_to_planfile(plan, target, selection_context=context)
+    assert not result["ok"] and "PLAN_STALE" in result["error"]
+    assert not (target / ".planfile").exists()
+
+
+def test_selection_export_refuses_storage_symlink_and_observed_source_target(tmp_path):
+    pytest.importorskip("planfile.core.store")
+    source, target, plan, context = _selection_export_fixture(tmp_path)
+    result = feed_to_planfile(plan, source, selection_context=context)
+    assert not result["ok"] and not (source / ".planfile").exists()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (target / ".planfile").symlink_to(outside, target_is_directory=True)
+    result = feed_to_planfile(plan, target, selection_context=context)
+    assert not result["ok"] and not list(outside.iterdir())

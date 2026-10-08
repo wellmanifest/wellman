@@ -746,6 +746,7 @@ def feed_to_planfile(
     tickets_doc: Dict[str, Any],
     planfile_project: Optional[Path] = None,
     per_repo: bool = True,
+    *, selection_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Feed generated standardization tickets into Planfile if available.
 
@@ -754,6 +755,8 @@ def feed_to_planfile(
     tickets are distributed to their respective repositories. Otherwise, tickets
     are imported into planfile_project or current working directory.
     """
+    if tickets_doc.get("schema") == "wellman.selection-plan/v1":
+        return _export_selection_backlog(tickets_doc, planfile_project, selection_context)
     import shutil
     if not shutil.which("planfile"):
         return {"ok": False, "error": "planfile executable not found on PATH"}
@@ -970,3 +973,244 @@ def trigger_taskand_execution(
         "steps": executed_steps,
         "commit": commit_sha,
     }
+
+
+
+def _export_selection_backlog(plan, project, context):
+    """Pinned native Planfile adapter; only explicit local review backlog effects.
+
+    The public dedupe method reopens completed keys. This adapter deliberately
+    uses the same native locked allocator/store primitives to preserve every
+    terminal state, and fails closed on an unsupported optional API version.
+    It does not invoke a runner, synchronizer, shell executor or remote adapter.
+    """
+    from wellman.selection_contracts import ContractError, payload_digest
+    from wellman.selection_plan import assert_plan_current, assert_repository_current
+
+    if project is None or not isinstance(context, dict):
+        return {
+            "ok": False,
+            "error": "Explicit Planfile project and selection context required",
+        }
+
+    def check():
+        assert_plan_current(
+            plan, context["observation"], context["catalog"], context["adoptions"]
+        )
+        assert_repository_current(
+            context["observation"],
+            context["adoptions"],
+            context["repository_roots"],
+            inventory_options=context.get("inventory_options"),
+            artifact_root=context.get("artifact_root"),
+        )
+
+    try:
+        check()
+        import planfile
+
+        if getattr(planfile, "__version__", None) != "0.1.126":
+            raise ContractError(
+                "Unsupported Planfile adapter version; expected 0.1.126"
+            )
+        from planfile.core.models import Ticket
+        from planfile.core.store import Store
+
+        for name in (
+            "mutation_lock",
+            "ticket_records",
+            "get_ticket",
+            "_next_id_unlocked",
+            "_create_ticket_unlocked",
+            "_update_ticket_unlocked",
+        ):
+            if not callable(getattr(Store, name, None)):
+                raise ContractError(
+                    "Unsupported native Planfile store capability: " + name
+                )
+        project = Path(project).absolute()
+        for source_root in context["repository_roots"].values():
+            source_root = Path(source_root).absolute()
+            if project == source_root or source_root in project.parents:
+                raise ContractError(
+                    "Use a Planfile project outside the observed source tree"
+                )
+        # Reject symlink storage before the optional dependency can write to it.
+        if any(p.is_symlink() for p in (project, *project.parents)):
+            raise ContractError("Planfile project must not traverse symlinks")
+        storage = project / ".planfile"
+        if storage.exists() and any(p.is_symlink() for p in storage.rglob("*")):
+            raise ContractError("Planfile storage contains a symlink")
+        if storage.is_symlink():
+            raise ContractError("Planfile storage is a symlink")
+        selected = [d for d in plan["decisions"] if d["action"] != "keep"]
+        if not selected:
+            return {
+                "ok": True,
+                "count": 0,
+                "created": 0,
+                "tickets": [],
+                "target_projects": [],
+                "remote_effects": False,
+                "executable": False,
+            }
+
+        def key(d):
+            return payload_digest(
+                {
+                    k: d[k]
+                    for k in (
+                        "repository_id",
+                        "component_id",
+                        "standard_id",
+                        "scope",
+                        "target_revision",
+                    )
+                }
+            )
+
+        keys = [key(d) for d in selected]
+        if len(set(keys)) != len(keys):
+            raise ContractError("Duplicate selection proposal identity")
+        store = Store(project)
+        if store.project_dir != project:
+            raise ContractError(
+                "Explicit project resolves to another Planfile boundary"
+            )
+        rows = []
+        allocated = []
+        terminal = {"done", "canceled", "failed", "blocked"}
+        with store.mutation_lock():
+            # Revalidate after waiting for the native cross-process lock.
+            check()
+            if not store.is_initialized():
+                store.init()
+            records = list(store.ticket_records(sprint="all"))
+            existing = {}
+            for k in keys:
+                matches = [
+                    r
+                    for r in records
+                    if "dedupe:wellman-selection:" + k in (r.get("labels") or [])
+                ]
+                if len(matches) > 1:
+                    raise ContractError("Ambiguous existing proposal key")
+                if matches:
+                    t = store.get_ticket(matches[0]["id"], repair_index=False)
+                    if t is None:
+                        raise ContractError("Proposal disappeared from native store")
+                    existing[k] = t
+            # Use native IDs for every dependency, including preserved terminals.
+            for k, d in zip(keys, selected):
+                t = existing.get(k)
+                if t is None:
+                    t = Ticket(
+                        id=store._next_id_unlocked(),
+                        name="Review " + d["action"] + ": " + d["standard_id"],
+                        status="open",
+                        sprint="backlog",
+                        labels=[
+                            "wellman-selection",
+                            "actor:human",
+                            "autonomy-frontier",
+                            "dedupe:wellman-selection:" + k,
+                        ],
+                        executor={"kind": "human", "mode": "interactive"},
+                        execution={
+                            "queue": "wellman-selection-review",
+                            "state": "pending",
+                        },
+                        source={
+                            "tool": "wellman.selection-plan",
+                            "version": "v1",
+                            "context": {
+                                "plan_hash": plan["plan_hash"],
+                                "proposal": d,
+                                "grants_authority": False,
+                            },
+                        },
+                    )
+                    store._create_ticket_unlocked(t)
+                    existing[k] = t
+                    allocated.append(k)
+            for k, d in zip(keys, selected):
+                t = existing[k]
+                state = str(getattr(t.status, "value", t.status))
+                if state in terminal:
+                    rows.append({"id": t.id, "state": "preserved_terminal", "key": k})
+                    continue
+                if (
+                    (t.executor.kind, t.executor.mode) != ("human", "interactive")
+                    or t.execution.state != "pending"
+                    or "wellman-selection" not in t.labels
+                ):
+                    rows.append({"id": t.id, "state": "preserved_owned", "key": k})
+                    continue
+                deps = sorted(
+                    {
+                        existing[key(other)].id
+                        for other in selected
+                        if other["repository_id"] == d["repository_id"]
+                        and other["standard_id"] in d["depends_on"]
+                        and (
+                            other["scope"] in ("repository", "workspace")
+                            or other["component_id"] == d["component_id"]
+                        )
+                    }
+                )
+                source = t.source.model_dump(mode="json")
+                source["context"] = {
+                    **source["context"],
+                    "plan_hash": plan["plan_hash"],
+                    "proposal": d,
+                    "grants_authority": False,
+                }
+                labels = sorted(set(t.labels) | {"actor:human", "autonomy-frontier"})
+                changed = (
+                    source != t.source.model_dump(mode="json")
+                    or deps != t.blocked_by
+                    or labels != t.labels
+                )
+                if changed:
+                    updated = store._update_ticket_unlocked(
+                        t.id,
+                        expected_updated_at=t.updated_at.isoformat(),
+                        reason="Refresh evidence-bound review proposal",
+                        actor="wellman.selection-export",
+                        source=source,
+                        blocked_by=deps,
+                        labels=labels,
+                    )
+                    if updated is None:
+                        raise ContractError(
+                            "Proposal update lost its expected revision"
+                        )
+                rows.append(
+                    {
+                        "id": t.id,
+                        "state": "created"
+                        if k in allocated
+                        else "updated"
+                        if changed
+                        else "reused",
+                        "key": k,
+                    }
+                )
+        return {
+            "ok": True,
+            "count": len(rows),
+            "created": len(allocated),
+            "tickets": rows,
+            "target_projects": [str(project)],
+            "remote_effects": False,
+            "executable": False,
+        }
+    except (
+        ImportError,
+        ContractError,
+        KeyError,
+        ValueError,
+        OSError,
+        RuntimeError,
+    ) as exc:
+        return {"ok": False, "error": str(exc), "remote_effects": False}

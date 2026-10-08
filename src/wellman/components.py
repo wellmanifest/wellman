@@ -53,9 +53,72 @@ def _manifest(raw, suffix):
     return data
 
 
-def _component(repository, path, manifest, data):
+def _package_directories(root, names, exclusions, classification, max_bytes):
+    """Finite Git-visible regular package markers; never follow or import them."""
+    result = []
+    for name in sorted(names):
+        if PurePosixPath(name).name != '__init__.py' or _excluded(name, exclusions):
+            continue
+        matches = [kind for kind, rules in classification.items() if _excluded(name, rules)]
+        if len(matches) > 1 or matches and matches[0] != 'first_party':
+            continue
+        if any(part in HINTS for part in PurePosixPath(name).parts) and matches != ['first_party']:
+            continue
+        try:
+            marker = _safe(root, name)
+            if marker.is_file() and marker.stat().st_size <= max_bytes:
+                result.append(PurePosixPath(name).parent)
+        except (OSError, ContractError):
+            continue
+    return result
+
+
+def _find_packages(parent, find, package_dirs):
+    """Match explicit dotted package selectors under declared find directories."""
+    include, exclude, where = find.get('include'), find.get('exclude', []), find.get('where', ['.'])
+    if include in (None, []):
+        return None
+    for patterns in (include, exclude):
+        if (not isinstance(patterns, list) or any(not isinstance(p, str) or not p
+                or '/' in p or '\\' in p or '..' in p for p in patterns)):
+            raise ContractError('Package selectors must be safe dotted-name patterns')
+    if not isinstance(where, list) or any(not isinstance(p, str) for p in where):
+        raise ContractError('Package discovery roots must be paths')
+    roots = []
+    for base in where:
+        scope = PurePosixPath(base)
+        if scope.is_absolute() or '..' in scope.parts or '\\' in base:
+            raise ContractError('Package discovery root escapes repository')
+        for directory in package_dirs:
+            try:
+                local = directory.relative_to(PurePosixPath(parent))
+                package = local.relative_to(scope)
+            except ValueError:
+                continue
+            if not package.parts or any(not part.isidentifier() for part in package.parts):
+                continue
+            dotted = '.'.join(package.parts)
+            if _excluded(dotted, include) and not _excluded(dotted, exclude):
+                roots.append(local.as_posix())
+    return roots
+
+
+def _package_selected(local, find):
+    for base in find.get('where', ['.']):
+        try:
+            package = PurePosixPath(local).parent.relative_to(PurePosixPath(base))
+        except ValueError:
+            continue
+        dotted = '.'.join(package.parts)
+        if _excluded(dotted, find['include']) and not _excluded(dotted, find.get('exclude', [])):
+            return True
+    return False
+
+
+def _component(repository, path, manifest, data, package_dirs=()):
     parent = PurePosixPath(path).parent.as_posix()
     roots = []
+    package_find = None
     name = data.get('name') if manifest == 'package.json' else None
     workspace = False
     members = []
@@ -80,7 +143,10 @@ def _component(repository, path, manifest, data):
                     roots += [v for v in mapping.values() if isinstance(v, str) and v not in ('', '.')]
                 packages = setup.get('packages', {})
                 if isinstance(packages, dict) and isinstance(packages.get('find'), dict):
-                    roots += [v for v in packages['find'].get('where', []) if isinstance(v, str) and v not in ('', '.')]
+                    selected = _find_packages(parent, packages['find'], package_dirs)
+                    if selected is not None:
+                        package_find = packages['find']
+                    roots += selected if selected is not None else [v for v in packages['find'].get('where', []) if isinstance(v, str) and v not in ('', '.')]
     elif manifest == 'package.json':
         declared = data.get('workspaces', [])
         members = declared.get('packages', []) if isinstance(declared, dict) else declared
@@ -98,7 +164,7 @@ def _component(repository, path, manifest, data):
     return {'id': repository + ':' + parent, 'repository_id': repository, 'path': parent,
             'name': name if named else None, 'kind': 'workspace' if workspace and not named else 'package',
             'boundary': 'confirmed' if named or workspace else 'unknown', 'manifests': [path],
-            'evidence_refs': ['file:' + path], 'source_roots': sorted(set(roots)), 'workspace_members': members}
+            'evidence_refs': ['file:' + path], 'source_roots': sorted(set(roots)), 'workspace_members': members, '_package_find': package_find}
 
 
 def inventory_repository(root, *, classification=None, exclusions=(), max_files=10000,
@@ -155,6 +221,7 @@ def inventory_repository(root, *, classification=None, exclusions=(), max_files=
     names.discard('')
     if len(names) > max_files:
         raise ContractError('Inventory file limit exceeded; nothing was certified')
+    package_dirs = _package_directories(root, names, patterns, classification, max_file_bytes)
     entries, components = [], {}
     for relative in sorted(names):
         if _excluded(relative, patterns):
@@ -190,12 +257,14 @@ def inventory_repository(root, *, classification=None, exclusions=(), max_files=
                     and (kind == 'first_party' or not any(part in HINTS for part in PurePosixPath(relative).parts))):
                 try:
                     data = _manifest(raw.decode('utf-8'), path.suffix)
-                    component = _component(repository, relative, path.name, data)
+                    component = _component(repository, relative, path.name, data, package_dirs)
                     if identity != 'confirmed': component['boundary'] = 'unknown'
                     old = components.get(component['path'])
                     if old:
                         old['manifests'].append(relative); old['evidence_refs'].append('file:'+relative)
                         old['source_roots'] = sorted(set(old['source_roots'] + component['source_roots']))
+                        if component.get('_package_find') is not None:
+                            old['_package_find'] = component['_package_find']
                         if old['name'] != component['name']:
                             old['boundary'] = 'unknown'; issues.append({'code':'COMPONENT_BOUNDARY_CONFLICT','path':relative})
                     else: components[component['path']] = component
@@ -214,8 +283,11 @@ def inventory_repository(root, *, classification=None, exclusions=(), max_files=
         entry['classification_hint'] = hint
         if entry['class']=='unknown' and entry['reasons']==['No explicit classification'] and owner and owner['boundary']=='confirmed' and hint is None:
             local = entry['path'] if owner['path']=='.' else entry['path'][len(owner['path'])+1:]
-            if any(local.startswith(source+'/') for source in owner['source_roots']) or entry['path'] in owner['manifests']:
+            selected = owner.get('_package_find') is None or _package_selected(local, owner['_package_find'])
+            if selected and any(local.startswith(source+'/') for source in owner['source_roots']) or entry['path'] in owner['manifests']:
                 entry.update({'class':'first_party','reasons':['Confirmed package manifest and declared source root']})
+    for component in ordered:
+        component.pop('_package_find', None)
     source = [{'path':e['path'],'kind':e['kind'],'sha256':e['sha256']} for e in entries if e['class'] in {'first_party','unknown'}]
     return {'repository_id':repository,'identity':identity,'head':head,'components':ordered,'files':entries,
             'source_digest':payload_digest(source),'local_changes_digest':payload_digest({'index':index,'status':status,'worktree':source}),

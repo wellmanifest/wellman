@@ -12,4 +12,4 @@ SESSION_EXECUTION_AUTHORIZATION: User says “wykonuj kolejne zadania, sclaaj, t
 
 Expose explicit evidence selection planning and local review backlog through the existing recommend command; preserve legacy recommend/register/fleet behavior and publish through protected independent review and merge.
 
-Validation: 81 focused CLI tests and 464 full tests passed, including legacy recommend/register/fleet compatibility, snapshot replay, stale/artifact/symlink guards and explicit review backlog export.
+Validation: 466 full tests passed, including digest-bound saved exclusion recovery, explicit classification policy, legacy compatibility, artifact checks and backlog export.

@@ -911,7 +911,7 @@ def _selection_json(path):
 def _cmd_evidence_selection(args):
     """Opt-in bridge to the deterministic evidence planner and existing exporter."""
     from wellman.adoption_inspection import inspect_adoption
-    from wellman.components import inventory_repository
+    from wellman.components import DEFAULT_EXCLUSIONS, inventory_repository
     from wellman.selection_contracts import payload_digest, validate_document
     from wellman.selection_plan import (
         assert_repository_current,
@@ -961,6 +961,14 @@ def _cmd_evidence_selection(args):
         if observation.get("schema") != "wellman.observation/v1":
             raise ValueError("Expected a source-bound observation")
         validate_document(observation)
+        if not args.scope_policy:
+            effective = observation['scope']['exclusions']
+            if effective[:len(DEFAULT_EXCLUSIONS)] != list(DEFAULT_EXCLUSIONS):
+                raise ValueError('Saved observation requires its explicit --scope-policy')
+            options['exclusions'] = effective[len(DEFAULT_EXCLUSIONS):]
+            inferred = {'classification':{},'exclusions':options['exclusions']}
+            if payload_digest(inferred)!=observation['scope']['policy_digest']:
+                raise ValueError('Saved classification requires its explicit --scope-policy')
         inventory = inventory_repository(root, **options)
         adoptions = {
             inventory["repository_id"]: inspect_adoption(root, inventory=inventory)

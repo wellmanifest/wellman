@@ -547,11 +547,11 @@ def test_selection_cli_requires_explicit_pins_and_opt_in(evidence_cli, capsys):
     assert not (root / ".governance").exists()
 
 
-def _save_selection_observation(root, destination):
+def _save_selection_observation(root, destination, **options):
     from wellman.selection_contracts import canonical_bytes
     from wellman.selection_plan import capture_repository
 
-    b = capture_repository(root)
+    b = capture_repository(root, **options)
     destination.mkdir()
     for name, data in [
         ("observation", b["observation"]),
@@ -571,6 +571,24 @@ def test_selection_cli_replays_same_saved_observation_deterministically(
     first = json.loads(capsys.readouterr().out)
     assert main(args + ["--observation", str(observation)]) == 0
     assert json.loads(capsys.readouterr().out) == first
+
+
+def test_selection_cli_recovers_digest_bound_exclusions_from_saved_snapshot(evidence_cli,tmp_path,capsys):
+    root,_,args=evidence_cli
+    observation=_save_selection_observation(root,tmp_path/'snapshot',exclusions=['bench/**','**/src/gen/schemas/**'])
+    assert main(args+['--observation',str(observation)])==0
+    assert json.loads(capsys.readouterr().out)['schema']=='wellman.selection-plan/v1'
+
+
+def test_selection_cli_requires_explicit_nondefault_classification_policy(evidence_cli,tmp_path,capsys):
+    root,_,args=evidence_cli
+    classification={'generated':['never/**']}
+    observation=_save_selection_observation(root,tmp_path/'snapshot',classification=classification)
+    assert main(args+['--observation',str(observation)])==1
+    assert '--scope-policy' in capsys.readouterr().err
+    policy=tmp_path/'policy.json';policy.write_text(json.dumps({'classification':classification}))
+    assert main(args+['--observation',str(observation),'--scope-policy',str(policy)])==0
+    assert json.loads(capsys.readouterr().out)['schema']=='wellman.selection-plan/v1'
 
 
 @pytest.mark.parametrize("changed", ["source", "evidence", "missing"])

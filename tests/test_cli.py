@@ -670,3 +670,127 @@ def test_selection_cli_module_entrypoint_defines_bridge_before_main(evidence_cli
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["schema"] == "wellman.selection-plan/v1"
+
+
+@pytest.fixture
+def ssot_cli(evidence_cli, tmp_path):
+    from wellman.selection_contracts import payload_digest
+    from wellman.selection_plan import capture_repository
+
+    root, _, _ = evidence_cli
+    observation = capture_repository(root)['observation']
+    component = observation['components'][0]['id']
+    observation['stages'] = [{
+        'id': 'contracts-stage', 'tool': 'contracts', 'component_id': component,
+        'started_at': observation['started_at'], 'finished_at': observation['finished_at'],
+        'status': 'complete', 'exit_code': 0, 'truncated': False,
+        'coverage': 'complete', 'errors': [], 'artifact_refs': ['contracts'],
+    }]
+    observation['artifacts'] = [{
+        'id': 'contracts', 'path': 'contracts.json', 'media_type': 'application/json',
+        'size_bytes': 3, 'sha256': '5' * 64, 'producer': 'contracts',
+        'origin_observation_id': observation['observation_id'], 'freshness': 'verified',
+    }]
+    declaration = {
+        'schema': 'wellman.ssot-declarations/v1',
+        'observation_digest': payload_digest(observation),
+        'records': [{
+            'id': name, 'domain': 'billing', 'kind': 'rule', 'key': 'quota',
+            'component_id': component, 'role': 'owner', 'content_digest': '6' * 64,
+            'evidence_refs': ['contracts'], 'source_id': None, 'source_digest': None,
+        } for name in ('owner', 'competitor')],
+    }
+    obs = tmp_path / 'observation.json'
+    decl = tmp_path / 'declarations.json'
+    obs.write_text(json.dumps(observation))
+    decl.write_text(json.dumps(declaration))
+    return root, obs, decl, ['ssot', '--observation', str(obs), '--declarations', str(decl)]
+
+
+def test_ssot_cli_reports_review_proposals_without_execution(ssot_cli, capsys, monkeypatch):
+    import wellman.cli as cli
+    import wellman.adoption as adoption
+
+    root, obs, decl, args = ssot_cli
+    before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+    inputs = (obs.read_bytes(), decl.read_bytes())
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Unrequested effect')
+
+    monkeypatch.setattr(adoption, 'register', forbidden)
+    monkeypatch.setattr(cli, 'feed_to_planfile', forbidden)
+    monkeypatch.setattr(cli.subprocess, 'run', forbidden)
+    assert main(args + ['--json']) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report['schema'] == 'wellman.ssot-analysis/v1'
+    assert report['findings'][0]['code'] == 'SSOT_MULTIPLE_OWNERS'
+    assert not report['grants_authority'] and not report['applied']
+    assert not report['refactoring_proposals'][0]['executable']
+    assert (obs.read_bytes(), decl.read_bytes()) == inputs
+    assert {p: p.read_bytes() for p in root.rglob('*') if p.is_file()} == before
+
+
+def test_ssot_cli_partial_snapshot_defers_and_text_explains_limits(ssot_cli, capsys):
+    from wellman.selection_contracts import payload_digest
+
+    _, obs, decl, args = ssot_cli
+    observation = json.loads(obs.read_text())
+    observation['stages'][0]['status'] = 'partial'
+    obs.write_text(json.dumps(observation))
+    declarations = json.loads(decl.read_text())
+    declarations['observation_digest'] = payload_digest(observation)
+    decl.write_text(json.dumps(declarations))
+    assert main(args) == 0
+    text = capsys.readouterr().out
+    assert 'defer: SSOT_EVIDENCE_INSUFFICIENT' in text
+    assert '0 nonexecutable review proposals' in text
+    assert 'Current repository freshness and undeclared contracts are not checked' in text
+
+
+@pytest.mark.parametrize('case', ['stale', 'duplicate', 'symlink', 'missing', 'oversized', 'invalid'])
+def test_ssot_cli_rejects_invalid_inputs_without_report(ssot_cli, capsys, case):
+    from wellman.selection_contracts import MAX_DOCUMENT_BYTES
+
+    _, obs, decl, args = ssot_cli
+    if case == 'stale':
+        d = json.loads(decl.read_text())
+        d['observation_digest'] = '0' * 64
+        decl.write_text(json.dumps(d))
+    elif case == 'duplicate':
+        decl.write_text('{"schema":"x","schema":"y"}')
+    elif case == 'symlink':
+        target = decl.with_suffix('.saved')
+        decl.rename(target)
+        decl.symlink_to(target)
+    elif case == 'missing':
+        decl.unlink()
+    elif case == 'oversized':
+        with decl.open('wb') as stream:
+            stream.truncate(MAX_DOCUMENT_BYTES + 1)
+    else:
+        obs.write_text('[]')
+    assert main(args + ['--json']) == 1
+    output = capsys.readouterr()
+    assert not output.out and 'SSOT analysis failed:' in output.err
+
+
+def test_ssot_cli_module_entrypoint(ssot_cli):
+    import os
+    import sys
+
+    _, _, _, args = ssot_cli
+    env = dict(os.environ, PYTHONPATH=str(Path(__file__).parents[1] / 'src'))
+    result = subprocess.run([sys.executable, '-m', 'wellman.cli', *args, '--json'],
+                            env=env, text=True, capture_output=True, check=True)
+    assert json.loads(result.stdout)['coverage'] == 'declared-contracts-only'
+
+
+def test_ssot_cli_rejects_symlinked_parent_directory(ssot_cli, tmp_path, capsys):
+    _, obs, decl, _ = ssot_cli
+    alias = tmp_path / 'aliased-inputs'
+    alias.symlink_to(obs.parent, target_is_directory=True)
+    assert main(['ssot', '--observation', str(alias / obs.name),
+                 '--declarations', str(decl), '--json']) == 1
+    output = capsys.readouterr()
+    assert not output.out and 'must not traverse a symlink' in output.err

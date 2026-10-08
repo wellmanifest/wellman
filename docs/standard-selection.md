@@ -320,3 +320,47 @@ older workspace analyzer versions retained diagnostics and left the complete
 pointer unchanged. This demonstrates the bounded Python path, not coverage of
 the entire multi-repository workspace. Catalog pins in that fixture were
 synthetic and granted no adoption authority.
+
+## Domain ownership and SSOT review
+
+Analyze explicit ownership declarations against an observation snapshot:
+
+```bash
+wellman ssot --observation snapshot/observation.json \
+  --declarations contracts.json --json
+```
+
+This separate command returns `wellman.ssot-analysis/v1`: findings and
+nonexecutable refactoring proposals. It does not extend or execute the standards
+selection plan. Exit code 0 means analysis completed, including review/defer
+findings; invalid inputs return 1. Omit `--json` for a concise review summary.
+
+`contracts.json` has exactly `schema` (`wellman.ssot-declarations/v1`),
+`observation_digest` and `records`. Compute the observation digest with
+`wellman.selection_contracts.payload_digest(observation)`, not the hash of the
+JSON file's formatting. Each record has exactly:
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `domain`, `kind`, `key` | Unique record and domain contract identity; kind is command, query, event, error, rule or model |
+| `component_id` | Component declared in the observation |
+| `role` | owner, consumer or projection |
+| `content_digest` | SHA-256 of declared contract content, or null for missing evidence |
+| `evidence_refs` | Artifact identifiers in the observation |
+| `source_id` | Referenced owner record; null for an owner |
+| `source_digest` | Owner content digest used to generate a projection; null for an owner or consumer |
+
+The API `wellman.ssot.analyze_ssot` owns the declaration validation and analysis.
+It separates domains and contract kinds, reports multiple declared owners,
+missing owner declarations, invalid references and stale projection bindings.
+Incomplete stages, unknown boundaries or unverified artifacts defer a decision.
+Matching hashes do not prove semantic equivalence; different transport format
+hashes do not prove business logic divergence.
+
+Inputs are data only: bounded to 20 MiB each, with at most 2,000 declaration
+records; duplicate JSON keys and symlink traversal are rejected. No analyzer,
+LLM, adoption, Planfile export or source modification runs. Ownership must be
+reviewed upstream. Analysis trusts the snapshot's declared provenance and does
+not inspect artifact bytes or recheck the current checkout: retain the original
+source-bound snapshot and use the evidence selection workflow's freshness checks
+before preparing any change. Undeclared contracts remain outside coverage.

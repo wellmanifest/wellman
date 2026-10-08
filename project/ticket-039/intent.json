@@ -1,0 +1,82 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-039",
+  "summary": "Discover explicitly declared flat setuptools Python package scope",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-039/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/components.py",
+    "tests/test_components.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "336c27839f74646d3db41cc253ca1e9bb5fff0b9",
+    "targetBranch": "main",
+    "outcome": "Resolve explicit setuptools root-dot find include/exclude declarations against bounded Git-inventoried package __init__.py paths; confirm only declared package source roots without global-root promotion. Reproduce actual Planfile manifest, test class/boundary safety, protected merge.",
+    "nonGoals": [
+      "No project imports, directory-name guessing, namespace guessing or blanket workspace profile",
+      "No standard/tool installation, CI/hook/permission changes or foreign edits"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Enumerate only finite safe inventoried __init__.py package directories and match declared setuptools find where/include/exclude patterns. Require explicit include declarations for root-dot finding; package scopes remain subordinate to existing classification and nested component ownership.",
+      "components": [
+        {
+          "name": "component-inventory",
+          "paths": [
+            "src/wellman/components.py",
+            "tests/test_components.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this compatibility correction."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python -m pytest -q tests/test_components.py"
+        ],
+        "evidence": "Reproduce explicit Planfile root-dot layout; safe include/exclude/where matching and no promotions of unrelated, absent, unsafe, vendor/generated/symlink or nested-owner paths; actual pinned scanner preserves incomplete outcomes."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONPATH=src python -m pytest -q",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full suite, Ruff/governance and independent exact-head protected publication."
+      }
+    ]
+  }
+}

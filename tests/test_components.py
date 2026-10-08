@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -208,3 +209,81 @@ def test_python_manifest_can_declare_additional_source_roots(repo):
     report=inventory_repository(repo)
     assert report['components'][0]['boundary']=='confirmed'
     assert report['components'][0]['source_roots']==['src','src/lib']
+
+
+@requires_toml
+@pytest.mark.parametrize('where', ['.', 'python'])
+def test_explicit_flat_setuptools_find_confirms_only_declared_git_packages(repo, where):
+    (repo/'package.json').unlink()
+    write(repo,'pyproject.toml','[project]\nname="flat"\n[tool.setuptools.packages.find]\nwhere=["'+where+'"]\ninclude=["flat*"]\nexclude=["flat_ignore*"]\n')
+    prefix='' if where=='.' else 'python/'
+    write(repo,prefix+'flat/__init__.py','')
+    write(repo,prefix+'flat/main.py','value=1\n')
+    write(repo,prefix+'flat_ignore/__init__.py','')
+    write(repo,prefix+'unrelated/__init__.py','')
+    write(repo,prefix+'flat_guess/no_init.py','')
+    report=inventory_repository(repo)
+    assert report['components'][0]['source_roots']==[prefix+'flat']
+    assert file(report,prefix+'flat/main.py')['class']=='first_party'
+    assert file(report,prefix+'flat_ignore/__init__.py')['class']=='unknown'
+    assert file(report,prefix+'unrelated/__init__.py')['class']=='unknown'
+    assert file(report,prefix+'flat_guess/no_init.py')['class']=='unknown'
+    assert file(report,'src/lib/main.py')['class']=='unknown'
+
+
+@requires_toml
+@pytest.mark.parametrize('include', [None, [], ['../flat*'], ['/flat*'], ['flat/foo'], ['flat..*']])
+def test_root_dot_without_safe_explicit_package_patterns_is_not_promoted(repo, include):
+    (repo/'package.json').unlink()
+    declaration='[project]\nname="flat"\n[tool.setuptools.packages.find]\nwhere=["."]\n'
+    if include is not None:
+        declaration+='include='+json.dumps(include)+'\n'
+    write(repo,'pyproject.toml',declaration)
+    write(repo,'flat/__init__.py','')
+    report=inventory_repository(repo)
+    assert file(report,'flat/__init__.py')['class']=='unknown'
+    assert all(c['source_roots']==[] for c in report['components'])
+
+
+@requires_toml
+def test_flat_package_declaration_keeps_classification_and_nested_owner_boundaries(repo):
+    (repo/'package.json').unlink()
+    write(repo,'pyproject.toml','[project]\nname="flat"\n[tool.setuptools.packages.find]\nwhere=["."]\ninclude=["flat*"]\n')
+    write(repo,'flat/__init__.py','')
+    write(repo,'flat/vendor/external.py','')
+    write(repo,'flat/generated/derived.py','')
+    write(repo,'flat/child/pyproject.toml','[project]\nname="child"\n')
+    write(repo,'flat/child/code.py','')
+    report=inventory_repository(repo)
+    assert file(report,'flat/__init__.py')['class']=='first_party'
+    assert file(report,'flat/vendor/external.py')['class']=='unknown'
+    assert file(report,'flat/generated/derived.py')['class']=='unknown'
+    assert file(report,'flat/child/code.py')['component_id'].endswith(':flat/child')
+    assert file(report,'flat/child/code.py')['class']=='unknown'
+    overridden=inventory_repository(repo,classification={'vendored':['flat/**']})
+    assert file(overridden,'flat/__init__.py')['class']=='vendored'
+
+
+@requires_toml
+def test_find_exclusion_is_honored_below_included_parent_package(repo):
+    (repo/'package.json').unlink()
+    write(repo,'pyproject.toml','[project]\nname="flat"\n[tool.setuptools.packages.find]\nwhere=["."]\ninclude=["flat*"]\nexclude=["flat.internal*"]\n')
+    write(repo,'flat/__init__.py','')
+    write(repo,'flat/internal/__init__.py','')
+    write(repo,'flat/internal/main.py','')
+    report=inventory_repository(repo)
+    assert file(report,'flat/__init__.py')['class']=='first_party'
+    assert file(report,'flat/internal/main.py')['class']=='unknown'
+    assert '_package_find' not in report['components'][0]
+
+
+@requires_toml
+def test_symlink_package_marker_cannot_promote_a_package(repo,tmp_path):
+    (repo/'package.json').unlink()
+    write(repo,'pyproject.toml','[project]\nname="flat"\n[tool.setuptools.packages.find]\nwhere=["."]\ninclude=["flat*"]\n')
+    write(repo,'flat/main.py','')
+    outside=tmp_path/'marker';outside.write_text('')
+    (repo/'flat/__init__.py').symlink_to(outside)
+    report=inventory_repository(repo)
+    assert file(report,'flat/main.py')['class']=='unknown'
+    assert not report['complete']

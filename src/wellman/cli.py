@@ -743,6 +743,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_recommend.add_argument('--fleet', action='store_true', help='Read-only selection for repositories below --root')
     p_recommend.add_argument('--max-projects', type=int, default=20, help='Reject fleets larger than this explicit limit (max 100)')
     p_recommend.add_argument('--plan', action='store_true', help='Include existing reviewed fleet adoption plans; do not apply')
+    p_recommend.add_argument('--selection-plan', action='store_true', help='Compose an evidence-bound nonexecutable standards plan')
+    p_recommend.add_argument('--catalog', help='Pinned applicability catalog JSON for --selection-plan')
+    p_recommend.add_argument('--observation', help='Saved observation JSON with artifacts beside it; checked against live source')
+    p_recommend.add_argument('--scope-policy', help='Classification and exclusion policy JSON')
+    p_recommend.add_argument('--export-planfile', help='Explicit local review backlog project outside observed source')
     p_recommend.set_defaults(func=cmd_recommend)
 
     # fleet
@@ -808,6 +813,10 @@ def build_parser() -> argparse.ArgumentParser:
 def cmd_recommend(args) -> int:
     from wellman.adoption import recommend, register, safe_path, expand_profiles
     try:
+        if args.selection_plan:
+            return _cmd_evidence_selection(args)
+        if any((args.catalog,args.observation,args.scope_policy,args.export_planfile)):
+            raise ValueError('Evidence planning options require --selection-plan')
         if args.fleet and (args.register or args.ast or args.evidence):
             raise ValueError('Fleet selection is read-only and uses per-project --analyze, not shared AST/evidence')
         if not 1 <= args.max_projects <= 100:
@@ -880,6 +889,144 @@ def main(argv: Optional[List[str]] = None) -> int:
         return args.func(args)
 
     parser.print_help()
+    return 0
+
+
+def _selection_json(path):
+    """Bounded data-only input; duplicate keys and symlink traversal fail closed."""
+    from wellman.evidence import _json
+    from wellman.selection_contracts import MAX_DOCUMENT_BYTES
+
+    path = Path(path).absolute()
+    if any(p.is_symlink() for p in (path, *path.parents)):
+        raise ValueError("Selection input must not traverse a symlink")
+    if not path.is_file() or path.stat().st_size > MAX_DOCUMENT_BYTES:
+        raise ValueError("Selection input is missing or oversized")
+    raw = path.read_bytes()
+    if len(raw) > MAX_DOCUMENT_BYTES:
+        raise ValueError("Selection input is oversized")
+    return _json(raw)
+
+
+def _cmd_evidence_selection(args):
+    """Opt-in bridge to the deterministic evidence planner and existing exporter."""
+    from wellman.adoption_inspection import inspect_adoption
+    from wellman.components import DEFAULT_EXCLUSIONS, inventory_repository
+    from wellman.selection_contracts import payload_digest, validate_document
+    from wellman.selection_plan import (
+        assert_repository_current,
+        capture_repository,
+        compose_selection_plan,
+        render_selection_plan,
+    )
+
+    if any(
+        (
+            args.register,
+            args.analyze,
+            args.fleet,
+            args.plan,
+            args.llm,
+            args.ast,
+            args.evidence,
+            args.hint,
+        )
+    ):
+        raise ValueError(
+            "Selection-plan mode requires snapshot evidence and cannot combine legacy analysis, registration or fleet options"
+        )
+    if not args.catalog:
+        raise ValueError(
+            "Selection-plan mode requires --catalog with explicit immutable targets"
+        )
+    catalog = _selection_json(args.catalog)
+    if catalog.get("schema") != "wellman.applicability-catalog/v1":
+        raise ValueError("Expected an applicability catalog")
+    validate_document(catalog)
+    policy = _selection_json(args.scope_policy) if args.scope_policy else {}
+    if set(policy) - {"classification", "exclusions"}:
+        raise ValueError("Scope policy accepts only classification and exclusions")
+    options = {
+        "classification": policy.get("classification"),
+        "exclusions": policy.get("exclusions", []),
+    }
+    if not isinstance(options["exclusions"], list) or any(
+        not isinstance(p, str) for p in options["exclusions"]
+    ):
+        raise ValueError("Exclusions must be a list of patterns")
+    root = Path(args.root).absolute()
+    artifact_root = None
+    if args.observation:
+        observation = _selection_json(args.observation)
+        if observation.get("schema") != "wellman.observation/v1":
+            raise ValueError("Expected a source-bound observation")
+        validate_document(observation)
+        if not args.scope_policy:
+            effective = observation['scope']['exclusions']
+            if effective[:len(DEFAULT_EXCLUSIONS)] != list(DEFAULT_EXCLUSIONS):
+                raise ValueError('Saved observation requires its explicit --scope-policy')
+            options['exclusions'] = effective[len(DEFAULT_EXCLUSIONS):]
+            inferred = {'classification':{},'exclusions':options['exclusions']}
+            if payload_digest(inferred)!=observation['scope']['policy_digest']:
+                raise ValueError('Saved classification requires its explicit --scope-policy')
+        inventory = inventory_repository(root, **options)
+        adoptions = {
+            inventory["repository_id"]: inspect_adoption(root, inventory=inventory)
+        }
+        artifact_root = Path(args.observation).absolute().parent
+    else:
+        bundle = capture_repository(root, **options)
+        observation, adoptions = bundle["observation"], bundle["adoptions"]
+    roots = {r["id"]: root for r in observation["repositories"]}
+    # This CLI observes one repository; shared workspace decisions remain deferred.
+    if len(roots) != 1:
+        raise ValueError("Select one repository observation per invocation")
+    assert_repository_current(
+        observation,
+        adoptions,
+        roots,
+        inventory_options=options,
+        artifact_root=artifact_root,
+    )
+    plan = compose_selection_plan(observation, catalog, adoptions)
+    # Re-read external metadata too; source digests alone cannot bind these files.
+    if payload_digest(_selection_json(args.catalog)) != payload_digest(catalog):
+        raise ValueError("PLAN_STALE: catalog changed during selection")
+    if args.scope_policy and _selection_json(args.scope_policy) != policy:
+        raise ValueError("PLAN_STALE: scope policy changed during selection")
+    result = plan
+    if args.export_planfile:
+        exported = feed_to_planfile(
+            plan,
+            Path(args.export_planfile),
+            per_repo=False,
+            selection_context={
+                "observation": observation,
+                "catalog": catalog,
+                "adoptions": adoptions,
+                "repository_roots": roots,
+                "inventory_options": options,
+                "artifact_root": artifact_root,
+            },
+        )
+        result = {
+            "schema": "wellman.selection-export/v1",
+            "plan": plan,
+            "export": exported,
+        }
+        if not exported["ok"]:
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 1
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        print(render_selection_plan(plan), end="")
+        if args.export_planfile:
+            print(
+                "Local review backlog: "
+                + str(result["export"]["count"])
+                + " tasks; no remote effect."
+            )
     return 0
 
 

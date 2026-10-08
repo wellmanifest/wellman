@@ -412,3 +412,260 @@ def test_recommend_fleet_is_bounded_read_only_and_builds_existing_plans(tmp_path
     assert 'exceeds max-projects' in capsys.readouterr().err
     assert main(['recommend', '--root', str(tmp_path), '--fleet', '--register']) == 1
     assert 'read-only' in capsys.readouterr().err
+@pytest.fixture
+def evidence_cli(tmp_path):
+    from wellman.applicability import build_catalog
+
+    root = tmp_path / "source"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/library.git",
+        ],
+        check=True,
+    )
+    (root / "package.json").write_text('{"name":"library","source":"src/main.js"}')
+    (root / "src").mkdir()
+    (root / "src/main.js").write_text("export const value=1;\n")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "Fixture",
+        ],
+        check=True,
+    )
+    cat = build_catalog(
+        {"wellmanifest/new-project": "a" * 40},
+        revision="b" * 40,
+        trusted_source="explicit fixture",
+        metadata={
+            "wellmanifest/new-project": {
+                "managed_files": ["AGENTS.md"],
+                "validators": ["review contract"],
+            }
+        },
+    )
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(json.dumps(cat))
+    return (
+        root,
+        catalog,
+        [
+            "recommend",
+            "--root",
+            str(root),
+            "--selection-plan",
+            "--catalog",
+            str(catalog),
+            "--json",
+        ],
+    )
+
+
+def test_selection_plan_cli_schema_reasons_and_no_implicit_effects(
+    evidence_cli, capsys, monkeypatch
+):
+    import wellman.adoption as adoption
+    import wellman.cli as cli
+    from wellman.selection_contracts import validate_document
+
+    root, _, args = evidence_cli
+    before = {
+        p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()
+    }
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Unrequested effect")
+
+    monkeypatch.setattr(adoption, "recommend", forbidden)
+    monkeypatch.setattr(adoption, "register", forbidden)
+    monkeypatch.setattr(cli, "feed_to_planfile", forbidden)
+    assert main(args) == 0
+    plan = json.loads(capsys.readouterr().out)
+    validate_document(plan)
+    assert not plan["executable"] and not plan["grants_authority"]
+    d = next(
+        d for d in plan["decisions"] if d["standard_id"] == "wellmanifest/new-project"
+    )
+    assert (
+        d["action"] == "add" and d["evidence_refs"] and d["target_revision"] == "a" * 40
+    )
+    assert {
+        p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()
+    } == before
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--register"],
+        ["--analyze"],
+        ["--fleet"],
+        ["--plan"],
+        ["--llm"],
+        ["--ast", "missing.json"],
+        ["--evidence", "code2llm=missing.json"],
+        ["--hint", "agent"],
+    ],
+)
+def test_selection_cli_rejects_legacy_effect_or_advisory_flags_before_execution(
+    evidence_cli, capsys, flags
+):
+    root, _, args = evidence_cli
+    assert main(args + flags) == 1
+    assert "cannot combine" in capsys.readouterr().err
+    assert not (root / ".governance").exists()
+
+
+def test_selection_cli_requires_explicit_pins_and_opt_in(evidence_cli, capsys):
+    root, catalog, _ = evidence_cli
+    assert main(["recommend", "--root", str(root), "--selection-plan"]) == 1
+    assert "requires --catalog" in capsys.readouterr().err
+    assert (
+        main(
+            ["recommend", "--root", str(root), "--catalog", str(catalog), "--register"]
+        )
+        == 1
+    )
+    assert "require --selection-plan" in capsys.readouterr().err
+    assert not (root / ".governance").exists()
+
+
+def _save_selection_observation(root, destination, **options):
+    from wellman.selection_contracts import canonical_bytes
+    from wellman.selection_plan import capture_repository
+
+    b = capture_repository(root, **options)
+    destination.mkdir()
+    for name, data in [
+        ("observation", b["observation"]),
+        ("inventory", b["inventory"]),
+        ("adoption", b["adoptions"]["acme/library"]),
+    ]:
+        (destination / (name + ".json")).write_bytes(canonical_bytes(data))
+    return destination / "observation.json"
+
+
+def test_selection_cli_replays_same_saved_observation_deterministically(
+    evidence_cli, tmp_path, capsys
+):
+    root, _, args = evidence_cli
+    observation = _save_selection_observation(root, tmp_path / "snapshot")
+    assert main(args + ["--observation", str(observation)]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert main(args + ["--observation", str(observation)]) == 0
+    assert json.loads(capsys.readouterr().out) == first
+
+
+def test_selection_cli_recovers_digest_bound_exclusions_from_saved_snapshot(evidence_cli,tmp_path,capsys):
+    root,_,args=evidence_cli
+    observation=_save_selection_observation(root,tmp_path/'snapshot',exclusions=['bench/**','**/src/gen/schemas/**'])
+    assert main(args+['--observation',str(observation)])==0
+    assert json.loads(capsys.readouterr().out)['schema']=='wellman.selection-plan/v1'
+
+
+def test_selection_cli_requires_explicit_nondefault_classification_policy(evidence_cli,tmp_path,capsys):
+    root,_,args=evidence_cli
+    classification={'generated':['never/**']}
+    observation=_save_selection_observation(root,tmp_path/'snapshot',classification=classification)
+    assert main(args+['--observation',str(observation)])==1
+    assert '--scope-policy' in capsys.readouterr().err
+    policy=tmp_path/'policy.json';policy.write_text(json.dumps({'classification':classification}))
+    assert main(args+['--observation',str(observation),'--scope-policy',str(policy)])==0
+    assert json.loads(capsys.readouterr().out)['schema']=='wellman.selection-plan/v1'
+
+
+@pytest.mark.parametrize("changed", ["source", "evidence", "missing"])
+def test_selection_cli_rejects_stale_snapshot_before_export(
+    evidence_cli, tmp_path, capsys, changed
+):
+    root, _, args = evidence_cli
+    obs = _save_selection_observation(root, tmp_path / "snapshot")
+    if changed == "source":
+        (root / "src/main.js").write_text("export const value=2;\n")
+    elif changed == "evidence":
+        (obs.parent / "inventory.json").write_text("{}")
+    else:
+        (obs.parent / "adoption.json").unlink()
+    target = tmp_path / "backlog"
+    assert (
+        main(args + ["--observation", str(obs), "--export-planfile", str(target)]) == 1
+    )
+    assert "PLAN_STALE" in capsys.readouterr().err
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(
+    "invalid", ["duplicate", "symlink", "wrong-schema", "scope-policy"]
+)
+def test_selection_cli_bounded_data_inputs_fail_closed(
+    evidence_cli, tmp_path, capsys, invalid
+):
+    _, catalog, args = evidence_cli
+    if invalid == "duplicate":
+        catalog.write_text('{"schema":"x","schema":"y"}')
+    elif invalid == "symlink":
+        outside = tmp_path / "outside.json"
+        outside.write_bytes(catalog.read_bytes())
+        catalog.unlink()
+        catalog.symlink_to(outside)
+    elif invalid == "wrong-schema":
+        catalog.write_text('{"schema":"wellman.standard-selection/v1"}')
+    else:
+        policy = tmp_path / "policy.json"
+        policy.write_text('{"exclusions":"everything"}')
+        args += ["--scope-policy", str(policy)]
+    assert main(args) == 1
+    assert capsys.readouterr().err
+
+
+def test_selection_cli_explicit_export_returns_separate_receipt(
+    evidence_cli, tmp_path, capsys
+):
+    pytest.importorskip("planfile.core.store")
+    _, _, args = evidence_cli
+    target = tmp_path / "backlog"
+    target.mkdir()
+    assert main(args + ["--export-planfile", str(target)]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["schema"] == "wellman.selection-export/v1"
+    assert (
+        result["plan"]["schema"] == "wellman.selection-plan/v1"
+        and result["export"]["ok"]
+    )
+    assert result["export"]["created"] > 0 and not result["export"]["remote_effects"]
+
+
+def test_selection_cli_module_entrypoint_defines_bridge_before_main(evidence_cli):
+    import os
+    import sys
+
+    _, _, args = evidence_cli
+    environment = dict(
+        os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src")
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "wellman.cli", *args],
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["schema"] == "wellman.selection-plan/v1"

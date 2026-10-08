@@ -12,4 +12,4 @@ SESSION_EXECUTION_AUTHORIZATION: User says “wykonuj kolejne zadania, sclaaj, t
 
 Inspect existing adoption, requirements, pins, managed digests and exception claims without executing validators or changing files; test and independently merge.
 
-Validation: 331 tests passed, including 27 adoption inspection regressions; managed governance PASS. Protected merge pending.
+Validation: 331 tests passed, including 27 inspection regressions; synthetic fixture wording corrected after protected review. Managed governance and re-review required on updated HEAD.

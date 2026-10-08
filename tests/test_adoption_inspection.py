@@ -165,7 +165,7 @@ def test_projection_contains_only_selection_contract_fields(adopted):
 
 
 def test_managed_lock_cannot_expand_scope_to_excluded_secrets(adopted,monkeypatch):
-    secret=adopted/'.env';secret.write_text('password=hidden')
+    secret=adopted/'.env';secret.write_text('EXCLUDED_TEST_CONTENT')
     path=adopted/'.governance/manifest.lock.json';lock=json.loads(path.read_text());lock['managedFiles']['.env']='9'*64;path.write_text(json.dumps(lock))
     inv=inventory(adopted);inv['files']=[f for f in inv['files'] if f['path']!='.env']
     original=Path.open

@@ -1,0 +1,84 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-029",
+  "summary": "Normalize pinned analyzer evidence and report quality",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-029/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/evidence.py",
+    "tests/test_evidence.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "888569ddf995ac1b92997866401f6927c43ad8ec",
+    "targetBranch": "main",
+    "outcome": "Normalize static JSON reports and provenance into observation-compatible fields; test and independently merge without scanner execution or adoption.",
+    "nonGoals": [
+      "No installation, adoption or implicit external effects",
+      "No changes outside the accepted slice"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Pin producer contracts, bind separate scanner receipts and source inventory, preserve legacy diagnostic status and quality gaps.",
+      "components": [
+        {
+          "name": "evidence-adapters",
+          "paths": [
+            "src/wellman/evidence.py",
+            "tests/test_evidence.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "normalize_report pure read-only API"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this additive slice."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python3 -m pytest -q tests/test_evidence.py"
+        ],
+        "evidence": "Pinned versions, report failures, scope/graph quality, metric definitions and first-party candidates remain distinct and never execute report text."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python3 -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full tests, managed governance and independent protected merge pass."
+      }
+    ]
+  }
+}

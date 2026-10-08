@@ -32,7 +32,7 @@ def repo(tmp_path):
     (root / 'src/generated/no.py').write_text('raise RuntimeError("must not run")\n')
     (root / 'src/gen/schemas').mkdir(parents=True)
     (root / 'src/gen/schemas/no.py').write_text('raise RuntimeError("must not run")\n')
-    (root / '.env').write_text('TOKEN=never-copy\n')
+    (root / '.env').write_text('private fixture data\n')
     (root / '.gitignore').write_text('.env\n')
     git(root, 'add', '.')
     git(root, 'commit', '-qm', 'Fixture')

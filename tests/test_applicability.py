@@ -478,3 +478,26 @@ def test_existing_contract_rejection_for_inconsistent_complete_stage_is_preserve
     obs['stages'][0].update(update)
     with pytest.raises(ContractError, match='complete stage'):
         resolve(obs)
+
+
+@pytest.mark.parametrize('name,capability', [
+    ('nohardcode', 'quality:configuration-audit'),
+    ('taskand', 'contract:uri-capsule'),
+    ('uriprocess', 'contract:uri-process-package'),
+    ('nl-uri-dsl-llm', 'usage:nl-to-uri'),
+])
+def test_uri_and_configuration_selection_requires_independent_capability(name, capability):
+    identifier = 'wellmanifest/' + name
+    cat = catalog((identifier,))
+    assert choose(resolve(cat=cat), identifier)['action'] == 'defer'
+    obs = observation()
+    feature(obs, capability)
+    result = resolve(obs, cat)
+    assert choose(result, identifier)['action'] == 'add'
+    assert not result['executable'] and not result['grants_authority']
+    obs['artifacts'][0]['freshness'] = 'stale'
+    assert choose(resolve(obs, cat), identifier)['action'] == 'defer'
+    obs['artifacts'][0]['freshness'] = 'verified'
+    obs['stages'][0]['status'] = 'partial'
+    obs['stages'][0]['coverage'] = 'partial'
+    assert choose(resolve(obs, cat), identifier)['action'] == 'defer'

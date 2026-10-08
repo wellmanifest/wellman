@@ -1,0 +1,85 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-037",
+  "summary": "Preflight pinned analyzer environments and separate explicit tool updates",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-037/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/analysis_environment.py",
+    "tests/test_analysis_environment.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "a3c088d3158a8263305709e5c96b2eb634bb71af",
+    "targetBranch": "main",
+    "outcome": "Deliver read-only pinned tool/sumr preflight and an explicit separate environment update command whose success stamp is written only after isolated environment verification, exact installation, postflight and lock persistence; protected independent review and merge.",
+    "nonGoals": [
+      "No automatic installation during scans or planning",
+      "No adoption, CI/hook changes or external execution/synchronization",
+      "No writes to preserved peer analyzer_snapshot ticket/worktree"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Reuse evidence contract pins. Inspect metadata through an isolated interpreter without importing project/analyzer modules. Keep update as a separate explicit command with native file locking, bounded process groups, exact version arguments and atomic success receipts. Preserve unknown paths and prior successful stamps on failure.",
+      "components": [
+        {
+          "name": "Governance analyzer environment",
+          "paths": [
+            "src/wellman/analysis_environment.py",
+            "tests/test_analysis_environment.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "python -m wellman.analysis_environment preflight --python PYTHON; explicit update --environment DIR"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this additive slice."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python3 -m pytest -q tests/test_analysis_environment.py"
+        ],
+        "evidence": "Read-only version/sumr checks, isolated exact-pin updates, failure-preserving stamps and unknown/symlink storage protection."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python3 -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full tests and accepted-base managed gate pass; independent protected exact-head approval and merge."
+      }
+    ]
+  }
+}

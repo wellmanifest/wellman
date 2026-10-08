@@ -40,7 +40,7 @@ def selection(tmp_path):
         ],
         check=True,
     )
-    (root / "pyproject.toml").write_text('[project]\nname="library"\nversion="1.0.0"\n')
+    (root / "package.json").write_text('{"name":"library","version":"1.0.0"}')
     (root / "library.py").write_text("value = 1\n")
     subprocess.run(["git", "-C", str(root), "add", "."], check=True)
     subprocess.run(

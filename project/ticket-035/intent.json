@@ -1,0 +1,86 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-035",
+  "summary": "Produce pinned read-only analyzer snapshots with atomic publication",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-035/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/analyzer_snapshot.py",
+    "tests/test_analyzer_snapshot.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "9e9a75e4019acb2512541169951341cedf753938",
+    "targetBranch": "main",
+    "outcome": "Deliver reusable module and python -m command that scans an exact Git-bound isolated input projection with pinned code2llm/redup/prefact, records every process outcome and schema/config/scope hash, validates complete snapshots before atomic publication, and preserves prior current pointer on any incomplete or stale stage; test and protected merge.",
+    "nonGoals": [
+      "No source changes in non-Git workspace project2.sh; governed replacement home is existing Wellman",
+      "No analyzer upgrade/install during observation, no runtime dependency or CI/hook/authority changes",
+      "No effectful standard adoption; scanner receipts bind observations but never trusted conformance or deployment authority",
+      "No changes to preserved foreign tickets/worktrees"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 55,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Reuse merged inventories, report adapters and observation schemas; isolated per-tool exact copies prevent source/config contamination. Separate externally pinned analyzer environment from runtime. Publish only a validated complete immutable batch under lock and atomic current pointer; retain failed attempt diagnostics.",
+      "components": [
+        {
+          "name": "analyzer-snapshot",
+          "paths": [
+            "src/wellman/analyzer_snapshot.py",
+            "tests/test_analyzer_snapshot.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "python -m wellman.analyzer_snapshot ROOT --output STORE --python PINNED_PYTHON"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert; immutable prior snapshot remains available."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python -m pytest -q tests/test_analyzer_snapshot.py"
+        ],
+        "evidence": "Version mismatch, failed/timeout/missing/partial reports, symlinks, source/projection changes, common exclusions and pointer failure preserve last complete snapshot; actual analyzer smoke checks."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONPATH=src python -m pytest -q",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full suite and Ruff/governance pass; protected exact-head independent approval/merge."
+      }
+    ]
+  }
+}

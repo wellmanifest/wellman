@@ -1,0 +1,86 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-042",
+  "summary": "Document evidence selection workflow and portable workspace adapter",
+  "workstream": "integration",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-042/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "docs/examples/project2.sh",
+    "docs/standard-selection.md"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "ae73c329fbc864cf66efe5ad0ae6f85b46cf41b9",
+    "targetBranch": "main",
+    "outcome": "Document the implemented evidence-selection CLI/API, pinned Python-only snapshots, explicit environment updates and human backlog boundary, and publish the tested portable workspace wrapper. Independent protected review and merge.",
+    "nonGoals": [
+      "No package release or deployment",
+      "No new public API, automatic adoption, runtime dependency or analyzer pin change",
+      "No competing source writer"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Extend existing standard-selection docs while preserving legacy command semantics. Keep tool preparation separate from scans and every selection result nonexecutable. Version the portable adapter under docs rather than claiming ownership of the unversioned multi-repository workspace.",
+      "components": [
+        {
+          "name": "Selection workflow documentation",
+          "paths": [
+            "docs/standard-selection.md",
+            "docs/examples/project2.sh"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "Documented existing recommend --selection-plan and project2.sh explicit phase wrapper"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this additive slice."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "bash -n docs/examples/project2.sh",
+          "python3 -m wellman.cli recommend --help"
+        ],
+        "evidence": "CLI examples match implemented flags and closed contracts, limitations and AC01\u201312 tests are traceable; portable wrapper delegates explicit phases without automatic updates/adoption/source generation."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python3 -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full suite and accepted-base managed gate pass; independent protected exact-head approval and merge."
+      }
+    ]
+  }
+}

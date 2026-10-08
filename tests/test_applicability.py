@@ -253,3 +253,68 @@ def test_cached_verified_adoption_requires_a_current_observation_binding():
     d=choose(r)
     assert d['action']=='defer' and d['current']['conformance']=='unverified'
     assert d['reasons']==['ADOPTION_OBSERVATION_UNBOUND']
+
+
+@pytest.mark.parametrize('executor', ['a-executor', 'z-executor'])
+def test_repository_conflict_covers_every_component_regardless_of_anchor(executor):
+    agent = 'wellmanifest/agent'
+    obs = observation()
+    obs['components'].append({**obs['components'][0], 'id': executor, 'path': 'executor'})
+    feature(obs, 'runtime:agent-actions', cid=executor)
+    c = catalog((ID, agent), **{ID: {'conflicts_with': [agent]}})
+    r = resolve(obs, c)
+    repository = next(d for d in r['decisions'] if d['standard_id'] == ID)
+    assert repository['action'] == 'defer'
+    assert repository['conflicts'] == [agent]
+    assert choose(r, agent, executor)['action'] == 'defer'
+    assert choose(r, agent, executor)['conflicts'] == [ID]
+
+
+def test_repository_dependency_cannot_ignore_an_unresolved_component():
+    agent = 'wellmanifest/agent'
+    obs = observation()
+    obs['components'].append({**obs['components'][0], 'id': 'z-executor', 'path': 'executor'})
+    feature(obs, 'runtime:agent-actions')
+    c = catalog((ID, agent), **{ID: {'depends_on': [{'id': agent, 'revisions': [PIN]}]}})
+    r = resolve(obs, c)
+    assert choose(r, agent)['action'] == 'add'
+    assert choose(r, agent, 'z-executor')['action'] == 'defer'
+    assert choose(r)['action'] == 'defer'
+    assert 'DEPENDENCY_DEFERRED:' + agent in choose(r)['reasons']
+
+
+def test_component_conflict_does_not_spill_into_sibling_component():
+    agent, llm = 'wellmanifest/agent', 'wellmanifest/llm'
+    obs = observation()
+    obs['components'].append({**obs['components'][0], 'id': 'z-executor', 'path': 'executor'})
+    feature(obs, 'runtime:agent-actions')
+    feature(obs, 'usage:model-invocation', cid='z-executor')
+    c = catalog((agent, llm), **{agent: {'conflicts_with': [llm]}})
+    r = resolve(obs, c)
+    assert choose(r, agent)['action'] == 'add'
+    assert choose(r, agent)['conflicts'] == []
+    assert choose(r, llm, 'z-executor')['action'] == 'add'
+
+
+def test_repository_conflict_does_not_spill_into_other_repository():
+    agent = 'wellmanifest/agent'
+    obs = observation()
+    obs['repositories'].append({**obs['repositories'][0], 'id': 'owner/other', 'path': 'other'})
+    obs['components'].append({**obs['components'][0], 'id': 'z-other',
+                              'repository_id': 'owner/other', 'path': 'other'})
+    feature(obs, 'runtime:agent-actions', cid='z-other')
+    c = catalog((ID, agent), **{ID: {'conflicts_with': [agent]}})
+    inspections = {'owner/repo': adoption(), 'owner/other': adoption()}
+    other = inspections['owner/other']
+    other['repository_id'] = 'owner/other'
+    other['adoption_digest'] = payload_digest({k: v for k, v in other.items() if k != 'adoption_digest'})
+    for index, inspection in enumerate(inspections.values()):
+        ref = 'adoption-' + str(index)
+        obs['artifacts'].append({**obs['artifacts'][0], 'id': ref, 'path': ref + '.json',
+                                'producer': 'wellman.adoption-inspection', 'sha256': payload_digest(inspection)})
+        obs['stages'].append({**obs['stages'][0], 'id': ref + '-stage',
+                             'tool': 'wellman.adoption-inspection', 'artifact_refs': [ref]})
+    r = resolve_applicability(obs, c, inspections)
+    assert choose(r)['action'] == 'add'
+    assert choose(r)['conflicts'] == []
+    assert choose(r, agent, 'z-other')['action'] == 'add'

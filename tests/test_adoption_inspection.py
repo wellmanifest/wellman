@@ -180,3 +180,125 @@ def test_managed_lock_cannot_expand_scope_to_excluded_secrets(adopted,monkeypatc
 def test_conflicting_manifest_and_lock_versions_are_unknown(adopted):
     path=adopted/'.governance/manifest.json';data=json.loads(path.read_text());data['standard']['version']='2.0.0';path.write_text(json.dumps(data))
     assert inspect(adopted)['standards'][ID]['state']=='unknown'
+
+
+EXTENSIONS = [
+    ('governance/manifest.default.json', '.governance/manifest.json'),
+    ('governance/ticket-allocation.json', '.governance/ticket-allocation.json'),
+    ('governance/required-checks.json', '.governance/required-checks.json'),
+    ('template/files/required-checks.template.json', '.governance/required-checks.json'),
+]
+
+
+def package_extension(root, source, target):
+    path = root / target
+    if not path.exists():
+        path.write_text(json.dumps({'local_setting': 'preserve'}))
+    package = json.loads((root / '.governance/package-manifest.json').read_text())
+    if target == '.governance/manifest.json':
+        base = root / '.governance/manifest.base.json'
+        base.write_bytes(path.read_bytes())
+        package['files'].append({'source': source, 'target': '.governance/manifest.base.json',
+                                 'strategy': 'managed', 'executable': False})
+        lock = json.loads((root / '.governance/manifest.lock.json').read_text())
+        lock['managedFiles']['.governance/manifest.base.json'] = hashlib.sha256(base.read_bytes()).hexdigest()
+        write(root, 'manifest.lock.json', lock)
+    package['files'].append({'source': source, 'target': target,
+                             'strategy': 'extendable', 'executable': False})
+    write(root, 'package-manifest.json', package)
+    return package
+
+
+@pytest.mark.parametrize('source,target', EXTENSIONS)
+def test_canonical_extensions_preserve_local_bytes_and_trust_boundary(adopted, source, target):
+    package_extension(adopted, source, target)
+    before = {str(p): p.read_bytes() for p in adopted.rglob('*') if p.is_file()}
+    result = inspect(adopted)
+    assert 'PACKAGE_MAP_UNKNOWN' not in codes(result)
+    assert result['coverage'] == 'complete'
+    assert result['standards'][ID]['state'] == 'declared'
+    assert result['standards'][ID]['conformance'] == 'unverified'
+    assert before == {str(p): p.read_bytes() for p in adopted.rglob('*') if p.is_file()}
+    attestation = receipt(adopted)
+    assert inspect(adopted, validation_receipts=[attestation],
+                   trusted_receipt_digests={payload_digest(attestation)})['standards'][ID]['state'] == 'verified'
+
+
+@pytest.mark.parametrize('changes', [
+    {'strategy': 'merge'}, {'strategy': 'invented'}, {'strategy': None},
+    {'source': 'governance/unapproved.json'}, {'source': '../outside.json'},
+    {'source': '/outside.json'}, {'source': ''},
+    {'target': '../outside.json'}, {'target': '/outside.json'},
+    {'target': 'custom.json'}, {'target': ''},
+    {'executable': True}, {'executable': 0}, {'executable': 'false'},
+    {'unexpected': 'field'},
+])
+def test_invalid_package_extension_is_unknown(adopted, changes):
+    package = package_extension(adopted, *EXTENSIONS[1])
+    package['files'][-1].update(changes)
+    write(adopted, 'package-manifest.json', package)
+    result = inspect(adopted)
+    assert 'PACKAGE_MAP_UNKNOWN' in codes(result)
+    assert result['standards'][ID]['state'] == 'unknown'
+
+
+@pytest.mark.parametrize('field', ['source', 'target', 'strategy', 'executable'])
+def test_package_entry_requires_canonical_fields(adopted, field):
+    package = package_extension(adopted, *EXTENSIONS[1])
+    del package['files'][-1][field]
+    write(adopted, 'package-manifest.json', package)
+    assert 'PACKAGE_MAP_UNKNOWN' in codes(inspect(adopted))
+
+
+@pytest.mark.parametrize('extra', [True, False])
+def test_manifest_extension_requires_matching_managed_base(adopted, extra):
+    package = package_extension(adopted, *EXTENSIONS[0])
+    if extra:
+        package['files'][-2]['source'] = 'different/base.json'
+    else:
+        del package['files'][-2]
+    write(adopted, 'package-manifest.json', package)
+    assert 'PACKAGE_MAP_UNKNOWN' in codes(inspect(adopted))
+
+
+def test_unknown_package_document_fields_are_not_a_valid_map(adopted):
+    package = package_extension(adopted, *EXTENSIONS[1])
+    package['unexpected'] = 'field'
+    write(adopted, 'package-manifest.json', package)
+    assert 'PACKAGE_MAP_UNKNOWN' in codes(inspect(adopted))
+
+
+def test_extension_change_after_inventory_prevents_verification(adopted):
+    _, target = EXTENSIONS[1]
+    package_extension(adopted, *EXTENSIONS[1])
+    inv = inventory(adopted)
+    attestation = receipt(adopted)
+    (adopted / target).write_text('{"local_setting": "changed"}')
+    result = inspect_adoption(adopted, inventory=inv, validation_receipts=[attestation],
+                              trusted_receipt_digests={payload_digest(attestation)})
+    assert 'SOURCE_CHANGED_DURING_INSPECTION' in codes(result)
+    assert result['standards'][ID]['conformance'] == 'unverified'
+
+
+def test_extension_digest_binds_observed_local_instance(adopted):
+    _, target = EXTENSIONS[1]
+    package_extension(adopted, *EXTENSIONS[1])
+    before = inspect(adopted)['material_digest']
+    (adopted / target).write_text('{"local_setting": "changed"}')
+    assert inspect(adopted)['material_digest'] != before
+
+
+def test_excluded_extension_is_not_read_or_certified(adopted, monkeypatch):
+    _, target = EXTENSIONS[1]
+    package_extension(adopted, *EXTENSIONS[1])
+    inv = inventory(adopted)
+    inv['files'] = [f for f in inv['files'] if f['path'] != target]
+    original = Path.open
+    def guarded(self, *args, **kwargs):
+        if self == adopted / target:
+            raise AssertionError('Extension outside inventory must not be read')
+        return original(self, *args, **kwargs)
+    monkeypatch.setattr(Path, 'open', guarded)
+    result = inspect_adoption(adopted, inventory=inv)
+    assert 'PACKAGE_TARGET_UNBOUND' in codes(result)
+    assert result['standards'][ID]['conformance'] == 'unverified'

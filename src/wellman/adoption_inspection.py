@@ -8,13 +8,18 @@ from __future__ import annotations
 
 import hashlib
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from wellman.adoption import expand_profiles
 from wellman.components import _safe, inventory_repository
 from wellman.evidence import _json
 from wellman.registry import PROFILES_CATALOG, STANDARDS_CATALOG
-from wellman.selection_contracts import ContractError, MAX_DOCUMENT_BYTES, canonical_bytes, payload_digest
+from wellman.selection_contracts import (
+    MAX_DOCUMENT_BYTES,
+    ContractError,
+    canonical_bytes,
+    payload_digest,
+)
 
 DOCUMENTS = {
     'manifest.json':'new-project.governance/v2',
@@ -24,6 +29,12 @@ DOCUMENTS = {
     'standard-adoption.json':'wellmanifest.standard-adoption/v1',
 }
 CURRENT_FIELDS = ('state','revision','manifest_digest','lock_digest','conformance','evidence_refs','exceptions')
+EXTENDABLE_PAIRS = {
+    ('governance/manifest.default.json', '.governance/manifest.json'),
+    ('governance/ticket-allocation.json', '.governance/ticket-allocation.json'),
+    ('governance/required-checks.json', '.governance/required-checks.json'),
+    ('template/files/required-checks.template.json', '.governance/required-checks.json'),
+}
 
 
 def _digest(root, relative):
@@ -58,7 +69,7 @@ def inspect_adoption(root, *, inventory=None, validation_receipts=(), trusted_re
         raise ContractError('Adoption root must not traverse a symlink')
     inventory=inventory_repository(root) if inventory is None else inventory
     files={f['path']:f.get('sha256') for f in inventory['files']}
-    documents,issues,records,managed_observation = {},[],{},{}
+    documents,issues,records,managed_observation,extension_observation = {},[],{},{},{}
     def issue(code, path):issues.append({'code':code,'path':path})
     for name,schema in DOCUMENTS.items():
         relative='.governance/'+name
@@ -197,18 +208,38 @@ def inspect_adoption(root, *, inventory=None, validation_receipts=(), trusted_re
     if package['data'] is not None:
         try:
             entries=package['data'].get('files')
-            if not isinstance(entries,list):raise ContractError('Malformed package map')
+            if set(package['data'])!={'schema','files'} or not isinstance(entries,list):
+                raise ContractError('Malformed package map')
             targets=set()
             for entry in entries:
-                if not isinstance(entry,dict) or not isinstance(entry.get('target'),str) or entry['target'] in targets or entry.get('strategy') not in ('managed','seed','merge'):
+                if not isinstance(entry,dict) or set(entry)!={'source','target','strategy','executable'} or entry.get('strategy') not in ('managed','seed','extendable') or type(entry.get('executable')) is not bool:
                     raise ContractError('Malformed package entry')
+                for value in (entry['source'],entry['target']):
+                    if not isinstance(value,str) or not value or PurePosixPath(value).is_absolute() or '..' in PurePosixPath(value).parts or '\\' in value:
+                        raise ContractError('Unsafe package path')
+                if entry['target'] in targets:
+                    raise ContractError('Duplicate package target')
                 _safe(root,entry['target']);targets.add(entry['target'])
                 if entry['strategy']=='managed' and entry['target'] not in managed_observation:
                     issue('PACKAGE_TARGET_UNBOUND',entry['target'])
-        except (ValueError,TypeError):
+                if entry['strategy']=='extendable':
+                    if (entry['source'],entry['target']) not in EXTENDABLE_PAIRS or entry['executable']:
+                        raise ContractError('Unauthorized package extension')
+                    if entry['target']=='.governance/manifest.json' and not any(isinstance(base,dict) and base.get('target')=='.governance/manifest.base.json' and base.get('strategy')=='managed' and base.get('source')==entry['source'] for base in entries):
+                        raise ContractError('Manifest extension requires matching managed base')
+                    # Instance bytes are local customizations, not a template pin.
+                    # Bind them to inspection/receipts without expanding scan scope.
+                    if files.get(entry['target']) is None:
+                        issue('PACKAGE_TARGET_UNBOUND',entry['target']);continue
+                    _,digest=_digest(root,entry['target'])
+                    extension_observation[entry['target']]=digest
+                    if digest!=files[entry['target']]:
+                        issue('SOURCE_CHANGED_DURING_INSPECTION',entry['target'])
+        except (OSError,ValueError,TypeError):
             package['status']='unknown';issue('PACKAGE_MAP_UNKNOWN',package['path'])
     material={'documents':{name:{k:d[k] for k in ('status','sha256')} for name,d in documents.items()},
               'managed':managed_observation,'repository_id':inventory['repository_id']}
+    if extension_observation:material['extensions']=extension_observation
     material_digest=payload_digest(material)
     safe_coverage=not any(d['status']=='unknown' for d in documents.values()) and inventory['identity']=='confirmed'
     unchanged=not any(i['code']=='SOURCE_CHANGED_DURING_INSPECTION' for i in issues)

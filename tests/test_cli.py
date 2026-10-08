@@ -794,3 +794,147 @@ def test_ssot_cli_rejects_symlinked_parent_directory(ssot_cli, tmp_path, capsys)
                  '--declarations', str(decl), '--json']) == 1
     output = capsys.readouterr()
     assert not output.out and 'must not traverse a symlink' in output.err
+
+
+@pytest.fixture
+def ssot_export_cli(ssot_cli, tmp_path):
+    from wellman.selection_contracts import canonical_bytes, payload_digest
+    from wellman.selection_plan import capture_repository
+
+    root, obs, decl, args = ssot_cli
+    bundle = capture_repository(root)
+    observation = bundle['observation']
+    obs.write_text(json.dumps(observation))
+    declaration = json.loads(decl.read_text())
+    declaration['observation_digest'] = payload_digest(observation)
+    for row in declaration['records']:
+        row['component_id'] = observation['components'][0]['id']
+        row['evidence_refs'] = ['inventory']
+    decl.write_text(json.dumps(declaration))
+    artifacts = tmp_path / 'ssot-artifacts'
+    artifacts.mkdir()
+    (artifacts / 'inventory.json').write_bytes(canonical_bytes(bundle['inventory']))
+    (artifacts / 'adoption.json').write_bytes(canonical_bytes(bundle['adoptions']['acme/library']))
+    context = tmp_path / 'ssot-context.json'
+    context.write_text(json.dumps({'repository_roots': {'acme/library': str(root)},
+                                  'adoptions': bundle['adoptions'], 'artifact_root': str(artifacts)}))
+    target = tmp_path / 'ssot-review'
+    target.mkdir()
+    return root, obs, decl, context, target, args
+
+
+def test_ssot_cli_export_receipt_dedupes_and_preserves_terminal(ssot_export_cli, capsys):
+    Store = pytest.importorskip('planfile.core.store').Store
+    root, obs, decl, context, target, args = ssot_export_cli
+    before = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+    inputs = [p.read_bytes() for p in (obs, decl, context)]
+    command = args + ['--export-planfile', str(target), '--export-context', str(context), '--json']
+    assert main(command) == 0
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt['schema'] == 'wellman.ssot-backlog-receipt/v1'
+    assert receipt['count'] == receipt['created'] == 1
+    assert not receipt['executable'] and not receipt['grants_authority'] and not receipt['remote_effects']
+    assert main(command) == 0
+    assert json.loads(capsys.readouterr().out)['tickets'][0]['state'] == 'reused'
+    native = Store(target)
+    task = native.get_ticket(receipt['tickets'][0]['id'])
+    assert task.executor.kind == 'human' and task.execution.queue == 'wellman-ssot-review'
+    completed = native.update_ticket(task.id, status='done', expected_updated_at=task.updated_at.isoformat())
+    assert main(command) == 0
+    assert json.loads(capsys.readouterr().out)['tickets'][0]['state'] == 'preserved_terminal'
+    assert native.get_ticket(task.id).model_dump(mode='json') == completed.model_dump(mode='json')
+    assert [p.read_bytes() for p in (obs, decl, context)] == inputs
+    assert {p: p.read_bytes() for p in root.rglob('*') if p.is_file()} == before
+
+
+@pytest.mark.parametrize('option', ['--export-planfile', '--export-context'])
+def test_ssot_cli_export_requires_paired_explicit_options(ssot_cli, tmp_path, capsys, option):
+    *_, args = ssot_cli
+    assert main(args + [option, str(tmp_path / 'unused')]) == 1
+    output = capsys.readouterr()
+    assert not output.out and 'must be used together' in output.err
+    assert not (tmp_path / 'unused').exists()
+
+
+@pytest.mark.parametrize('change', ['source', 'artifact', 'source-target', 'artifact-target', 'empty-target'])
+def test_ssot_cli_export_rejects_drift_and_unsafe_targets(ssot_export_cli, capsys, change):
+    pytest.importorskip('planfile.core.store')
+    root, _, _, context, target, args = ssot_export_cli
+    data = json.loads(context.read_text())
+    if change == 'source':
+        (root / 'src/main.js').write_text('export const value=2;\n')
+    elif change == 'artifact':
+        (Path(data['artifact_root']) / 'inventory.json').write_text('{}')
+    elif change == 'source-target':
+        target = root / 'backlog'
+    elif change == 'artifact-target':
+        target = Path(data['artifact_root']) / 'backlog'
+    else:
+        target = ''
+    assert main(args + ['--export-context', str(context), '--export-planfile', str(target), '--json']) == 1
+    output = capsys.readouterr()
+    assert not output.out and 'SSOT analysis failed:' in output.err
+    assert not (root / '.planfile').exists()
+    assert not (Path(data['artifact_root']) / '.planfile').exists()
+
+
+@pytest.mark.parametrize('change', ['list', 'extra', 'roots', 'adoptions', 'artifact', 'options', 'missing', 'duplicate', 'symlink', 'oversized'])
+def test_ssot_cli_export_context_fails_closed(ssot_export_cli, capsys, change):
+    from wellman.selection_contracts import MAX_DOCUMENT_BYTES
+
+    _, _, _, context, target, args = ssot_export_cli
+    data = json.loads(context.read_text())
+    if change == 'list':
+        data = []
+    elif change == 'extra':
+        data['exec'] = 'unexpected'
+    elif change == 'roots':
+        data['repository_roots'] = []
+    elif change == 'adoptions':
+        data['adoptions'] = {}
+    elif change == 'artifact':
+        data['artifact_root'] = None
+    elif change == 'options':
+        data['inventory_options'] = []
+    context.write_text(json.dumps(data))
+    if change == 'missing':
+        context.unlink()
+    elif change == 'duplicate':
+        context.write_text('{"repository_roots":{},"repository_roots":{}}')
+    elif change == 'symlink':
+        saved = context.with_suffix('.saved')
+        context.rename(saved)
+        context.symlink_to(saved)
+    elif change == 'oversized':
+        with context.open('wb') as stream:
+            stream.truncate(MAX_DOCUMENT_BYTES + 1)
+    assert main(args + ['--export-context', str(context), '--export-planfile', str(target), '--json']) == 1
+    output = capsys.readouterr()
+    assert not output.out and 'SSOT analysis failed:' in output.err
+    assert not (target / '.planfile').exists()
+
+
+def test_ssot_cli_export_relative_context_paths_bind_to_file_not_cwd(ssot_export_cli, capsys, monkeypatch, tmp_path):
+    pytest.importorskip('planfile.core.store')
+    root, _, _, context, target, args = ssot_export_cli
+    data = json.loads(context.read_text())
+    data['repository_roots']['acme/library'] = root.relative_to(context.parent).as_posix()
+    data['artifact_root'] = Path(data['artifact_root']).relative_to(context.parent).as_posix()
+    context.write_text(json.dumps(data))
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    assert main(args + ['--export-context', str(context), '--export-planfile', str(target)]) == 0
+    text = capsys.readouterr().out
+    assert 'current source and saved artifact hashes verified' in text
+    assert '1 created' in text and 'No execution authority granted' in text
+    assert not (elsewhere / '.planfile').exists()
+
+
+def test_ssot_cli_snapshot_never_calls_export_adapter(ssot_cli, capsys, monkeypatch):
+    import wellman.ssot_backlog as adapter
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Unrequested export')
+    monkeypatch.setattr(adapter, 'export_ssot_backlog', forbidden)
+    assert main(ssot_cli[-1] + ['--json']) == 0
+    assert json.loads(capsys.readouterr().out)['schema'] == 'wellman.ssot-analysis/v1'

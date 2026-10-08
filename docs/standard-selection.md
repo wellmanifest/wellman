@@ -358,9 +358,78 @@ Matching hashes do not prove semantic equivalence; different transport format
 hashes do not prove business logic divergence.
 
 Inputs are data only: bounded to 20 MiB each, with at most 2,000 declaration
-records; duplicate JSON keys and symlink traversal are rejected. No analyzer,
-LLM, adoption, Planfile export or source modification runs. Ownership must be
+records; duplicate JSON keys and symlink traversal are rejected. Without the
+explicit export options below, no analyzer, LLM, adoption, Planfile export or
+source modification runs. Ownership must be
 reviewed upstream. Analysis trusts the snapshot's declared provenance and does
 not inspect artifact bytes or recheck the current checkout: retain the original
 source-bound snapshot and use the evidence selection workflow's freshness checks
 before preparing any change. Undeclared contracts remain outside coverage.
+
+
+### Export SSOT review proposals to Planfile
+
+Use the optional native Planfile adapter `0.1.126` with both export options:
+
+```bash
+wellman ssot --observation snapshot/observation.json \
+  --declarations contracts.json \
+  --export-context snapshot/ssot-context.json \
+  --export-planfile "$HOME/ssot-review-backlog" --json
+```
+
+`--export-context` is bounded data-only JSON. Its required fields are
+`repository_roots` (repository ID to checkout path), `adoptions` (repository ID
+to the original adoption inspection payload) and `artifact_root` (directory
+containing every saved observation artifact). Optional `inventory_options`
+contains the original inventory configuration. Extra top-level fields are
+rejected. Relative source and artifact paths bind to the context file's
+directory; the Planfile target follows the command's working directory.
+
+For a single-repository snapshot produced by `capture_repository`, prepare the
+context from the saved original observation and adoption artifact. This does
+not rescan or replace the original evidence:
+
+```python
+import json
+from pathlib import Path
+
+snapshot = Path("snapshot").absolute()
+observation = json.loads((snapshot / "observation.json").read_text())
+assert len(observation["repositories"]) == 1
+repository = observation["repositories"][0]
+context = {
+    "repository_roots": {repository["id"]: repository["path"]},
+    "adoptions": {
+        repository["id"]: json.loads((snapshot / "adoption.json").read_text())
+    },
+    "artifact_root": ".",
+}
+(snapshot / "ssot-context.json").write_text(json.dumps(context, indent=2))
+```
+
+Save the capture's inventory and adoption payloads using
+`wellman.selection_contracts.canonical_bytes` at the artifact paths recorded
+in the observation. Keep scanner and domain-contract artifacts from the same
+snapshot too. If capture used classification or exclusions, include those
+original options in `inventory_options`. Missing or changed artifact bytes,
+source/index drift, changed adoption, unsafe storage or an unsupported Planfile
+adapter cause exit 1 before review task creation. The backlog must be separate
+from every observed source tree and artifact directory.
+
+In export mode `--json` returns `wellman.ssot-backlog-receipt/v1`, including
+`analysis_digest`, task IDs and states (`created`, `reused`, `updated`,
+`preserved_terminal`, `preserved_owned`), created/count totals and deferred
+finding count. It does not alter the hashed analysis document. Without `--json`,
+the CLI prints these task states and a short verification summary. Exit 0 means
+export completed; deferred findings or a preserved terminal task are not proof
+of conformance or completed refactoring.
+
+The API `wellman.ssot_backlog.export_ssot_backlog` recomputes the analysis and
+checks current sources, index, adoption and saved artifact hashes before and
+under the native mutation lock. Repeated proposal identities reuse tasks;
+terminal and externally owned tasks remain unchanged. New records are human
+review backlog tasks with no execution authority. No runner, remote
+synchronizer, source refactoring or standards adoption is invoked. Store writes
+are native per-record operations: if a later storage write fails, observe the
+existing records before repeating the idempotent export.

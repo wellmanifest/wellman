@@ -750,10 +750,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_recommend.add_argument('--export-planfile', help='Explicit local review backlog project outside observed source')
     p_recommend.set_defaults(func=cmd_recommend)
 
-    p_ssot = subparsers.add_parser('ssot', help='Analyze declared domain ownership from an evidence snapshot; no changes')
+    p_ssot = subparsers.add_parser('ssot', help='Analyze declared domain ownership; optionally export a local review backlog')
     p_ssot.add_argument('--observation', required=True, help='Source-bound wellman.observation/v1 JSON snapshot')
     p_ssot.add_argument('--declarations', required=True, help='Digest-bound wellman.ssot-declarations/v1 JSON')
-    p_ssot.add_argument('--json', action='store_true', help='Output findings and nonexecutable refactoring proposals as JSON')
+    p_ssot.add_argument('--export-planfile', help='Explicit local review backlog project outside source and artifact trees')
+    p_ssot.add_argument('--export-context', help='Bounded JSON with repository_roots, adoptions, artifact_root and optional inventory_options; required with --export-planfile')
+    p_ssot.add_argument('--json', action='store_true', help='Output analysis or explicit backlog export receipt as JSON')
     p_ssot.set_defaults(func=cmd_ssot)
 
     # fleet
@@ -914,14 +916,62 @@ def _selection_json(path):
     return _json(raw)
 
 
+def _ssot_export_context(path):
+    """Closed data-only adapter context; relative paths bind to its file location."""
+    context = _selection_json(path)
+    required = {'repository_roots', 'adoptions', 'artifact_root'}
+    if (not isinstance(context, dict) or not required <= set(context)
+            or set(context) - required - {'inventory_options'}):
+        raise ValueError('Invalid SSOT export context fields')
+    roots = context['repository_roots']
+    if (not isinstance(roots, dict) or not roots or len(roots) > 256
+            or not all(isinstance(k, str) and k and len(k) <= 256 for k in roots)
+            or not isinstance(context['adoptions'], dict)
+            or set(context['adoptions']) != set(roots)):
+        raise ValueError('Invalid SSOT export repository/adoption context')
+    if 'inventory_options' in context and not isinstance(context['inventory_options'], dict):
+        raise ValueError('Invalid SSOT inventory options')
+    parent = Path(path).absolute().parent
+
+    def bound(value):
+        if not isinstance(value, str) or not value.strip() or len(value) > 4096:
+            raise ValueError('Invalid SSOT export path')
+        return str((parent / value).absolute())
+
+    return {**context, 'repository_roots': {k: bound(v) for k, v in roots.items()},
+            'artifact_root': bound(context['artifact_root'])}
+
+
 def cmd_ssot(args):
-    """Analyze explicit declarations; never discover sources or execute proposals."""
+    """Analyze declarations, or explicitly export through the native review adapter."""
     from wellman.ssot import analyze_ssot
 
     try:
-        report = analyze_ssot(
-            _selection_json(args.observation), _selection_json(args.declarations)
-        )
+        target = getattr(args, 'export_planfile', None)
+        context_path = getattr(args, 'export_context', None)
+        if (target is None) != (context_path is None):
+            raise ValueError('--export-planfile and --export-context must be used together')
+        if target is not None and not target.strip():
+            raise ValueError('Explicit Planfile project must not be empty')
+        observation = _selection_json(args.observation)
+        declarations = _selection_json(args.declarations)
+        if target:
+            from wellman.ssot_backlog import export_ssot_backlog
+
+            receipt = export_ssot_backlog(observation, declarations, target,
+                                          context=_ssot_export_context(context_path))
+            if not receipt['ok']:
+                raise ValueError('SSOT backlog export failed: ' + receipt['error'])
+            if args.json:
+                print(json.dumps(receipt, indent=2, ensure_ascii=False))
+            else:
+                print('SSOT local review backlog: current source and saved artifact hashes verified.')
+                print(f"{receipt['count']} review tasks; {receipt['created']} created; "
+                      f"{receipt['deferred']} findings deferred. No execution authority granted.")
+                for ticket in receipt['tickets']:
+                    print(f"  {ticket['id']}: {ticket['state']}")
+            return 0
+        report = analyze_ssot(observation, declarations)
         if args.json:
             print(json.dumps(report, indent=2, ensure_ascii=False))
         else:

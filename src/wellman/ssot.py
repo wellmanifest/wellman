@@ -17,6 +17,7 @@ from collections import defaultdict
 from datetime import datetime
 
 from wellman.selection_contracts import ContractError, canonical_bytes, payload_digest, validate_document
+from wellman.observation_evidence import ObservationEvidence
 
 KINDS = {"command", "query", "event", "error", "rule", "model"}
 ROLES = {"owner", "consumer", "projection"}
@@ -82,6 +83,7 @@ def analyze_ssot(observation, declarations):
     start, end = moment(observation["started_at"]), moment(observation["finished_at"])
     if start > end:
         raise ContractError("SSOT_OBSERVATION_INTERVAL")
+    evidence = ObservationEvidence(observation)
     findings = []
     def finding(code, group, members, action="review"):
         ids = sorted(r["id"] for r in members)
@@ -98,17 +100,7 @@ def analyze_ssot(observation, declarations):
         known = c and c["boundary"] == "confirmed" and repo and repo["identity"] == "confirmed" and repo["source_digest"] is not None
         refs = row["evidence_refs"]
         for ref in refs:
-            artifact = artifacts.get(ref)
-            known = known and artifact and artifact["freshness"] == "verified" and artifact["origin_observation_id"] == observation["observation_id"]
-            known = known and any(s["tool"] == artifact["producer"] and ref in s["artifact_refs"] and
-                s["component_id"] in (None, row["component_id"]) and s["status"] == "complete" and
-                s["coverage"] == "complete" and not s["truncated"] and s["exit_code"] == 0 and not s["errors"] and
-                start <= moment(s["started_at"]) <= moment(s["finished_at"]) <= end for s in observation["stages"])
-        for issue in observation["quality_issues"]:
-            affected = set(issue["affected_refs"])
-            if (issue["severity"] == "error" or issue["code"] == "SOURCE_CHANGED_DURING_SCAN") and (
-                    not affected or affected & {row["component_id"], *(refs), c["repository_id"] if c else ""}):
-                known = False
+            known = known and evidence.bound(ref, component_id=row["component_id"])
         if not known or not refs or row["content_digest"] is None:
             uncertain.add(group)
     for group, members in sorted(groups.items()):

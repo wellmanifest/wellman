@@ -119,3 +119,28 @@ def test_input_order_is_deterministic_and_inputs_are_immutable():
     assert a == b
     assert (obs, decl) == before
     assert a["analysis_digest"] == payload_digest({k: v for k, v in a.items() if k != "analysis_digest"})
+
+
+@pytest.mark.parametrize('affected', [[], ['contracts-stage'], ['contracts'], ['lib'], ['owner/repo']])
+@pytest.mark.parametrize('code,severity', [('GRAPH_INVALID', 'error'), ('SOURCE_CHANGED_DURING_SCAN', 'warning')])
+def test_quality_issue_scope_invalidates_ssot_artifact_proof(affected, code, severity):
+    result = run([record(), record('other')], lambda o: o['quality_issues'].append({
+        'code': code, 'severity': severity, 'message': 'Invalid evidence',
+        'affected_refs': affected, 'next_action': 'rescan',
+    }))
+    assert codes(result) == {'SSOT_EVIDENCE_INSUFFICIENT'}
+    assert result['refactoring_proposals'] == []
+
+
+def test_unrelated_quality_error_does_not_invalidate_ssot():
+    result = run([record(), record('other')], lambda o: o['quality_issues'].append({
+        'code': 'GRAPH_INVALID', 'severity': 'error', 'message': 'Other stage failed',
+        'affected_refs': ['other-stage'], 'next_action': 'rescan',
+    }))
+    assert codes(result) == {'SSOT_MULTIPLE_OWNERS'}
+
+
+def test_ambiguous_stage_identity_cannot_prove_ssot():
+    def change(obs):
+        obs['stages'].append(deepcopy(obs['stages'][0]))
+    assert codes(run([record(), record('other')], change)) == {'SSOT_EVIDENCE_INSUFFICIENT'}

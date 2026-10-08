@@ -1,0 +1,84 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-036",
+  "summary": "Expose evidence selection plans and explicit backlog export through recommend",
+  "workstream": "integration",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-036/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/cli.py",
+    "tests/test_cli.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "9e9a75e4019acb2512541169951341cedf753938",
+    "targetBranch": "main",
+    "outcome": "Expose explicit evidence selection planning and local review backlog through the existing recommend command; preserve legacy recommend/register/fleet behavior and publish through protected independent review and merge.",
+    "nonGoals": [
+      "No installation, adoption or implicit external effects",
+      "No changes outside the accepted slice"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Bridge merged query API to recommend through an opt-in selection-plan mode with explicit pinned catalog, bounded data-only inputs and live freshness checks. Reuse existing fleet exporter only on an explicit export request.",
+      "components": [
+        {
+          "name": "Evidence recommendation CLI",
+          "paths": [
+            "src/wellman/cli.py",
+            "tests/test_cli.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "Extend recommend with --selection-plan, --catalog, --observation, --scope-policy and --export-planfile."
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this additive slice."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python3 -m pytest -q tests/test_cli.py"
+        ],
+        "evidence": "New recommendation mode produces explained schema-valid plans and rejects stale or incompatible input before effects; legacy recommend remains compatible."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python3 -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full tests and managed accepted-base gate pass; independent protected approval and merge bind exact head."
+      }
+    ]
+  }
+}

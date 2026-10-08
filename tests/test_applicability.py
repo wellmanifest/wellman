@@ -318,3 +318,85 @@ def test_repository_conflict_does_not_spill_into_other_repository():
     assert choose(r)['action'] == 'add'
     assert choose(r)['conflicts'] == []
     assert choose(r, agent, 'z-other')['action'] == 'add'
+
+
+@pytest.mark.parametrize('current', ['missing', 'update', 'drifted'])
+def test_missing_effect_metadata_defers_proposed_changes(current):
+    entry = {} if current == 'missing' else {
+        ID: {'adopted': True, 'state': 'drifted' if current == 'drifted' else 'declared',
+             'revision': PIN if current == 'drifted' else 'c' * 40}}
+    c = catalog(**{ID: {'effects': [], 'migration': {
+        'from_revisions': ['c' * 40], 'description': 'Explicit reviewed migration'}}})
+    d = choose(resolve(cat=c, adopt=adoption(**entry)))
+    assert d['action'] == 'defer'
+    assert 'EFFECTS_UNKNOWN' in d['reasons']
+    assert d['required_authorities'] == []
+
+
+@pytest.mark.parametrize('path,effect', [
+    ('.github/workflows/build.yml', 'ci'),
+    ('./.github/workflows/**', 'ci'),
+    ('.github', 'ci'),
+    ('.github/workflow*/**', 'ci'),
+    ('.gitlab-ci.yml', 'ci'),
+    ('.circleci/config.yml', 'ci'),
+    ('Jenkinsfile', 'ci'),
+    ('azure-pipelines.yml', 'ci'),
+    ('.travis.yml', 'ci'),
+    ('.githooks/pre-push', 'hooks'),
+    ('./.githooks/**', 'hooks'),
+    ('.git/hooks/pre-commit', 'hooks'),
+    ('.pre-commit-config.yaml', 'hooks'),
+    ('CODEOWNERS', 'permissions'),
+    ('.github/CODEOWNERS', 'permissions'),
+    ('.gitlab/CODEOWNERS', 'permissions'),
+    ('*', 'ci'),
+    ('.', 'hooks'),
+])
+def test_managed_control_paths_cannot_omit_their_effect(path, effect):
+    c = catalog(**{ID: {'managed_files': [path], 'effects': ['files']}})
+    d = choose(resolve(cat=c))
+    assert d['action'] == 'defer'
+    assert 'MANAGED_EFFECT_UNDECLARED:' + effect in d['reasons']
+    assert d['required_authorities'] == []
+
+
+@pytest.mark.parametrize('path,effect', [
+    ('.github/workflows/build.yml', 'ci'),
+    ('.githooks/pre-push', 'hooks'),
+    ('CODEOWNERS', 'permissions'),
+])
+def test_declared_control_effects_require_explicit_approval(path, effect):
+    c = catalog(**{ID: {'managed_files': [path], 'effects': ['files', effect]}})
+    d = choose(resolve(cat=c))
+    assert d['action'] == 'add' and d['risk'] == 'high'
+    assert set(d['required_authorities']) == {'review-concrete-plan', 'approve-declared-effects'}
+
+
+@pytest.mark.parametrize('path', [
+    'docs/guide.md', 'README*.md', '.github/ISSUE_TEMPLATE/bug.md',
+    '.github/workflows-example/readme.md', '.githooks-example/readme.md',
+])
+def test_ordinary_managed_paths_keep_file_proposals(path):
+    d = choose(resolve(cat=catalog(**{ID: {'managed_files': [path], 'effects': ['files']}})))
+    assert d['action'] == 'add' and d['risk'] == 'medium'
+    assert d['required_authorities'] == ['review-concrete-plan']
+
+
+def test_effect_metadata_gap_preserves_matching_existing_adoption():
+    a = adoption(**{ID: {'adopted': True, 'state': 'declared', 'revision': PIN}})
+    c = catalog(**{ID: {'managed_files': ['.githooks/pre-push'], 'effects': []}})
+    d = choose(resolve(cat=c, adopt=a))
+    assert d['action'] == 'keep'
+    assert d['current']['revision'] == PIN
+    assert d['limitations'] == ['CONFORMANCE_UNVERIFIED']
+
+
+@pytest.mark.parametrize('path,effects', [
+    ('*', ['files', 'ci', 'hooks', 'permissions']),
+    ('.github', ['files', 'ci', 'permissions']),
+])
+def test_broad_scopes_with_complete_effect_declarations_remain_proposals(path, effects):
+    d = choose(resolve(cat=catalog(**{ID: {'managed_files': [path], 'effects': effects}})))
+    assert d['action'] == 'add' and d['risk'] == 'high'
+    assert set(d['required_authorities']) == {'review-concrete-plan', 'approve-declared-effects'}

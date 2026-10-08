@@ -133,6 +133,7 @@ def workspace(tmp_path):
             identifier: {
                 "managed_files": ["AGENTS.md"],
                 "validators": ["review contract"],
+                "effects": ["files"],
             }
             for identifier in (BASE, DOCS, AGENT)
         },

@@ -458,6 +458,7 @@ def evidence_cli(tmp_path):
             "wellmanifest/new-project": {
                 "managed_files": ["AGENTS.md"],
                 "validators": ["review contract"],
+                "effects": ["files"],
             }
         },
     )

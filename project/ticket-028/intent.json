@@ -1,0 +1,84 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-028",
+  "summary": "Discover manifest component boundaries and evidence file inventory",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-028/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/components.py",
+    "tests/test_components.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "d7f07782f1a3e8a1398c06172e6e9e0a43faa8e0",
+    "targetBranch": "main",
+    "outcome": "Read-only inventory binds Git, manifests, relevant local changes and per-file classifications; test and protected merge the bounded component API.",
+    "nonGoals": [
+      "No installation, adoption or implicit external effects",
+      "No changes outside the accepted slice"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Use static Git inventory, local package manifests and explicit classification policies. Keep directory hints and uncertain identity as unknown; source code is never imported.",
+      "components": [
+        {
+          "name": "component-inventory",
+          "paths": [
+            "src/wellman/components.py",
+            "tests/test_components.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "inventory_repository API for component and file evidence"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this additive slice."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python3 -m pytest -q tests/test_components.py"
+        ],
+        "evidence": "Manifest boundaries, file classes and all staged/unstaged/untracked/deleted source changes are bound with explicit coverage gaps and symlink/budget limits."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python3 -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full regression tests, managed governance and independent exact-head protected merge pass."
+      }
+    ]
+  }
+}

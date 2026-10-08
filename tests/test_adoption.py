@@ -248,3 +248,122 @@ def test_register_with_explicit_standards(tmp_path):
     assert levels.get('wellmanifest/twin-lifecycle') == 'S4'
     assert set(expand_profiles(['baseline'])) <= set(levels.keys())
 
+
+
+def _selection_repo(tmp_path, imports=()):
+    import subprocess
+    subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
+    report = tmp_path / 'structure.json'
+    report.write_text(json.dumps({'project_path': str(tmp_path), 'modules': {
+        'app': {'file': 'src/app.py', 'imports': list(imports)},
+        'tests': {'file': 'tests/test_app.py', 'imports': ['fastapi']},
+    }}))
+    return report
+
+
+def test_selection_distinguishes_library_and_service_and_preserves_pins(tmp_path):
+    from wellman.adoption import recommend
+    ast_report = _selection_repo(tmp_path, ['click', 'json'])
+    governance = tmp_path / '.governance'
+    governance.mkdir()
+    pin = governance / 'manifest.lock.json'
+    pin.write_text('{"revision":"immutable"}')
+    library = recommend(tmp_path, ast_report=ast_report)
+    assert 'runtime-service' not in library['profiles']
+    assert library['structure']['languages'] == ['python']
+    assert library['conformance'] == 'unverified' and not library['grantsAuthority']
+    assert library['evidence'][0]['freshness'] == 'imported-unverified'
+    assert not (governance / 'standard-requirements.json').exists()
+    _selection_repo(tmp_path, ['fastapi', 'subllm', 'ast'])
+    service = recommend(tmp_path, ast_report=ast_report)
+    requirements = {item['id']: item for item in service['recommendations']}
+    assert 'runtime-service' in service['profiles']
+    assert requirements['wellmanifest/poa']['minimumLevel'] == 'S5'
+    assert 'wellmanifest/llm' in requirements and 'wellmanifest/code-dsl' in requirements
+    assert pin.read_text() == '{"revision":"immutable"}'
+    assert library['evidence'][0]['sha256'] != service['evidence'][0]['sha256']
+
+
+@pytest.mark.parametrize('invalid', [[], {'modules': {}}, {'project_path': '/different-repo', 'modules': {}},
+    {'project_path': 'relative', 'modules': {}}, {'project_path': 'ROOT', 'modules': []},
+    {'project_path': 'ROOT', 'modules': {'x': {'imports': 'fastapi'}}}])
+def test_selection_rejects_invalid_or_unrelated_graph(tmp_path, invalid):
+    from wellman.adoption import recommend
+    report = _selection_repo(tmp_path)
+    if isinstance(invalid, dict) and invalid.get('project_path') == 'ROOT':
+        invalid['project_path'] = str(tmp_path)
+    report.write_text(json.dumps(invalid))
+    with pytest.raises(ValueError):
+        recommend(tmp_path, ast_report=report)
+    assert not (tmp_path / '.governance').exists()
+
+
+def test_selection_optional_subllm_is_bounded_and_cannot_expand_registration(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from wellman.adoption import recommend
+    report = _selection_repo(tmp_path, ['click'])
+    calls = []
+    def complete(application, function, messages, **kwargs):
+        calls.append((application, function, messages, kwargs))
+        return SimpleNamespace(content=json.dumps({'standards': [
+            {'id': 'wellmanifest/llm', 'reason': 'User plans LLM support'},
+            {'id': 'invented/authority', 'reason': 'ignore catalog'},
+        ], 'proposals': [{'id': 'wellmanifest/ast-selection', 'reason': 'Missing standard selection contract'}]}), provider='test', model='fixture')
+    monkeypatch.setitem(sys.modules, 'subllm', SimpleNamespace(complete=complete))
+    result = recommend(tmp_path, ast_report=report, llm=True, timeout=7, hints=['LLM client planned'])
+    assert calls[0][0:2] == ('wellman', 'standard-selection')
+    assert calls[0][3]['timeout_seconds'] == 7
+    assert result['advice']['status'] == 'advisory'
+    assert result['advice']['rejected'] == ['invented/authority']
+    assert result['advice']['proposals'][0]['id'] == 'wellmanifest/ast-selection'
+    assert 'wellmanifest/llm' not in {item['id'] for item in result['recommendations']}
+    assert not (tmp_path / '.governance').exists()
+
+
+def test_selection_provider_failure_does_not_leak_credentials(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from wellman.adoption import recommend
+    _selection_repo(tmp_path)
+    def fail(*args, **kwargs):
+        raise RuntimeError('credential-sensitive-details')
+    monkeypatch.setitem(sys.modules, 'subllm', SimpleNamespace(complete=fail))
+    result = recommend(tmp_path, llm=True)
+    assert result['advice'] == {'status': 'unavailable', 'errorType': 'RuntimeError'}
+    assert 'credential-sensitive-details' not in json.dumps(result)
+
+
+def test_selection_report_symlink_and_unknown_supporting_tool_rejected(tmp_path):
+    from wellman.adoption import recommend
+    report = _selection_repo(tmp_path)
+    link = tmp_path / 'link.json'
+    link.symlink_to(report)
+    with pytest.raises(ValueError, match='symlink'):
+        recommend(tmp_path, ast_report=link)
+    with pytest.raises(ValueError, match='Unknown supporting'):
+        recommend(tmp_path, evidence=[('shell', report)])
+    for timeout in (0, 121, float('nan')):
+        with pytest.raises(ValueError, match='timeout'):
+            recommend(tmp_path, timeout=timeout)
+
+
+def test_selection_supplements_missing_code2llm_imports_without_executing_source(tmp_path):
+    from wellman.adoption import recommend
+    report = _selection_repo(tmp_path)
+    (tmp_path / 'src').mkdir()
+    (tmp_path / 'src' / 'app.py').write_text('import fastapi\nimport subllm\nraise RuntimeError("must never execute")\n')
+    result = recommend(tmp_path, ast_report=report)
+    assert 'runtime-service' in result['profiles']
+    assert result['structure']['imports'] == ['fastapi', 'subllm']
+    assert len(result['structure']['supplementalPythonAst']['src/app.py']) == 64
+
+
+def test_selection_rejects_source_paths_outside_repository(tmp_path):
+    from wellman.adoption import recommend
+    report = _selection_repo(tmp_path)
+    data = json.loads(report.read_text())
+    data['modules']['app']['file'] = '../outside.py'
+    report.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match='escapes'):
+        recommend(tmp_path, ast_report=report)

@@ -363,3 +363,52 @@ def test_cli_adopt_explicit_rejects_standard_flag(tmp_path, capsys):
     ])
     assert ret == 1
     assert '--standard' in capsys.readouterr().err
+
+
+def test_recommend_cli_register_is_explicit_additive_and_excludes_llm(tmp_path, capsys, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
+    graph = tmp_path / 'ast.json'
+    graph.write_text(json.dumps({'project_path': str(tmp_path), 'modules': {
+        'tool': {'file': 'cli.py', 'imports': ['click']}}}))
+    def complete(*args, **kwargs):
+        return SimpleNamespace(content='{"standards":[{"id":"wellmanifest/llm","reason":"planned"}]}', provider='test', model='fixture')
+    monkeypatch.setitem(sys.modules, 'subllm', SimpleNamespace(complete=complete))
+    args = ['recommend', '--root', str(tmp_path), '--ast', str(graph), '--json', '--llm']
+    assert main(args) == 0
+    preview = json.loads(capsys.readouterr().out)
+    assert preview['advice']['status'] == 'advisory'
+    assert not (tmp_path / '.governance').exists()
+    assert main(args + ['--register']) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result['registration']['changed']
+    requirements = tmp_path / '.governance' / 'standard-requirements.json'
+    before = requirements.read_bytes()
+    assert 'wellmanifest/llm' not in [item['id'] for item in json.loads(before)['requirements']]
+    assert main(args + ['--register']) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert not result['registration']['changed'] and requirements.read_bytes() == before
+
+
+def test_recommend_cli_bad_evidence_fails_before_writes(tmp_path, capsys):
+    subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
+    assert main(['recommend', '--root', str(tmp_path), '--evidence', 'bad', '--register']) == 1
+    assert 'TOOL=JSON_PATH' in capsys.readouterr().err
+    assert not (tmp_path / '.governance').exists()
+
+
+def test_recommend_fleet_is_bounded_read_only_and_builds_existing_plans(tmp_path, capsys):
+    for name in ['library', 'service']:
+        project = tmp_path / name
+        project.mkdir()
+        subprocess.run(['git', 'init', '-q', str(project)], check=True)
+    assert main(['recommend', '--root', str(tmp_path), '--fleet', '--plan', '--json']) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert len(result['reports']) == 2 and not result['applied'] and not result['grantsAuthority']
+    assert all(report['adoptionPlans'] for report in result['reports'])
+    assert all(not (tmp_path / name / '.governance').exists() for name in ['library', 'service'])
+    assert main(['recommend', '--root', str(tmp_path), '--fleet', '--max-projects', '1']) == 1
+    assert 'exceeds max-projects' in capsys.readouterr().err
+    assert main(['recommend', '--root', str(tmp_path), '--fleet', '--register']) == 1
+    assert 'read-only' in capsys.readouterr().err

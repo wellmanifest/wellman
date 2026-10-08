@@ -729,6 +729,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_adopt.add_argument('--json', action='store_true', help='Return auto registration as JSON')
     p_adopt.set_defaults(func=cmd_adopt)
 
+    p_recommend = subparsers.add_parser('recommend', help='Recommend standards from code2llm structure and optional SubLLM advice')
+    p_recommend.add_argument('--root', '-r', default='.')
+    ast_input = p_recommend.add_mutually_exclusive_group()
+    ast_input.add_argument('--ast', help='Existing code2llm analysis.json (freshness unverified)')
+    ast_input.add_argument('--analyze', action='store_true', help='Run installed code2llm with temporary output')
+    p_recommend.add_argument('--evidence', action='append', default=[], help='Supporting report TOOL=JSON_PATH')
+    p_recommend.add_argument('--hint', action='append', default=[], help='Explicit bounded input for advisory analysis')
+    p_recommend.add_argument('--llm', action='store_true', help='Request optional policy-resolved SubLLM advice')
+    p_recommend.add_argument('--timeout', type=float, default=30, help='Analysis/provider timeout in seconds (max 120)')
+    p_recommend.add_argument('--register', action='store_true', help='Add deterministic requirements; preserve pins and exclude LLM advice')
+    p_recommend.add_argument('--json', action='store_true')
+    p_recommend.add_argument('--fleet', action='store_true', help='Read-only selection for repositories below --root')
+    p_recommend.add_argument('--max-projects', type=int, default=20, help='Reject fleets larger than this explicit limit (max 100)')
+    p_recommend.add_argument('--plan', action='store_true', help='Include existing reviewed fleet adoption plans; do not apply')
+    p_recommend.set_defaults(func=cmd_recommend)
+
     # fleet
     p_fleet = subparsers.add_parser("fleet", help="Discover, plan and check a repository fleet")
     fleet_commands = p_fleet.add_subparsers(dest="fleet_command", required=True)
@@ -787,6 +803,70 @@ def build_parser() -> argparse.ArgumentParser:
     p_gate.set_defaults(func=cmd_gate)
 
     return parser
+
+
+def cmd_recommend(args) -> int:
+    from wellman.adoption import recommend, register, safe_path, expand_profiles
+    try:
+        if args.fleet and (args.register or args.ast or args.evidence):
+            raise ValueError('Fleet selection is read-only and uses per-project --analyze, not shared AST/evidence')
+        if not 1 <= args.max_projects <= 100:
+            raise ValueError('max-projects must be between 1 and 100')
+        if args.fleet:
+            projects = discover_repositories(safe_path(args.root))
+            if len(projects) > args.max_projects:
+                raise ValueError('Fleet exceeds max-projects; narrow the root or increase the explicit limit')
+            reports, errors = [], []
+            for project in projects:
+                try:
+                    report = recommend(project, analyze=args.analyze, hints=args.hint,
+                                       llm=args.llm, timeout=args.timeout)
+                    if args.plan:
+                        _selection_plans(report, expand_profiles)
+                    reports.append(report)
+                except (OSError, ValueError, subprocess.SubprocessError) as error:
+                    errors.append({'root': str(project), 'error': str(error)})
+            result = {'schema': 'wellman.fleet-standard-selection/v1', 'reports': reports,
+                      'errors': errors, 'grantsAuthority': False, 'applied': False}
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 1 if errors else 0
+        evidence = []
+        for item in args.evidence:
+            tool, separator, path = item.partition('=')
+            if not separator or not path:
+                raise ValueError('Evidence syntax is TOOL=JSON_PATH')
+            evidence.append((tool, path))
+        report = recommend(args.root, ast_report=args.ast, analyze=args.analyze,
+                           evidence=evidence, hints=args.hint, llm=args.llm,
+                           timeout=args.timeout)
+        if args.plan:
+            _selection_plans(report, expand_profiles)
+        if args.register:
+            # Only deterministic catalog recommendations enter registration.
+            # LLM advice/new standards remain proposals for independent review.
+            report['registration'] = register(
+                report['root'], report['profiles'],
+                standards=[item['id'] for item in report['recommendations'] if get_standard(item['id'])],
+            )
+        if args.json:
+            print(json.dumps(report, indent=2, ensure_ascii=False))
+        else:
+            print(f"Standard recommendations for {report['root']} (conformance unverified)")
+            for item in report['recommendations']:
+                print(f"  {item['id']} {item['minimumLevel']}: {'; '.join(item['reasons'])}")
+            print(f"SubLLM: {report['advice']['status']}; proposals never auto-register")
+        return 0
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f"Selection failed: {error}", file=sys.stderr)
+        return 1
+
+
+def _selection_plans(report, expand_profiles):
+    """Translate deterministic selection to the existing gated fleet planner."""
+    covered = expand_profiles(report['profiles'])
+    targets = report['profiles'] + [item['id'] for item in report['recommendations']
+                                  if item['id'] not in covered and get_standard(item['id'])]
+    report['adoptionPlans'] = [build_plan(Path(report['root']), target) for target in targets]
 
 
 def main(argv: Optional[List[str]] = None) -> int:

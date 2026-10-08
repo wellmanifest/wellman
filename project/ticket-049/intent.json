@@ -1,0 +1,93 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-049",
+  "summary": "Expose explicit SSOT review backlog export through the Wellman CLI",
+  "workstream": "integration",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-049/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "docs/standard-selection.md",
+    "src/wellman/cli.py",
+    "tests/test_cli.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "cfc2866e6b476bdb7a14fecf0cdcd85ec0defa24",
+    "targetBranch": "main",
+    "outcome": "Expose opt-in evidence-bound SSOT backlog export in CLI with bounded explicit source context, accurate receipts, documentation, independent merge and installed CLI smoke.",
+    "nonGoals": [
+      "No analyzer execution, automatic refactoring, adoption or remote synchronization",
+      "No global runtime replacement or foreign worktree cleanup"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 40,
+    "budgets": {
+      "maxImplementationFiles": 3,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Pair --export-planfile with --export-context on ssot. Parse closed bounded context JSON and bind relative source/artifact paths to its directory. Reuse the merged native adapter for live freshness, artifact hashes, dedupe and ownership preservation; print the unmodified analysis or export receipt according to the explicit mode.",
+      "components": [
+        {
+          "name": "SSOT CLI export",
+          "paths": [
+            "src/wellman/cli.py",
+            "tests/test_cli.py",
+            "docs/standard-selection.md"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "wellman ssot --export-planfile PROJECT --export-context FILE"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of additive CLI mode; retain created backlog records for explicit owner disposition."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest -q tests/test_cli.py -k ssot"
+        ],
+        "evidence": "Opt-in only; bounded input, source/artifact drift refusal, local backlog dedupe/terminal preservation and useful receipts."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "All tests with isolated fixture storage, governance and exact-head independent review/merge."
+      },
+      {
+        "criterion": "AC-03",
+        "commands": [
+          "isolated installed wellman ssot backlog smoke"
+        ],
+        "evidence": "Merged wheel CLI creates human backlog, reuses it and rejects changed evidence."
+      }
+    ]
+  }
+}

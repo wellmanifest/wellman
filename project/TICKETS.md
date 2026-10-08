@@ -50,4 +50,5 @@
 | **ticket-045** | [`README.md`](./ticket-045/README.md) | - | - | - | - | - |
 | **ticket-046** | [`README.md`](./ticket-046/README.md) | - | - | - | - | - |
 | **ticket-047** | [`README.md`](./ticket-047/README.md) | - | - | - | - | - |
+| **ticket-048** | [`README.md`](./ticket-048/README.md) | - | - | - | - | - |
 <!-- AUTO:TICKET_INDEX:END -->

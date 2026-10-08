@@ -1,0 +1,88 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-040",
+  "summary": "Validate end-to-end evidence selection and preserve owned backlog records",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-040/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/fleet.py",
+    "tests/test_fleet.py",
+    "tests/test_selection_e2e.py",
+    "tests/test_selection_plan.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "336c27839f74646d3db41cc253ca1e9bb5fff0b9",
+    "targetBranch": "main",
+    "outcome": "Validate component-bound keep/add/defer planning and CLI/export without source effects. Preserve claimed or incomplete matching backlog records and use portable JSON fixtures. Publish through independent protected review and merge.",
+    "nonGoals": [
+      "No installation, adoption or implicit external effects",
+      "No changes outside the accepted slice"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 4,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Keep existing ownership on optional or assigned ticket metadata; end-to-end tests bind real Git inventory/adoption to deterministic plans and explicit native backlog export. No analyzer monkeypatch claims actual analyzer compatibility.",
+      "components": [
+        {
+          "name": "Evidence selection acceptance",
+          "paths": [
+            "src/wellman/fleet.py",
+            "tests/test_fleet.py",
+            "tests/test_selection_plan.py",
+            "tests/test_selection_e2e.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "Existing selection export preserves missing/claimed/foreign metadata as preserved_owned"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this additive slice."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python3 -m pytest -q tests/test_selection_e2e.py tests/test_selection_plan.py tests/test_fleet.py"
+        ],
+        "evidence": "Multi-component plans and explicit exports preserve source, pins, hooks, CI and claimed records; JSON fixtures support pre-3.11 Python."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python3 -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full tests and accepted-base managed gate pass; independent protected exact-head approval and merge."
+      }
+    ]
+  }
+}

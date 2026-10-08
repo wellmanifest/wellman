@@ -663,7 +663,7 @@ def _selection_export_fixture(tmp_path):
     source = make_repository(
         tmp_path, "selection-source", "https://github.com/acme/selection.git"
     )
-    (source / "pyproject.toml").write_text('[project]\nname="demo"\nversion="1.0"\n')
+    (source / "package.json").write_text('{"name":"demo","version":"1.0.0"}')
     (source / "demo.py").write_text("value=1\n")
     subprocess.run(["git", "-C", str(source), "add", "."], check=True)
     subprocess.run(["git", "-C", str(source), "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "Fixture"], check=True)
@@ -873,3 +873,48 @@ def test_selection_export_refuses_storage_symlink_and_observed_source_target(tmp
     (target / ".planfile").symlink_to(outside, target_is_directory=True)
     result = feed_to_planfile(plan, target, selection_context=context)
     assert not result["ok"] and not list(outside.iterdir())
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"executor": None},
+        {"execution": None},
+        {"source": None},
+        {"status": "in_progress"},
+        {"execution": {"assigned_to": "owner:reviewer"}},
+        {"execution": {"started_at": "2026-10-08T00:00:00Z"}},
+        {"execution": {"lease_expires_at": "2026-10-08T01:00:00Z"}},
+        {"execution": {"finished_at": "2026-10-08T01:00:00Z"}},
+        {"execution": {"queue": "another-controller"}},
+        {"source": {"tool": "another-producer"}},
+        {"source": {"version": "unknown"}},
+        {"source": {"context": {"grants_authority": True}}},
+        {"source": {"context": {}}},
+    ],
+)
+def test_selection_export_preserves_missing_or_claimed_metadata(tmp_path, change):
+    Store = pytest.importorskip("planfile.core.store").Store
+    _, target, plan, context = _selection_export_fixture(tmp_path)
+    first = feed_to_planfile(plan, target, selection_context=context)
+    assert first["ok"]
+    store = Store(target)
+    ticket = store.get_ticket(first["tickets"][0]["id"])
+    update = dict(change)
+    for field in ("execution", "source"):
+        if field in update and update[field] is not None:
+            update[field] = {
+                **getattr(ticket, field).model_dump(mode="json"),
+                **update[field],
+            }
+    claimed = store.update_ticket(
+        ticket.id, expected_updated_at=ticket.updated_at.isoformat(), **update
+    )
+    before = claimed.model_dump(mode="json")
+    second = feed_to_planfile(plan, target, selection_context=context)
+    assert second["ok"] and second["created"] == 0
+    assert (
+        next(r for r in second["tickets"] if r["id"] == ticket.id)["state"]
+        == "preserved_owned"
+    )
+    assert store.get_ticket(ticket.id).model_dump(mode="json") == before

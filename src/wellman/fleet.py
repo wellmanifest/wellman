@@ -1140,9 +1140,28 @@ def _export_selection_backlog(plan, project, context):
                     rows.append({"id": t.id, "state": "preserved_terminal", "key": k})
                     continue
                 if (
-                    (t.executor.kind, t.executor.mode) != ("human", "interactive")
+                    state != "open"
+                    or t.executor is None
+                    or (t.executor.kind, t.executor.mode) != ("human", "interactive")
+                    or t.execution is None
                     or t.execution.state != "pending"
-                    or "wellman-selection" not in t.labels
+                    or t.execution.queue != "wellman-selection-review"
+                    or any(
+                        getattr(t.execution, field) is not None
+                        for field in (
+                            "assigned_to",
+                            "started_at",
+                            "finished_at",
+                            "lease_expires_at",
+                        )
+                    )
+                    or t.source is None
+                    or t.source.tool != "wellman.selection-plan"
+                    or t.source.version != "v1"
+                    or t.source.context.get("grants_authority") is not False
+                    or t.inputs is not None
+                    or not {"wellman-selection", "actor:human", "autonomy-frontier"}
+                    <= set(t.labels)
                 ):
                     rows.append({"id": t.id, "state": "preserved_owned", "key": k})
                     continue

@@ -1,0 +1,84 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-030",
+  "summary": "Inspect adoption pins local drift and validation evidence",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-030/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/adoption_inspection.py",
+    "tests/test_adoption_inspection.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "33b62760906df99eb91e82f0441585f0990da0dc",
+    "targetBranch": "main",
+    "outcome": "Inspect existing adoption, requirements, pins, managed digests and exception claims without executing validators or changing files; test and independently merge.",
+    "nonGoals": [
+      "No installation, adoption or implicit external effects",
+      "No changes outside the accepted slice"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Keep declarations, adoption and trusted exact-state validation separate, preserving unknown states and local drift. Trusted receipt digests must be supplied from an independent authority ledger.",
+      "components": [
+        {
+          "name": "adoption-inspection",
+          "paths": [
+            "src/wellman/adoption_inspection.py",
+            "tests/test_adoption_inspection.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "inspect_adoption and selection-contract projection"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this additive slice."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python3 -m pytest -q tests/test_adoption_inspection.py"
+        ],
+        "evidence": "Missing and malformed locks, declaration-only profiles, drift, exception claims and trusted exact-state validation produce distinct read-only outcomes."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python3 -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full regression tests, managed governance and independent protected merge pass."
+      }
+    ]
+  }
+}

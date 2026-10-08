@@ -2,6 +2,7 @@ import subprocess
 from copy import deepcopy
 
 import pytest
+
 from wellman.applicability import build_catalog
 from wellman.selection_contracts import (
     ContractError,

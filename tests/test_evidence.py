@@ -1,11 +1,9 @@
 import hashlib
 import json
-from pathlib import Path
 
 import pytest
 
 from wellman.evidence import CONTRACTS, normalize_report
-from wellman.selection_contracts import ContractError
 
 
 @pytest.fixture
@@ -195,3 +193,93 @@ def test_absolute_producer_paths_require_explicit_source_root(tmp_path,inventory
         **{k:inventory[k] for k in ['head','source_digest','local_changes_digest','scope_digest']}}
     r=normalize_report('code2llm',tmp_path,'report.json',inventory,version=version,output_schema=schema,receipt=receipt,source_root='/repo')
     assert feature(r,'llm-client')['state']=='present'
+
+
+def canonical_cfg():
+    return {
+        'project_path': '/repo',
+        'modules': {'a': {'file': 'src/a.py', 'imports': []}},
+        'functions': {'a.run': {'qualified_name': 'a.run', 'file': 'src/a.py', 'module': 'a',
+                               'cfg_entry': 'a.run_entry', 'cfg_exit': 'a.run_exit',
+                               'cfg_nodes': ['a.run_entry', 'a.run_exit']}},
+        'nodes': {'a.run_entry': {'id': 'a.run_entry', 'type': 'ENTRY', 'function': 'a.run'},
+                  'a.run_exit': {'id': 'a.run_exit', 'type': 'EXIT', 'function': 'a.run'}},
+        'edges': [{'source': 'a.run_entry', 'target': 'a.run_exit'}],
+        'entry_points': ['a.run'],
+    }
+
+
+def test_actual_function_entrypoints_and_cfg_node_file_binding(tmp_path, inventory):
+    data = canonical_cfg()
+    result = load(tmp_path, inventory, data=data)
+    assert result['stage']['status'] == 'complete'
+    assert feature(result, 'graph:relationships')['state'] == 'present'
+    assert result['artifacts'][0]['sha256'] == hashlib.sha256(json.dumps(data).encode()).hexdigest()
+    assert 'file' not in data['nodes']['a.run_entry']
+
+
+@pytest.mark.parametrize('mutation', [
+    'missing_function', 'bad_function_collection', 'bad_function', 'qualified_name_mismatch',
+    'module_mismatch', 'foreign_file', 'cfg_entry_missing', 'cfg_exit_missing',
+    'cfg_node_missing', 'cfg_node_owner_mismatch', 'node_not_declared', 'node_file_mismatch',
+    'node_id_mismatch', 'bad_entrypoint', 'function_entry_not_entry_node',
+    'cfg_entry_absent', 'cfg_exit_absent', 'cfg_nodes_duplicate',
+])
+def test_invalid_canonical_cfg_never_certifies_graph(tmp_path, inventory, mutation):
+    data = canonical_cfg()
+    fn = data['functions']['a.run']
+    if mutation == 'missing_function':
+        data['functions'] = {}
+    elif mutation == 'bad_function_collection':
+        data['functions'] = []
+    elif mutation == 'bad_function':
+        data['functions']['a.run'] = []
+    elif mutation == 'qualified_name_mismatch':
+        fn['qualified_name'] = 'other.run'
+    elif mutation == 'module_mismatch':
+        fn['module'] = 'not_a'
+    elif mutation == 'foreign_file':
+        fn['file'] = data['modules']['a']['file'] = 'vendor/c.py'
+    elif mutation == 'cfg_entry_absent':
+        del fn['cfg_entry']
+    elif mutation == 'cfg_exit_absent':
+        del fn['cfg_exit']
+    elif mutation == 'cfg_nodes_duplicate':
+        fn['cfg_nodes'].append('a.run_entry')
+    elif mutation == 'cfg_entry_missing':
+        fn['cfg_entry'] = 'not_a_node'
+    elif mutation == 'cfg_exit_missing':
+        fn['cfg_exit'] = 'not_a_node'
+    elif mutation == 'cfg_node_missing':
+        fn['cfg_nodes'].append('not_a_node')
+    elif mutation == 'cfg_node_owner_mismatch':
+        data['nodes']['a.run_exit']['function'] = 'other.run'
+    elif mutation == 'node_not_declared':
+        fn['cfg_nodes'] = ['a.run_entry']
+    elif mutation == 'node_file_mismatch':
+        data['nodes']['a.run_entry']['file'] = 'src/b.js'
+    elif mutation == 'node_id_mismatch':
+        data['nodes']['a.run_entry']['id'] = 'different'
+    elif mutation == 'bad_entrypoint':
+        data['entry_points'] = ['other.run']
+    elif mutation == 'function_entry_not_entry_node':
+        data['nodes']['a.run_entry']['type'] = 'RETURN'
+    result = load(tmp_path, inventory, data=data)
+    assert result['stage']['status'] == 'partial'
+    assert feature(result, 'graph:relationships')['state'] == 'unknown'
+
+
+def test_function_level_cross_language_edge_needs_verified_bridge(tmp_path, inventory):
+    data = canonical_cfg()
+    data['modules']['b'] = {'file': 'src/b.js'}
+    data['functions']['b.run'] = {'qualified_name': 'b.run', 'file': 'src/b.js', 'module': 'b',
+                                'cfg_entry': 'b.run_entry', 'cfg_exit': 'b.run_exit',
+                                'cfg_nodes': ['b.run_entry', 'b.run_exit']}
+    data['nodes']['b.run_entry'] = {'type': 'ENTRY', 'function': 'b.run'}
+    data['nodes']['b.run_exit'] = {'type': 'EXIT', 'function': 'b.run'}
+    data['edges'].append({'source': 'a.run_exit', 'target': 'b.run_entry'})
+    a = load(tmp_path, inventory, data=data)
+    assert 'GRAPH_CROSS_LANGUAGE_UNVERIFIED' in codes(a)
+    assert feature(a, 'graph:relationships')['state'] == 'unknown'
+    b = load(tmp_path, inventory, data=data, bridges=[{'source':'a.run_exit','target':'b.run_entry','path':'src/a.py','sha256':'4'*64}])
+    assert b['stage']['status'] == 'complete'

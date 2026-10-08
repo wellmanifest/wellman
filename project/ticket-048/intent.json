@@ -1,0 +1,91 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-048",
+  "summary": "Export evidence-bound SSOT proposals to a preserved Planfile review backlog",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-048/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/ssot_backlog.py",
+    "tests/test_ssot_backlog.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "27301565ed956931209a7e5539146b6fbed8daea",
+    "targetBranch": "main",
+    "outcome": "Export recomputed SSOT review proposals into an explicit external native Planfile backlog, with current source/artifact checks, stable dedupe, preservation of terminal and owned tasks, independent merge and isolated installed smoke.",
+    "nonGoals": [
+      "No autonomous executor, source refactoring, standards adoption or remote synchronization",
+      "No CLI changes or global runtime replacement"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "A bounded optional Planfile 0.1.126 adapter recomputes analyze_ssot from explicit observation/declarations, verifies live repositories and saved artifacts before and under the native mutation lock, and writes human review proposals only. Proposal identity binds source repository/component/domain/contract/finding and preserves terminal or externally owned records. This adds an adapter over the existing native Planfile schema, as ticket033 did; no persisted source data is migrated and no schema or data ownership is transferred.",
+      "components": [
+        {
+          "name": "SSOT review backlog adapter",
+          "paths": [
+            "src/wellman/ssot_backlog.py",
+            "tests/test_ssot_backlog.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "export_ssot_backlog(observation, declarations, project, *, context)"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert; preserve created review records and use explicit owner disposition."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest -q tests/test_ssot_backlog.py"
+        ],
+        "evidence": "Source/artifact drift refusal, deterministic dedupe, ownership preservation, no execution or source mutation."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full checks and exact-head protected independent review and merge."
+      },
+      {
+        "criterion": "AC-03",
+        "commands": [
+          "isolated merged wheel backlog smoke"
+        ],
+        "evidence": "Installed API creates and reuses explicit local human review backlog."
+      }
+    ]
+  }
+}

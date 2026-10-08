@@ -1,0 +1,82 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-038",
+  "summary": "Normalize actual pinned code2llm function entrypoints and CFG source-file bindings",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-038/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/evidence.py",
+    "tests/test_evidence.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "6dba217ac84c8ea516f90556121d0483963114dc",
+    "targetBranch": "main",
+    "outcome": "Correct normalization of pinned code2llm AnalysisResult: function-level entry_points and CFG node.function/file relationships resolve only through verified exact source-bound function/module/CFG records. Keep missing/unresolved/mismatched/foreign/cross-language graphs partial, test with actual tool receipts and protected merge.",
+    "nonGoals": [
+      "No modifications to active author037 analyzer-environment scope or other worktrees",
+      "No raw-report rewrites, forged receipts, forced adoption, pin upgrades or CI/hook changes"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 35,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Match inspected pinned AnalysisResult and FunctionInfo contracts; resolve CFG nodes to exact function/module/file bindings and validate cfg_entry/cfg_exit/cfg_nodes. Existing direct-file node format remains bounded compatible; unknown references are never filled by name guessing or LLM.",
+      "components": [
+        {
+          "name": "evidence-adapter",
+          "paths": [
+            "src/wellman/evidence.py",
+            "tests/test_evidence.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of this compatibility correction."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python -m pytest -q tests/test_evidence.py"
+        ],
+        "evidence": "Real pinned producer false-partial reproduced before change; exact function/CFG positive and malformed/mismatched/unresolved/cross-language negative cases; actual three-tool snapshot successfully publishes only after all checks."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONPATH=src python -m pytest -q",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full suite, Ruff, managed governance and independent exact-head protected review/merge."
+      }
+    ]
+  }
+}

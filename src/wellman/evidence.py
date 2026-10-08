@@ -11,7 +11,11 @@ import json
 import re
 from pathlib import Path, PurePosixPath
 
-from wellman.selection_contracts import ContractError, MAX_DOCUMENT_BYTES, canonical_bytes, payload_digest
+from wellman.selection_contracts import (
+    MAX_DOCUMENT_BYTES,
+    ContractError,
+    canonical_bytes,
+)
 
 ADAPTER_VERSION = 'wellman.evidence/v1'
 # Contracts inspected in producer source, not inferred from similar keys.
@@ -61,6 +65,69 @@ def _shape(tool, data):
     return False
 
 
+def _graph_sources(data, nodes, reported_file, files):
+    """Resolve pinned FunctionInfo/FlowNode identities without rewriting bytes.
+
+    code2llm entry_points identify functions. CFG nodes bind to those exact
+    functions; source locations belong to FunctionInfo and its declared module.
+    Legacy direct-file nodes remain usable, but conflicting bindings never do.
+    """
+    problems = []
+    functions = data.get('functions', {})
+    modules = data.get('modules', {})
+    if not isinstance(functions, dict):
+        return {}, {}, ['Function collection is malformed.']
+    bindings = {}
+    for identity, function in functions.items():
+        if not isinstance(function, dict):
+            problems.append('Function identity is malformed.')
+            continue
+        path = reported_file(function.get('file'))
+        module = modules.get(function.get('module')) if isinstance(function.get('module'), str) else None
+        if (function.get('qualified_name') != identity or path not in files
+                or not isinstance(module, dict) or reported_file(module.get('file')) != path):
+            problems.append('Function/module/source identity does not agree.')
+            continue
+        declared = function.get('cfg_nodes', [])
+        if (not isinstance(declared, list) or any(not isinstance(n, str) for n in declared)
+                or len(set(declared)) != len(declared)
+                or any(n not in nodes or not isinstance(nodes[n], dict)
+                       or nodes[n].get('function') != identity for n in declared)):
+            problems.append('Function CFG node membership is unresolved.')
+            continue
+        endpoints_valid = not declared or all(isinstance(function.get(k), str) for k in ('cfg_entry', 'cfg_exit'))
+        for field, kind in (('cfg_entry', 'ENTRY'), ('cfg_exit', 'EXIT')):
+            endpoint = function.get(field)
+            if endpoint is not None and (not isinstance(endpoint, str) or endpoint not in declared
+                    or nodes[endpoint].get('type') != kind):
+                endpoints_valid = False
+        if not endpoints_valid:
+            problems.append('Function CFG entry/exit identity is unresolved.')
+            continue
+        bindings[identity] = (path, set(declared), function.get('cfg_entry'))
+    resolved = {}
+    for identity, node in nodes.items():
+        if not isinstance(node, dict) or node.get('id', identity) != identity:
+            problems.append('CFG node identity is malformed.')
+            continue
+        direct = reported_file(node.get('file'))
+        function = node.get('function')
+        if function is not None:
+            binding = bindings.get(function) if isinstance(function, str) else None
+            if (binding is None or identity not in binding[1]
+                    or ('file' in node and direct != binding[0])):
+                problems.append('CFG node/function/source identity does not agree.')
+                continue
+            direct = binding[0]
+        if direct not in files:
+            problems.append('CFG node has no confirmed first-party source.')
+            continue
+        resolved[identity] = dict(node, file=direct)
+    entries = {identity: value[2] for identity, value in bindings.items()
+               if value[2] in resolved}
+    return resolved, entries, problems
+
+
 def normalize_report(tool, artifact_root, relative_path, inventory, *, version=None,
                      output_schema=None, receipt=None, outcome=None, component_id=None, source_root=None):
     """Return observation-compatible fields and diagnostic provenance.
@@ -79,17 +146,17 @@ def normalize_report(tool, artifact_root, relative_path, inventory, *, version=N
     stamp = receipt.get('started_at', '1970-01-01T00:00:00Z')
     end = receipt.get('finished_at', stamp)
     ref = tool + ':' + relative_path
-    stage = dict(id=ref, tool=tool, component_id=component_id, started_at=stamp,
-                 finished_at=end, status='partial', exit_code=receipt.get('exit_code'),
-                 truncated=False, coverage='unknown', errors=[], artifact_refs=[])
-    result = {'tool':dict(id=tool, version=version, adapter_version=ADAPTER_VERSION,
-                         output_schema=output_schema, configuration_digest=receipt.get('configuration_digest'),
-                         environment_digest=receipt.get('environment_digest'),
-                         effective_exclusions=receipt.get('effective_exclusions', [])),
+    stage = {'id': ref, 'tool': tool, 'component_id': component_id, 'started_at': stamp,
+                 'finished_at': end, 'status': 'partial', 'exit_code': receipt.get('exit_code'),
+                 'truncated': False, 'coverage': 'unknown', 'errors': [], 'artifact_refs': []}
+    result = {'tool':{'id': tool, 'version': version, 'adapter_version': ADAPTER_VERSION,
+                         'output_schema': output_schema, 'configuration_digest': receipt.get('configuration_digest'),
+                         'environment_digest': receipt.get('environment_digest'),
+                         'effective_exclusions': receipt.get('effective_exclusions', [])},
               'stage':stage, 'artifacts':[], 'features':[], 'metrics':[], 'quality_issues':[]}
     def issue(code, message, refs=None):
-        result['quality_issues'].append(dict(code=code, severity='warning', message=message,
-            affected_refs=refs or [ref], next_action='Re-scan with a pinned producer and explicit source/scope receipt.'))
+        result['quality_issues'].append({'code': code, 'severity': 'warning', 'message': message,
+            'affected_refs': refs or [ref], 'next_action': 'Re-scan with a pinned producer and explicit source/scope receipt.'})
         if code not in stage['errors']:
             stage['errors'].append(code)
     def finish():
@@ -100,15 +167,14 @@ def normalize_report(tool, artifact_root, relative_path, inventory, *, version=N
             known = {f['id'] for f in result['features'] if f['component_id'] == c['id']}
             for feature in FEATURES:
                 if feature not in known:
-                    result['features'].append(dict(id=feature,component_id=c['id'],state='unknown',
-                        coverage='unknown',evidence_refs=[],reasons=['NO_SUFFICIENT_EVIDENCE']))
+                    result['features'].append({'id': feature,'component_id': c['id'],'state': 'unknown',
+                        'coverage': 'unknown','evidence_refs': [],'reasons': ['NO_SUFFICIENT_EVIDENCE']})
         result['features'].sort(key=lambda f:(f['component_id'],f['id']))
         return result
-    if outcome:
-        if outcome.get('timeout') or outcome.get('exit_code') not in (None,0):
-            stage.update(status='failed', exit_code=outcome.get('exit_code'))
-            issue('TOOL_TIMEOUT' if outcome.get('timeout') else 'TOOL_FAILED','Scanner process did not complete successfully.')
-            return finish()
+    if outcome and (outcome.get('timeout') or outcome.get('exit_code') not in (None,0)):
+        stage.update(status='failed', exit_code=outcome.get('exit_code'))
+        issue('TOOL_TIMEOUT' if outcome.get('timeout') else 'TOOL_FAILED','Scanner process did not complete successfully.')
+        return finish()
     try:
         target = _path(root, relative_path)
         if not target.exists():
@@ -124,8 +190,8 @@ def normalize_report(tool, artifact_root, relative_path, inventory, *, version=N
         if (before.st_size,before.st_mtime_ns) != (after.st_size,after.st_mtime_ns):
             raise ContractError('Report changed while reading')
         digest = hashlib.sha256(raw).hexdigest()
-        artifact = dict(id=ref,path=relative_path,media_type='application/json',size_bytes=len(raw),sha256=digest,
-            producer=tool,origin_observation_id=None,freshness='legacy_unverified')
+        artifact = {'id': ref,'path': relative_path,'media_type': 'application/json','size_bytes': len(raw),'sha256': digest,
+            'producer': tool,'origin_observation_id': None,'freshness': 'legacy_unverified'}
         result['artifacts'].append(artifact); stage['artifact_refs']=[ref]
         if target.suffix != '.json':
             stage['status']='unsupported'; issue('DIAGNOSTIC_FORMAT','TOON or summaries are diagnostic only.'); return finish()
@@ -171,8 +237,8 @@ def normalize_report(tool, artifact_root, relative_path, inventory, *, version=N
     files = {f['path']:f for f in inventory['files'] if f.get('class')=='first_party' and f.get('sha256')}
     def metric(name, definition, unit, value):
         if type(value) in (int,float):
-            result['metrics'].append(dict(name=name,definition=definition,unit=unit,tool=tool,
-                component_id=component_id,scope_digest=inventory['scope_digest'],value=value))
+            result['metrics'].append({'name': name,'definition': definition,'unit': unit,'tool': tool,
+                'component_id': component_id,'scope_digest': inventory['scope_digest'],'value': value})
     if tool == 'redup':
         metric('duplicate_groups','Groups of duplicate source fragments emitted by redup, before report selection.','fragment_group',data['summary'].get('total_groups'))
         selection = data.get('selection', {})
@@ -210,13 +276,16 @@ def normalize_report(tool, artifact_root, relative_path, inventory, *, version=N
         if not graph_ok:
             issue('GRAPH_INVALID','Graph collections have invalid shapes.')
         else:
-            outside = any(not isinstance(p,str) or p not in nodes for p in entry_points)
+            resolved, function_entries, binding_problems = _graph_sources(data, nodes, reported_file, files)
+            if binding_problems:
+                graph_ok=False; issue('GRAPH_INVALID_BINDING',' '.join(sorted(set(binding_problems))))
+            outside = any(not isinstance(p,str) or p not in resolved and p not in function_entries for p in entry_points)
             if outside and receipt.get('graph_scope') != 'declared_subgraph':
-                graph_ok=False; issue('GRAPH_SCOPE_UNDECLARED','Entry points lie outside nodes without a declared subgraph.')
+                graph_ok=False; issue('GRAPH_SCOPE_UNDECLARED','Entry points cannot resolve to CFG nodes or function CFG entries without a declared subgraph.')
             for edge in edges:
                 if not isinstance(edge,dict) or not isinstance(edge.get('source'),str) or not isinstance(edge.get('target'),str) or edge['source'] not in nodes or edge['target'] not in nodes:
                     graph_ok=False; issue('GRAPH_UNRESOLVED_EDGE','An edge cannot be resolved within the graph.'); continue
-                source,target = nodes[edge['source']],nodes[edge['target']]
+                source,target = resolved.get(edge['source']),resolved.get(edge['target'])
                 if not isinstance(source,dict) or not isinstance(target,dict):
                     graph_ok=False; issue('GRAPH_INVALID','Node identity is malformed.'); continue
                 left=LANGUAGES.get(PurePosixPath(str(source.get('file',''))).suffix)
@@ -225,12 +294,12 @@ def normalize_report(tool, artifact_root, relative_path, inventory, *, version=N
                 bridge=any(isinstance(b,dict) and isinstance(b.get('path'),str) and b.get('source')==edge['source'] and b.get('target')==edge['target'] and reported_file(b.get('path')) in files and b.get('sha256')==files[reported_file(b['path'])]['sha256'] for b in bridges) if isinstance(bridges,list) else False
                 if left and right and left!=right and not bridge:
                     graph_ok=False; issue('GRAPH_CROSS_LANGUAGE_UNVERIFIED','Cross-language name resolution lacks source-bound bridge evidence.')
-            if any(not isinstance(n,dict) or not isinstance(n.get('file'),str) or reported_file(n['file']) not in files for n in nodes.values()):
+            if len(resolved) != len(nodes):
                 graph_ok=False; issue('GRAPH_NONPRODUCT_OR_UNKNOWN','Graph includes files without positive first-party classification.')
             if nodes and graph_ok and matches and receipt.get('graph_scope')=='complete' and stage['status']=='complete':
                 for c in inventory['components']:
-                    if (component_id is None or c['id']==component_id) and any(isinstance(n,dict) and isinstance(n.get('file'),str) and reported_file(n['file']) in files and files[reported_file(n['file'])]['component_id']==c['id'] for n in nodes.values()):
-                        result['features'].append(dict(id='graph:relationships',component_id=c['id'],state='present',coverage='complete',evidence_refs=[ref],reasons=['SOURCE_BOUND_GRAPH']))
+                    if (component_id is None or c['id']==component_id) and any(isinstance(n,dict) and isinstance(n.get('file'),str) and reported_file(n['file']) in files and files[reported_file(n['file'])]['component_id']==c['id'] for n in resolved.values()):
+                        result['features'].append({'id': 'graph:relationships','component_id': c['id'],'state': 'present','coverage': 'complete','evidence_refs': [ref],'reasons': ['SOURCE_BOUND_GRAPH']})
         if not graph_ok or receipt.get('graph_scope') != 'complete':
             if stage['status']=='complete':stage.update(status='partial',coverage='partial')
             issue('GRAPH_PARTIAL','Graph is diagnostic; coverage is partial or undeclared.')
@@ -240,6 +309,6 @@ def normalize_report(tool, artifact_root, relative_path, inventory, *, version=N
         if matches:
             for cid,features in observed.items():
                 for feature in sorted(features):
-                    result['features'].append(dict(id=feature,component_id=cid,state='present',coverage='partial',evidence_refs=[ref],reasons=['FIRST_PARTY_MODULE']))
+                    result['features'].append({'id': feature,'component_id': cid,'state': 'present','coverage': 'partial','evidence_refs': [ref],'reasons': ['FIRST_PARTY_MODULE']})
         metric('classes','Class symbols emitted by code2llm; not duplicate fragment groups.','class_symbol',len(data.get('classes',{})) if isinstance(data.get('classes',{}),dict) else None)
     return finish()

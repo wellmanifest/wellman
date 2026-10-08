@@ -16,6 +16,7 @@ import re
 from wellman.adoption_inspection import current_adoption
 from wellman.registry import PROFILES_CATALOG, STANDARDS_CATALOG
 from wellman.selection_contracts import ContractError, payload_digest, validate_document
+from wellman.observation_evidence import ObservationEvidence
 
 RULE_VERSION = 'wellman.applicability-rules/v1'
 BASELINE = {r['id'] for r in PROFILES_CATALOG['baseline'].requirements}
@@ -139,13 +140,13 @@ def resolve_applicability(observation, catalog, adoptions, *, advisory=None):
         except ValueError as error:raise ContractError('INVALID_OBSERVATION_TIME') from error
     start,end=timestamp(observation['started_at']),timestamp(observation['finished_at'])
     if start>end:raise ContractError('INVALID_OBSERVATION_INTERVAL')
-    stages=defaultdict(list)
-    for stage in observation['stages']:
-        for ref in stage['artifact_refs']:stages[ref].append(stage)
+    evidence_index=ObservationEvidence(observation)
     def inspection_bound(inspection):
         if inspection is None:return False
         digest=payload_digest(inspection)
-        return any(a['producer']=='wellman.adoption-inspection' and a['sha256']==digest and a['freshness']=='verified' and a['origin_observation_id']==observation['observation_id'] and any(s['tool']==a['producer'] and s['status']=='complete' and s['coverage']=='complete' and start<=timestamp(s['started_at'])<=timestamp(s['finished_at'])<=end for s in stages[a['id']]) for a in artifacts.values())
+        return any(a['producer']=='wellman.adoption-inspection' and a['sha256']==digest
+                   and evidence_index.bound(a['id'], repository_id=inspection['repository_id'])
+                   for a in artifacts.values())
     bound_inspections={repo:inspection_bound(inspection) for repo,inspection in adoptions.items()}
     facts=defaultdict(list)
     for f in observation['features']:facts[(f['component_id'],f['id'])].append(f)
@@ -155,10 +156,8 @@ def resolve_applicability(observation, catalog, adoptions, *, advisory=None):
             if complete and f['coverage']!='complete':continue
             evidence=f['evidence_refs']
             def bound(ref):
-                if ref not in artifacts or artifacts[ref]['freshness']!='verified' or artifacts[ref]['origin_observation_id']!=observation['observation_id']:return False
-                if any(q['code']=='SOURCE_CHANGED_DURING_SCAN' and (not q['affected_refs'] or ref in q['affected_refs']) for q in observation['quality_issues']):return False
                 negative=f['state']=='absent' or complete
-                return any(s['tool']==artifacts[ref]['producer'] and s['component_id'] in (None,cid) and s['status'] in (('complete',) if negative else ('complete','partial')) and (not negative or s['coverage']=='complete' and not s['truncated']) and start<=timestamp(s['started_at'])<=timestamp(s['finished_at'])<=end for s in stages[ref])
+                return evidence_index.bound(ref, component_id=cid, complete=negative)
             valid=evidence and all(bound(ref) for ref in evidence)
             if valid and f['state']!='unknown':states.add(f['state']);refs.update(evidence)
         return (next(iter(states)) if len(states)==1 else 'unknown',sorted(refs))

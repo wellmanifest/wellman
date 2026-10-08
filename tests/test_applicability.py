@@ -400,3 +400,81 @@ def test_broad_scopes_with_complete_effect_declarations_remain_proposals(path, e
     d = choose(resolve(cat=catalog(**{ID: {'managed_files': [path], 'effects': effects}})))
     assert d['action'] == 'add' and d['risk'] == 'high'
     assert set(d['required_authorities']) == {'review-concrete-plan', 'approve-declared-effects'}
+
+
+@pytest.mark.parametrize('update', [{'errors': ['producer error']},
+                                    {'status': 'failed'}, {'coverage': 'partial'}])
+def test_invalid_complete_feature_stage_cannot_propose_standard_change(update):
+    obs = observation()
+    obs['stages'][0].update(update)
+    d = choose(resolve(obs))
+    assert d['applicability'] == 'insufficient_data' and d['action'] == 'defer'
+
+
+@pytest.mark.parametrize('affected', [[], ['inventory-stage'], ['inventory'], ['lib'], ['owner/repo']])
+def test_scoped_quality_error_invalidates_standard_evidence(affected):
+    obs = observation()
+    obs['quality_issues'].append({'code': 'GRAPH_INVALID', 'severity': 'error',
+        'message': 'Invalid inventory evidence', 'affected_refs': affected, 'next_action': 'rescan'})
+    d = choose(resolve(obs))
+    assert d['applicability'] == 'insufficient_data' and d['action'] == 'defer'
+
+
+@pytest.mark.parametrize('update', [{'status': 'failed', 'exit_code': 1}, {'errors': ['inspection failed']},
+                                    {'status': 'partial', 'truncated': True}, {'coverage': 'partial'}])
+def test_invalid_adoption_stage_cannot_propose_adoption(update):
+    obs = observation()
+    a = adoption()
+    obs['artifacts'].append({**obs['artifacts'][0], 'id': 'adoption', 'path': 'adoption.json',
+        'producer': 'wellman.adoption-inspection', 'sha256': payload_digest(a)})
+    obs['stages'].append({**obs['stages'][0], 'id': 'adoption-stage',
+        'tool': 'wellman.adoption-inspection', 'artifact_refs': ['adoption'], **update})
+    d = choose(resolve_applicability(obs, catalog(), a))
+    assert d['action'] == 'defer' and d['reasons'] == ['ADOPTION_OBSERVATION_UNBOUND']
+
+
+def test_quality_error_on_adoption_stage_does_not_certify_missing_adoption():
+    obs = observation()
+    obs['quality_issues'].append({'code': 'INSPECTION_INVALID', 'severity': 'error',
+        'message': 'Invalid adoption stage', 'affected_refs': ['adoption-stage'], 'next_action': 'rescan'})
+    d = choose(resolve(obs))
+    assert d['applicability'] == 'applicable'
+    assert d['action'] == 'defer' and d['reasons'] == ['ADOPTION_OBSERVATION_UNBOUND']
+
+
+def test_partial_success_retains_positive_evidence_but_not_complete_or_absent_proof():
+    obs = observation()
+    obs['stages'][0].update(status='partial', coverage='partial', truncated=True)
+    c = catalog(**{ID: {'requires_evidence': []}})
+    assert choose(resolve(obs, c))['action'] == 'add'
+    obs['features'][0]['state'] = 'absent'
+    assert choose(resolve(obs, c))['applicability'] == 'insufficient_data'
+
+
+def test_unrelated_quality_error_preserves_standard_proposal():
+    obs = observation()
+    obs['quality_issues'].append({'code': 'OTHER_STAGE_FAILED', 'severity': 'error',
+        'message': 'Unrelated error', 'affected_refs': ['other-stage'], 'next_action': 'rescan'})
+    assert choose(resolve(obs))['action'] == 'add'
+
+
+def test_duplicate_producing_stage_ids_defer_instead_of_choosing_a_proof():
+    obs = observation()
+    obs['stages'].append(deepcopy(obs['stages'][0]))
+    assert choose(resolve(obs))['action'] == 'defer'
+
+
+@pytest.mark.parametrize('update', [{'exit_code': 1}, {'errors': ['partial producer failed']}])
+def test_partial_failure_cannot_establish_positive_capability(update):
+    obs = observation()
+    obs['stages'][0].update(status='partial', coverage='partial', **update)
+    c = catalog(**{ID: {'requires_evidence': []}})
+    assert choose(resolve(obs, c))['applicability'] == 'insufficient_data'
+
+
+@pytest.mark.parametrize('update', [{'exit_code': 1}, {'truncated': True}])
+def test_existing_contract_rejection_for_inconsistent_complete_stage_is_preserved(update):
+    obs = observation()
+    obs['stages'][0].update(update)
+    with pytest.raises(ContractError, match='complete stage'):
+        resolve(obs)

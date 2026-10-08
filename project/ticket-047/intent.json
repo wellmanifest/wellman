@@ -1,0 +1,95 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-047",
+  "summary": "Reject failed and quality-invalid evidence in standard and SSOT decisions",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-047/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/applicability.py",
+    "src/wellman/observation_evidence.py",
+    "src/wellman/ssot.py",
+    "tests/test_applicability.py",
+    "tests/test_ssot.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "22c08a6f203c7ffb979babcb8e87c7cb279d1682",
+    "targetBranch": "main",
+    "outcome": "Standard applicability and SSOT diagnostics defer failed, ambiguous or quality-invalid artifact evidence while preserving valid unrelated evidence. Independently reviewed merge and isolated installed regression smoke.",
+    "nonGoals": [
+      "No adoption, source scanning, catalog changes, or global runtime replacement",
+      "Preserve foreign worktrees and new-project ticket325 writer"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 5,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Centralize stage/artifact provenance validation for SSOT and applicability; errors scoped to producing stage, artifact, component or repository invalidate only affected evidence. Read-only proposals retain separate authority and source freshness boundaries.",
+      "components": [
+        {
+          "name": "Observation evidence proof",
+          "paths": [
+            "src/wellman/observation_evidence.py",
+            "src/wellman/ssot.py",
+            "src/wellman/applicability.py",
+            "tests/test_ssot.py",
+            "tests/test_applicability.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Protected revert of evidence proof correction; no migration or data writes."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest -q tests/test_ssot.py tests/test_applicability.py"
+        ],
+        "evidence": "Reproduce failed-stage and stage-scoped quality defects; ensure defer and unrelated evidence preservation."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python -m pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full tests, governance, exact-head independent review and merge."
+      },
+      {
+        "criterion": "AC-03",
+        "commands": [
+          "isolated merged wheel regression smoke"
+        ],
+        "evidence": "Installed SSOT and applicability reject compromised evidence."
+      }
+    ]
+  }
+}

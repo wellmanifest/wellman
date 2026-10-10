@@ -1,0 +1,27 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-052",
+  "summary": "integrate uncrash session recovery diagnostics in wellman",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-052/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/registry.py",
+    "src/wellman/applicability.py",
+    "src/wellman/runner.py",
+    "tests/test_session_recovery.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

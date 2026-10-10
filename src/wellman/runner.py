@@ -10,6 +10,7 @@ Executes deterministic checks across all Wellmanifest standards:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import runpy
@@ -170,6 +171,8 @@ class ConformanceRunner:
         findings.extend(self.check_agent_hosts())
         # 6. Local OneDev + Validator publication scope
         findings.extend(self.check_local_ci_publication())
+        # 7. Session recovery & LLM agent storage integrity (via uncrash)
+        findings.extend(self.check_session_recovery())
         return findings
 
     def check_local_ci_publication(self) -> List[Finding]:
@@ -190,6 +193,150 @@ class ConformanceRunner:
             ),
         )]
 
+    def check_session_recovery(self, home: Optional[Path] = None) -> List[Finding]:
+        """Validate wellmanifest/session-recovery standard compliance and agent storage health.
+
+        Delegates to semcod/uncrash diagnostics when available to detect SQLite corruption,
+        malformed conversation databases, and unhandled agent panics.
+        """
+        findings: List[Finding] = []
+        target_home = (home or Path.home()).resolve()
+
+        # Check adoption lock if repository adopts wellmanifest/session-recovery
+        manifest_path = self.root / ".governance" / "manifest.json"
+        if manifest_path.is_file():
+            try:
+                mdata = json.loads(manifest_path.read_text(encoding="utf-8"))
+                packs = mdata.get("packs", [])
+                if "wellmanifest/session-recovery" in packs:
+                    lock_path = self.root / ".governance" / "session-recovery.lock.json"
+                    if not lock_path.is_file():
+                        findings.append(Finding(
+                            code="GOV-SESSION-RECOVERY-LOCK",
+                            message="Repository adopts 'wellmanifest/session-recovery' but is missing '.governance/session-recovery.lock.json'.",
+                            severity="WARNING",
+                            path=".governance/session-recovery.lock.json",
+                            remediation="Run `wellman lock` or generate session-recovery adoption lockfile.",
+                        ))
+            except Exception:
+                pass
+
+        # Run storage health and panic detection via uncrash
+        health_report = None
+        try:
+            from uncrash.diagnostics import check_agent_storage_health
+            health_report = check_agent_storage_health(target_home)
+        except ImportError:
+            health_report = self._fallback_storage_health(target_home)
+
+        if health_report:
+            for corrupt in health_report.get("corrupted_sessions", []):
+                findings.append(Finding(
+                    code="GOV-SESSION-RECOVERY-001",
+                    message=f"Corrupted LLM agent session storage detected in {corrupt.get('provider', 'agent')}: session '{corrupt.get('session_id')}' at {corrupt.get('path')}: {corrupt.get('error')}",
+                    severity="ERROR",
+                    path=corrupt.get("path", ""),
+                    remediation=corrupt.get("remediation", "Run uncrash salvage or restore database from SQLite dump (INV-SR-002, INV-SR-003)."),
+                ))
+            for panic in health_report.get("detected_panics", []):
+                findings.append(Finding(
+                    code="GOV-SESSION-RECOVERY-002",
+                    message=f"Detected unhandled agent panic in log '{panic.get('log_name', 'agent.log')}': {panic.get('signature', 'panic')}",
+                    severity="WARNING",
+                    path=panic.get("log_path", ""),
+                    remediation="Review panic signature and verify crash isolation and session rehydration (INV-SR-001, INV-SR-005).",
+                ))
+
+        return findings
+
+    def _fallback_storage_health(self, home: Path) -> dict:
+        """Fallback lightweight scan for agent storage health when uncrash is uninstalled."""
+        import sqlite3
+        report: Dict[str, Any] = {"corrupted_sessions": [], "detected_panics": []}
+        agy_root = home / ".gemini" / "antigravity-cli"
+        if not agy_root.is_dir():
+            return report
+
+        # Check conversation databases
+        conv_dir = agy_root / "conversations"
+        if conv_dir.is_dir():
+            for db_path in sorted(conv_dir.glob("*.db")):
+                try:
+                    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=1.0)
+                    cur = conn.cursor()
+                    cur.execute("PRAGMA quick_check;")
+                    res = cur.fetchone()
+                    conn.close()
+                    if not res or res[0] != "ok":
+                        report["corrupted_sessions"].append({
+                            "provider": "agy",
+                            "session_id": db_path.stem,
+                            "path": str(db_path),
+                            "error": res[0] if res else "quick_check failed",
+                            "remediation": f"sqlite3 {db_path} .dump > dump.sql && sqlite3 restored.db < dump.sql",
+                        })
+                except Exception as e:
+                    report["corrupted_sessions"].append({
+                        "provider": "agy",
+                        "session_id": db_path.stem,
+                        "path": str(db_path),
+                        "error": str(e),
+                        "remediation": f"sqlite3 {db_path} .dump > dump.sql && sqlite3 restored.db < dump.sql",
+                    })
+
+        # Check summary DB
+        summary_db = agy_root / "conversation_summaries.db"
+        if summary_db.is_file():
+            try:
+                conn = sqlite3.connect(f"file:{summary_db}?mode=ro", uri=True, timeout=1.0)
+                cur = conn.cursor()
+                cur.execute("PRAGMA quick_check;")
+                res = cur.fetchone()
+                conn.close()
+                if not res or res[0] != "ok":
+                    report["corrupted_sessions"].append({
+                        "provider": "agy",
+                        "session_id": "conversation_summaries",
+                        "path": str(summary_db),
+                        "error": res[0] if res else "quick_check failed",
+                        "remediation": "restore from SQLite dump or regenerate summaries",
+                    })
+            except Exception as e:
+                report["corrupted_sessions"].append({
+                    "provider": "agy",
+                    "session_id": "conversation_summaries",
+                    "path": str(summary_db),
+                    "error": str(e),
+                    "remediation": "restore from SQLite dump or regenerate summaries",
+                })
+
+        # Scan recent logs for panics
+        log_dir = agy_root / "log"
+        if log_dir.is_dir():
+            patterns = [
+                re.compile(r"Caught panic:\s*(.*)", re.IGNORECASE),
+                re.compile(r"runtime error:\s*(invalid memory address or nil pointer dereference.*)", re.IGNORECASE),
+                re.compile(r"Failed to load conversation ([a-f0-9-]+):\s*(.*database disk image is malformed.*)", re.IGNORECASE),
+                re.compile(r"program was killed:\s*(program experienced a panic.*)", re.IGNORECASE),
+            ]
+            for log_file in sorted(log_dir.glob("*.log"), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)[:20]:
+                try:
+                    with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+                        text = f.read(512 * 1024)
+                    for pat in patterns:
+                        m = pat.search(text)
+                        if m:
+                            report["detected_panics"].append({
+                                "log_path": str(log_file),
+                                "log_name": log_file.name,
+                                "signature": m.group(0).strip(),
+                            })
+                            break
+                except (OSError, UnicodeError):
+                    continue
+
+        return report
+
     def run_standard(self, standard_id: str) -> List[Finding]:
         """Run the concrete conformance check implemented for one standard.
 
@@ -205,6 +352,7 @@ class ConformanceRunner:
             "wellmanifest/ticket-lifecycle": self.check_ticket_lifecycle,
             "wellmanifest/agent": self.check_agent_hosts,
             "wellmanifest/docs": lambda: self.validator.validate_docs(required=True),
+            "wellmanifest/session-recovery": self.check_session_recovery,
         }
         check = checks.get(standard_id)
         if check is not None:

@@ -388,6 +388,17 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         schemas=["product-lifecycle.schema.json"],
         docs_url="https://github.com/wellmanifest/product-lifecycle",
     ),
+    "wellmanifest/session-recovery": StandardPack(
+        id="wellmanifest/session-recovery",
+        name="LLM Session Recovery & Storage Resilience",
+        owner="wellmanifest/session-recovery",
+        description="Normative standard for LLM host session resilience, crash isolation, automated storage salvage, and state rehydration",
+        minimum_level="S3",
+        execution_model="protected-conformance",
+        owns=["LLM session recovery", "conversation storage resilience", "host resumption protocol", "session crash isolation", "state rehydration"],
+        schemas=["session-recovery.schema.json"],
+        docs_url="https://github.com/wellmanifest/session-recovery",
+    ),
 }
 
 # Standard profiles grouping multiple standard packs
@@ -436,6 +447,7 @@ PROFILES_CATALOG: Dict[str, Profile] = {
             {"id": "wellmanifest/validation-attestation", "minimumLevel": "S5"},
             {"id": "wellmanifest/skills", "minimumLevel": "S4"},
             {"id": "wellmanifest/llm", "minimumLevel": "S4"},
+            {"id": "wellmanifest/session-recovery", "minimumLevel": "S3"},
         ],
     ),
     "deployment": Profile(

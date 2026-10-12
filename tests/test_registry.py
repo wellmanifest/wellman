@@ -51,6 +51,15 @@ def test_get_standard_alias_resolution():
     assert s5 is not None
     assert s5.id == "wellmanifest/nl-api-llm"
 
+    s6 = get_standard("wellmanifest/reuse")
+    assert s6 is not None
+    assert s6.id == "wellmanifest/reuse"
+    assert s6.name == "Code Reuse & Deduplication Standard"
+
+    s7 = get_standard("reuse")
+    assert s7 is not None
+    assert s7.id == "wellmanifest/reuse"
+
 
 def test_profiles_catalog():
     profiles = list_profiles()

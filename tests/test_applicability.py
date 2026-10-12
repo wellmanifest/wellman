@@ -485,6 +485,7 @@ def test_existing_contract_rejection_for_inconsistent_complete_stage_is_preserve
     ('taskand', 'contract:uri-capsule'),
     ('uriprocess', 'contract:uri-process-package'),
     ('nl-uri-dsl-llm', 'usage:nl-to-uri'),
+    ('reuse', 'quality:code-reuse'),
 ])
 def test_uri_and_configuration_selection_requires_independent_capability(name, capability):
     identifier = 'wellmanifest/' + name

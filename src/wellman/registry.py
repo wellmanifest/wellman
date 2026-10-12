@@ -90,6 +90,17 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         owns=["NL to URI contracts"], excludes=["execution authority", "verified runtime conformance"],
         schemas=['schemas/process-uri.schema.json', 'schemas/conversational-process-snapshot.schema.json'], docs_url="https://github.com/wellmanifest/nl-uri-dsl-llm",
     ),
+    "wellmanifest/reuse": StandardPack(
+        id="wellmanifest/reuse",
+        name="Code Reuse & Deduplication Standard",
+        owner="wellmanifest/reuse",
+        description="Cross-project code discovery, AST clone detection, continuous modularization, and reuse orchestration",
+        minimum_level="S3",
+        execution_model="protected-conformance",
+        owns=["code discovery", "AST clone detection", "reuse orchestration", "modular extraction", "intent dispatching"],
+        schemas=["reuse-policy.schema.json", "reuse-scan-receipt.schema.json"],
+        docs_url="https://github.com/wellmanifest/reuse",
+    ),
     "wellmanifest/new-project": StandardPack(
         id="wellmanifest/new-project",
         name="New Project & Repository Bootstrap",
@@ -488,6 +499,7 @@ def get_standard(standard_id: str) -> Optional[StandardPack]:
         "taskand": "wellmanifest/taskand",
         "uriprocess": "wellmanifest/uriprocess",
         "nl-uri-dsl-llm": "wellmanifest/nl-uri-dsl-llm",
+        "reuse": "wellmanifest/reuse",
 
     }
     normalized = aliases.get(standard_id, standard_id)

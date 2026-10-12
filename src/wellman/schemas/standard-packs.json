@@ -93,6 +93,7 @@
     {"id": "wellmanifest/nl-dsl-llm", "owns": ["tripartite natural-language, canonical DSL, and adaptive LLM contract", "universal MCP/CLI parity"]},
     {"id": "wellmanifest/nl-api-llm", "owns": ["tripartite NL-API-LLM architecture", "universal API registry", "dynamic frontend menu tree", "multi-protocol dispatch"]},
     {"id": "wellmanifest/repair-lifecycle", "owns": ["repair and remediation lifecycle"]},
-    {"id": "wellmanifest/deployment", "owns": ["deployment contract", "deployment verification"]}
+    {"id": "wellmanifest/deployment", "owns": ["deployment contract", "deployment verification"]},
+    {"id": "wellmanifest/reuse", "owns": ["code discovery", "AST clone detection", "reuse orchestration", "modular extraction", "intent dispatching"]}
   ]
 }

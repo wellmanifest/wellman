@@ -32,7 +32,7 @@ CAPABILITIES = {
     'account-runtime':'runtime:accounts','saas-lifecycle':'lifecycle:subscriptions',
     'twin-lifecycle':'lifecycle:digital-twin','anonym':'data:identifying-information',
     'legal-lifecycle':'product:published','product-lifecycle':'product:published',
-    'session-recovery':'runtime:session-recovery',
+    'session-recovery':'runtime:session-recovery','reuse':'quality:code-reuse',
 }
 RULES = {identifier:{'scope':'repository' if identifier in BASELINE else 'component',
     'applies_when':{'all':[{'feature':'repository:git' if identifier in BASELINE else CAPABILITIES[identifier.split('/')[1]],'is':'present'}],'any':[]},

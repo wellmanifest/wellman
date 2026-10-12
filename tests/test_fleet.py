@@ -643,7 +643,7 @@ def test_fleet_apply_writes_local_ci_default_and_keeps_restrictions(tmp_path):
                    "scope": {"mode": "restricted", "repositories": ["acme/narrowed"]}}
     (narrowed / ".governance").mkdir()
     (narrowed / ".governance/local-ci-publication.json").write_text(json.dumps(restriction), encoding="utf-8")
-    subprocess.run(["git", "add", "."], cwd=narrowed, check=True)
+    subprocess.run(["git", "add", "-f", "."], cwd=narrowed, check=True)
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"], cwd=narrowed, check=True)
 
     result = apply_plan(build_plan(tmp_path, "baseline"), "baseline")

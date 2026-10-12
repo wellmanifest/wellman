@@ -31,6 +31,28 @@ def test_session_recovery_healthy(tmp_path: Path):
     assert len(findings) == 0
 
 
+def test_session_recovery_ignores_locked_db(tmp_path: Path):
+    """Test that active locks on session databases do not produce false positive corruption errors."""
+    fake_home = tmp_path / "home"
+    agy_root = fake_home / ".gemini" / "antigravity-cli"
+    conv_dir = agy_root / "conversations"
+    conv_dir.mkdir(parents=True)
+
+    db_path = conv_dir / "active-locked-session-1234.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE metadata (key TEXT, val TEXT);")
+    conn.execute("BEGIN EXCLUSIVE TRANSACTION;")
+
+    try:
+        runner = ConformanceRunner(tmp_path)
+        findings = runner.check_session_recovery(home=fake_home)
+        corrupted = [f for f in findings if f.code == "GOV-SESSION-RECOVERY-001"]
+        assert len(corrupted) == 0
+    finally:
+        conn.rollback()
+        conn.close()
+
+
 def test_session_recovery_detects_corrupted_db(tmp_path: Path):
     """Test detection of corrupted SQLite session databases (GOV-SESSION-RECOVERY-001)."""
     fake_home = tmp_path / "home"

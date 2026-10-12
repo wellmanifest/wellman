@@ -261,12 +261,16 @@ class ConformanceRunner:
         conv_dir = agy_root / "conversations"
         if conv_dir.is_dir():
             for db_path in sorted(conv_dir.glob("*.db")):
+                if not db_path.is_file():
+                    continue
                 try:
-                    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=1.0)
-                    cur = conn.cursor()
-                    cur.execute("PRAGMA quick_check;")
-                    res = cur.fetchone()
-                    conn.close()
+                    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=0.5)
+                    try:
+                        cur = conn.cursor()
+                        cur.execute("PRAGMA quick_check;")
+                        res = cur.fetchone()
+                    finally:
+                        conn.close()
                     if not res or res[0] != "ok":
                         report["corrupted_sessions"].append({
                             "provider": "agy",
@@ -275,6 +279,17 @@ class ConformanceRunner:
                             "error": res[0] if res else "quick_check failed",
                             "remediation": f"sqlite3 {db_path} .dump > dump.sql && sqlite3 restored.db < dump.sql",
                         })
+                except sqlite3.OperationalError as e:
+                    msg = str(e).lower()
+                    if any(busy_marker in msg for busy_marker in ("locked", "busy", "unable to open database file", "resource temporarily unavailable")):
+                        continue
+                    report["corrupted_sessions"].append({
+                        "provider": "agy",
+                        "session_id": db_path.stem,
+                        "path": str(db_path),
+                        "error": str(e),
+                        "remediation": f"sqlite3 {db_path} .dump > dump.sql && sqlite3 restored.db < dump.sql",
+                    })
                 except Exception as e:
                     report["corrupted_sessions"].append({
                         "provider": "agy",
@@ -288,17 +303,29 @@ class ConformanceRunner:
         summary_db = agy_root / "conversation_summaries.db"
         if summary_db.is_file():
             try:
-                conn = sqlite3.connect(f"file:{summary_db}?mode=ro", uri=True, timeout=1.0)
-                cur = conn.cursor()
-                cur.execute("PRAGMA quick_check;")
-                res = cur.fetchone()
-                conn.close()
+                conn = sqlite3.connect(f"file:{summary_db}?mode=ro", uri=True, timeout=0.5)
+                try:
+                    cur = conn.cursor()
+                    cur.execute("PRAGMA quick_check;")
+                    res = cur.fetchone()
+                finally:
+                    conn.close()
                 if not res or res[0] != "ok":
                     report["corrupted_sessions"].append({
                         "provider": "agy",
                         "session_id": "conversation_summaries",
                         "path": str(summary_db),
                         "error": res[0] if res else "quick_check failed",
+                        "remediation": "restore from SQLite dump or regenerate summaries",
+                    })
+            except sqlite3.OperationalError as e:
+                msg = str(e).lower()
+                if not any(busy_marker in msg for busy_marker in ("locked", "busy", "unable to open database file", "resource temporarily unavailable")):
+                    report["corrupted_sessions"].append({
+                        "provider": "agy",
+                        "session_id": "conversation_summaries",
+                        "path": str(summary_db),
+                        "error": str(e),
                         "remediation": "restore from SQLite dump or regenerate summaries",
                     })
             except Exception as e:

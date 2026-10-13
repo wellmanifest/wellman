@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.20.46] - 2026-10-13
+
+### Added
+- `wellmanifest/ssot` and `wellmanifest/semver` are registered as reference-only
+  S0 standards (aliases `ssot`, `semver`), so `wellman adopt auto --standard`
+  accepts them [ticket-056].
+
+### Notes
+- PyPI already carried 0.20.45 while the repository declared 0.20.38; this
+  release continues above the published version [ticket-057].
+
 ### Added
 - `wellman adopt` writes `.governance/local-ci-publication.json` with the
   unrestricted default (local OneDev + Validator for every repository) when it

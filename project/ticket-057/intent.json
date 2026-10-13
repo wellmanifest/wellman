@@ -1,0 +1,92 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-057",
+  "summary": "release 0.20.46 with ssot and semver registration",
+  "workstream": "integration",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-057/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "CHANGELOG.md",
+    "README.md",
+    "VERSION",
+    "pyproject.toml",
+    "uv.lock",
+    "src/wellman/__init__.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [
+    "python"
+  ],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "e571733acb6a7569e2451d070f2e0c077cf5ca25",
+    "targetBranch": "main",
+    "outcome": "wellman 0.20.46 is declared in every version carrier so the release includes ssot/semver registration; publication runs after merge via goal publish-only.",
+    "nonGoals": [
+      "No dependency changes.",
+      "No code change beyond the __version__ fallback."
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 20,
+    "budgets": {
+      "maxImplementationFiles": 5,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Manual release projection to 0.20.46 (above the published 0.20.45) because goal's pull-request mode sees two IN_PROGRESS tickets.",
+      "components": [
+        {
+          "name": "release",
+          "paths": [
+            "VERSION",
+            "pyproject.toml",
+            "uv.lock",
+            "CHANGELOG.md",
+            "src/wellman/__init__.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the commit before publication."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "cat VERSION",
+          "grep '^version' pyproject.toml"
+        ],
+        "evidence": "project/ticket-057/README.md"
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "project/ticket-057/README.md"
+      }
+    ]
+  }
+}

@@ -27,6 +27,7 @@ CAPABILITIES = {
     'nl-dsl-llm':'usage:nl-to-dsl','nl-api-llm':'usage:nl-to-api',
     'nohardcode':'quality:configuration-audit', 'taskand':'contract:uri-capsule',
     'uriprocess':'contract:uri-process-package', 'nl-uri-dsl-llm':'usage:nl-to-uri',
+    'ssot':'quality:single-source-of-truth', 'semver':'lifecycle:versioned-release',
     'repair-lifecycle':'runtime:automatic-repair','deployment':'lifecycle:deployment',
     'agent':'runtime:agent-actions','policy-dsl':'contract:policy-dsl','skills':'runtime:skills',
     'account-runtime':'runtime:accounts','saas-lifecycle':'lifecycle:subscriptions',

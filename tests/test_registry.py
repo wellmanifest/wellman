@@ -84,3 +84,14 @@ def test_uri_and_configuration_standards_are_reference_candidates_only():
     baseline = {item['id'] for item in get_profile('baseline').requirements}
     assert not baseline.intersection({'wellmanifest/nohardcode', 'wellmanifest/taskand',
                                      'wellmanifest/uriprocess', 'wellmanifest/nl-uri-dsl-llm'})
+
+
+def test_ssot_and_semver_are_reference_only_standards():
+    from wellman.registry import get_standard
+
+    for alias in ("ssot", "semver"):
+        pack = get_standard(alias)
+        assert pack is not None and pack.id == f"wellmanifest/{alias}"
+        assert pack.execution_model == "reference-only"
+        assert pack.minimum_level == "S0"
+        assert "execution authority" in pack.excludes

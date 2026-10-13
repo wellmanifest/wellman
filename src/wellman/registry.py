@@ -83,6 +83,20 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         owns=["package manufacture"], excludes=["execution authority", "verified runtime conformance"],
         schemas=['schemas/package.schema.json'], docs_url="https://github.com/wellmanifest/uriprocess",
     ),
+    "wellmanifest/ssot": StandardPack(
+        id="wellmanifest/ssot", name="Single source of truth decisions",
+        owner="wellmanifest/ssot", description="Interview-first, propose-only SSOT decisions for duplicated code, configuration and vendored copies",
+        minimum_level="S0", execution_model="reference-only",
+        owns=["SSOT decision documents"], excludes=["execution authority", "code edits or merges", "verified runtime conformance"],
+        schemas=['schemas/ssot-interview.schema.json', 'schemas/ssot-decision.schema.json', 'schemas/ssot-standards-lock.schema.json'], docs_url="https://github.com/wellmanifest/ssot",
+    ),
+    "wellmanifest/semver": StandardPack(
+        id="wellmanifest/semver", name="Semantic versioning for heterogeneous releases",
+        owner="wellmanifest/semver", description="Separate SemVer for system, host and firmware with binary identity, safe-state and OTA rollback rules",
+        minimum_level="S0", execution_model="reference-only",
+        owns=["release version contracts"], excludes=["execution authority", "flashing or deployment", "verified runtime conformance"],
+        schemas=['schemas/embedded-release.schema.json', 'schemas/hardware-matrix.schema.json', 'schemas/pipeline-run.schema.json'], docs_url="https://github.com/wellmanifest/semver",
+    ),
     "wellmanifest/nl-uri-dsl-llm": StandardPack(
         id="wellmanifest/nl-uri-dsl-llm", name="Natural language to URI and DSL",
         owner="wellmanifest/nl-uri-dsl-llm", description="Typed action URI and resource URN selection, grammar constraints and capsule handoff",
@@ -498,6 +512,8 @@ def get_standard(standard_id: str) -> Optional[StandardPack]:
         "nohardcode": "wellmanifest/nohardcode",
         "taskand": "wellmanifest/taskand",
         "uriprocess": "wellmanifest/uriprocess",
+        "ssot": "wellmanifest/ssot",
+        "semver": "wellmanifest/semver",
         "nl-uri-dsl-llm": "wellmanifest/nl-uri-dsl-llm",
         "reuse": "wellmanifest/reuse",
 

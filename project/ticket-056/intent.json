@@ -1,0 +1,26 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-056",
+  "summary": "register wellmanifest/ssot and wellmanifest/semver as reference-only standards",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-056/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/applicability.py",
+    "src/wellman/registry.py",
+    "tests/test_registry.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

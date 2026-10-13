@@ -173,6 +173,17 @@ class ConformanceRunner:
         findings.extend(self.check_local_ci_publication())
         # 7. Session recovery & LLM agent storage integrity (via uncrash)
         findings.extend(self.check_session_recovery())
+        # 8. Reuse standard checks if adopted
+        manifest_path = self.root / ".governance" / "manifest.json"
+        if manifest_path.is_file():
+            try:
+                mdata = json.loads(manifest_path.read_text(encoding="utf-8"))
+                packs = mdata.get("packs", [])
+                std_id = mdata.get("standard", {}).get("id", "")
+                if "wellmanifest/reuse" in packs or std_id in ("wellmanifest/reuse", "profile:full"):
+                    findings.extend(self.check_reuse())
+            except Exception:
+                pass
         return findings
 
     def check_local_ci_publication(self) -> List[Finding]:
@@ -246,6 +257,73 @@ class ConformanceRunner:
                     path=panic.get("log_path", ""),
                     remediation="Review panic signature and verify crash isolation and session rehydration (INV-SR-001, INV-SR-005).",
                 ))
+
+        return findings
+
+    def check_reuse(self) -> List[Finding]:
+        """Validate wellmanifest/reuse standard compliance."""
+        findings: List[Finding] = []
+
+        # 1. Receipt verification
+        receipt_path = self.root / ".reuse" / "redup-receipt.json"
+        if not receipt_path.is_file():
+            findings.append(Finding(
+                code="GOV-REUSE-NO-RECEIPT",
+                message="Missing .reuse/redup-receipt.json clone scan receipt.",
+                severity="WARNING",
+                path=".reuse/redup-receipt.json",
+                remediation="Run `python3 scripts/record_scan_receipt.py` to record verified clone scan evidence.",
+            ))
+        else:
+            try:
+                receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+                findings_data = receipt.get("findings", {})
+                if findings_data.get("unmitigated", 0) > 0:
+                    findings.append(Finding(
+                        code="GOV-REUSE-UNMITIGATED-CLONES",
+                        message=f"Repository has {findings_data['unmitigated']} unmitigated clone group(s).",
+                        severity="ERROR",
+                        path=".reuse/redup-receipt.json",
+                        remediation="Deduplicate shared logic or create an active tracking task in .planfile/sprints/.",
+                    ))
+            except Exception as e:
+                findings.append(Finding(
+                    code="GOV-REUSE-INVALID-RECEIPT",
+                    message=f"Failed to parse .reuse/redup-receipt.json: {e}",
+                    severity="ERROR",
+                    path=".reuse/redup-receipt.json",
+                    remediation="Re-run clone scan to generate a valid receipt.",
+                ))
+
+        # 2. Planfile / ticket tracking
+        has_planfile = False
+        sprints_dir = self.root / ".planfile" / "sprints"
+        if sprints_dir.is_dir():
+            has_planfile = any(sprints_dir.glob("*.yaml"))
+        has_tickets = False
+        proj_dir = self.root / "project"
+        if proj_dir.is_dir():
+            has_tickets = any(p.name.startswith("ticket-") for p in proj_dir.iterdir() if p.is_dir())
+
+        if not has_planfile and not has_tickets:
+            findings.append(Finding(
+                code="GOV-REUSE-NO-PLANFILE",
+                message="No active planfile sprint or project ticket found for reuse task tracking.",
+                severity="WARNING",
+                path=".planfile",
+                remediation="Generate planfile tasks with `python3 scripts/generate_reuse_plan.py` or create a ticket.",
+            ))
+
+        # 3. Docs index
+        docs_readme = self.root / "docs" / "README.md"
+        if not docs_readme.is_file() or not docs_readme.read_text(encoding="utf-8").strip():
+            findings.append(Finding(
+                code="GOV-REUSE-NO-DOCS",
+                message="Missing or empty docs/README.md documentation index.",
+                severity="WARNING",
+                path="docs/README.md",
+                remediation="Create docs/README.md conforming to the Compact v2 documentation specification.",
+            ))
 
         return findings
 
@@ -380,6 +458,7 @@ class ConformanceRunner:
             "wellmanifest/agent": self.check_agent_hosts,
             "wellmanifest/docs": lambda: self.validator.validate_docs(required=True),
             "wellmanifest/session-recovery": self.check_session_recovery,
+            "wellmanifest/reuse": self.check_reuse,
         }
         check = checks.get(standard_id)
         if check is not None:

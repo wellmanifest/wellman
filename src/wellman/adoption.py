@@ -1,8 +1,10 @@
 """Language-independent registration of requirements, not conformance claims."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -343,7 +345,136 @@ def expand_profiles(profiles):
     return requirements
 
 
-def register(root, profiles=(), *, standards=(), dry_run=False):
+def _require_additive(previous, current):
+    """Historical registration grants no removal, metadata rewrite or downgrade."""
+    if not isinstance(previous, dict) or previous.get('schema') != SCHEMA:
+        raise ValueError('Historical registration has an unsupported schema')
+    for key, value in previous.items():
+        if key not in {'profiles', 'requirements'} and current.get(key) != value:
+            raise ValueError('Registration metadata changed; reconciliation is not additive')
+    old_profiles = previous.get('profiles', [])
+    if not isinstance(old_profiles, list) or not all(isinstance(p, str) for p in old_profiles):
+        raise TypeError('Invalid historical profiles')
+    if not set(old_profiles).issubset(current.get('profiles', [])):
+        raise ValueError('Registration profiles were removed')
+    old_items = previous.get('requirements')
+    if not isinstance(old_items, list):
+        raise TypeError('Invalid historical requirements')
+    new_items = {item['id']: item for item in current['requirements']}
+    seen = set()
+    for item in old_items:
+        if (not isinstance(item, dict) or not isinstance(item.get('id'), str)
+                or not item['id'] or item['id'] in seen
+                or not isinstance(item.get('minimumLevel'), str)
+                or item['minimumLevel'] not in {f'S{i}' for i in range(6)}):
+            raise ValueError('Invalid historical requirement')
+        seen.add(item['id'])
+        other = new_items.get(item['id'])
+        if other is None or other['minimumLevel'] < item['minimumLevel']:
+            raise ValueError('Registration requirements were removed or weakened')
+        if any(other.get(key) != value for key, value in item.items() if key != 'minimumLevel'):
+            raise ValueError('Requirement metadata changed; reconciliation is not additive')
+
+
+def _registration_lock(root, before, current, *, reconcile_lock_from, expected_lock_sha256):
+    """Plan the registrar-owned legacy digest only; native locks need their adopter."""
+    path = safe_path(root / '.governance' / 'manifest.lock.json')
+    raw = path.read_bytes() if path.exists() else None
+    if (reconcile_lock_from is None) != (expected_lock_sha256 is None):
+        raise ValueError('Lock reconciliation requires a historical commit and expected lock SHA-256')
+    if reconcile_lock_from is not None and (
+            not isinstance(reconcile_lock_from, str) or not isinstance(expected_lock_sha256, str)
+            or not re.fullmatch(r'[0-9a-f]{40}', reconcile_lock_from)
+            or not re.fullmatch(r'[0-9a-f]{64}', expected_lock_sha256)):
+        raise ValueError('Reconciliation requires exact lowercase Git and SHA-256 digests')
+    lock = json.loads(raw) if raw is not None else {}
+    managed = lock.get('managedFiles', {}) if isinstance(lock, dict) else {}
+    name = '.governance/standard-requirements.json'
+    if not isinstance(managed, dict):
+        raise TypeError('Invalid managedFiles in governance lock')
+    if name not in managed:
+        if reconcile_lock_from:
+            raise ValueError('No registrar-owned locked requirements to reconcile')
+        return path, raw, None
+    manifest = _object(root / '.governance' / 'manifest.json')
+    if (lock.get('schema') != 'new-project.lock/v1'
+            or manifest.get('schema') != 'wellmanifest.manifest/v1'
+            or any(safe_path(root / '.governance' / name).exists()
+                   for name in ('package-manifest.json', 'manifest.base.json'))):
+        raise ValueError('Native governance lock requires the pinned adoption updater')
+    if before is None or not isinstance(managed[name], str) or not re.fullmatch(r'[0-9a-f]{64}', managed[name]):
+        raise ValueError('Invalid locked registration digest')
+    actual = hashlib.sha256(before).hexdigest()
+    if reconcile_lock_from:
+        if hashlib.sha256(raw).hexdigest() != expected_lock_sha256:
+            raise ValueError('Governance lock changed since observation')
+        for relative, expected in managed.items():
+            if relative == name:
+                continue
+            if not isinstance(relative, str) or Path(relative).is_absolute() or '..' in Path(relative).parts:
+                raise ValueError('Invalid managed file path')
+            target = safe_path(root / relative)
+            if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+                raise ValueError('Unrelated managed file drift; preserve and reconcile its owner first')
+        ancestry = subprocess.run(
+            ['git', '-C', str(root), 'merge-base', '--is-ancestor', reconcile_lock_from, 'HEAD'],
+            capture_output=True, timeout=10, check=False,
+        )
+        if ancestry.returncode:
+            raise ValueError('Historical registration must belong to the current checkout history')
+        result = subprocess.run(
+            ['git', '-C', str(root), 'show', f'{reconcile_lock_from}:{name}'],
+            capture_output=True, timeout=10, check=False,
+        )
+        if result.returncode or hashlib.sha256(result.stdout).hexdigest() != managed[name]:
+            raise ValueError('Historical registration does not match the locked digest')
+        _require_additive(json.loads(result.stdout), current)
+    elif actual != managed[name]:
+        raise ValueError('Locked registration drift requires explicit historical reconciliation')
+    return path, raw, lock
+
+
+def _replace_registration_files(changes):
+    """Stage bytes before effects and restore our own writes on a rename failure."""
+    staged, applied = [], []
+    try:
+        for path, content, before in changes:
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.registration-', delete=False) as stream:
+                temporary = Path(stream.name)
+                staged.append((temporary, path, content, before))
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+        for _, path, _, before in staged:
+            if path.is_symlink() or (path.read_bytes() if path.exists() else None) != before:
+                raise ValueError('Registration files changed concurrently; retry from a fresh observation')
+        for temporary, path, content, before in staged:
+            os.replace(temporary, path)
+            applied.append((path, content, before))
+    except (OSError, ValueError):
+        for path, content, before in reversed(applied):
+            if path.is_symlink() or path.read_bytes() != content:
+                raise ValueError('Concurrent write prevents rollback; preserve registration evidence')
+            if before is None:
+                path.unlink()
+            else:
+                with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.registration-', delete=False) as stream:
+                    recovery = Path(stream.name)
+                    stream.write(before)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                try:
+                    os.replace(recovery, path)
+                finally:
+                    recovery.unlink(missing_ok=True)
+        raise
+    finally:
+        for temporary, _, _, _ in staged:
+            temporary.unlink(missing_ok=True)
+
+
+def register(root, profiles=(), *, standards=(), dry_run=False,
+             reconcile_lock_from=None, expected_lock_sha256=None):
     """Add required standards without replacing manifests, pins or evidence.
 
     Baseline applies even to unknown languages and documentation-only projects.
@@ -435,32 +566,39 @@ def register(root, profiles=(), *, standards=(), dry_run=False):
     result = {**existing, 'schema': SCHEMA, 'profiles': sorted(selected),
               'requirements': [items[key] for key in sorted(items)]}
     changed = existing != result
-    if changed and not dry_run:
+    lock_path, lock_before, governance_lock = _registration_lock(
+        root, before, result, reconcile_lock_from=reconcile_lock_from,
+        expected_lock_sha256=expected_lock_sha256,
+    )
+    content = (json.dumps(result, indent=2, ensure_ascii=False) + '\n').encode()
+    # Preserve exact formatting for a semantically unchanged registration.
+    if not changed and before is not None:
+        content = before
+    lock_changed = False
+    if governance_lock is not None:
+        digest = hashlib.sha256(content).hexdigest()
+        lock_changed = governance_lock['managedFiles']['.governance/standard-requirements.json'] != digest
+        governance_lock['managedFiles']['.governance/standard-requirements.json'] = digest
+    if (changed or lock_changed) and not dry_run:
         governance.mkdir(exist_ok=True)
         # Exclusive lock prevents two Wellman writers from losing an update.
         lock = governance / '.standard-requirements.lock'
         descriptor = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        temporary = None
         try:
             if path.is_symlink() or (path.read_bytes() if path.exists() else None) != before:
                 raise ValueError('Requirements changed concurrently; retry from a fresh observation')
-            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=governance,
-                                             prefix='.requirements-', delete=False) as stream:
-                temporary = Path(stream.name)
-                json.dump(result, stream, indent=2, ensure_ascii=False)
-                stream.write('\n')
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
+            changes = [(path, content, before)] if changed else []
+            if lock_changed:
+                changes.append((lock_path, (json.dumps(governance_lock, indent=2) + '\n').encode(), lock_before))
+            _replace_registration_files(changes)
         finally:
             os.close(descriptor)
-            if temporary is not None and temporary.exists():
-                temporary.unlink()
             lock.unlink()
     # Local OneDev + Validator publication is the default for every repository;
     # only an existing adopter restriction is kept, never replaced.
     from wellman.local_ci import ensure_default_policy
     local_ci = ensure_default_policy(root, dry_run=dry_run)
-    return {'changed': changed or local_ci['changed'], 'dry_run': dry_run, 'path': str(path),
+    return {'changed': changed or lock_changed or local_ci['changed'], 'dry_run': dry_run, 'path': str(path),
+            'registrationLockChanged': lock_changed,
             'registration': result, 'conformance': 'unverified',
             'localCiPublication': local_ci}

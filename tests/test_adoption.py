@@ -1,5 +1,7 @@
 """Required standards are independent of the implementation language."""
+import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -7,6 +9,157 @@ import pytest
 from wellman.adoption import register, expand_profiles, SCHEMA
 from wellman.cli import main
 from wellman.registry import PROFILES_CATALOG, Profile
+
+
+def _legacy_registration_lock(root):
+    register(root)
+    governance = root / '.governance'
+    manifest = governance / 'manifest.json'
+    manifest.write_text(json.dumps({'schema': 'wellmanifest.manifest/v1',
+                                  'standard': {'id': 'profile:baseline', 'version': '0.20.46'}}))
+    paths = ['.governance/manifest.json', '.governance/standard-requirements.json']
+    lock = {'schema': 'new-project.lock/v1', 'standard': {'sourceRevision': 'a' * 40},
+            'managedFiles': {p: hashlib.sha256((root / p).read_bytes()).hexdigest() for p in paths}}
+    path = governance / 'manifest.lock.json'
+    path.write_text(json.dumps(lock, indent=2) + '\n')
+    return path
+
+
+def _historical_registration_drift(root):
+    lock = _legacy_registration_lock(root)
+    for args in (['init', '-q'], ['add', '.governance'],
+                 ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'baseline']):
+        subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True)
+    revision = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+    path = root / '.governance/standard-requirements.json'
+    data = json.loads(path.read_text())
+    data['requirements'].append({'id': 'wellmanifest/nohardcode', 'minimumLevel': 'S0'})
+    data['requirements'].sort(key=lambda item: item['id'])
+    path.write_text(json.dumps(data, indent=2) + '\n')
+    return path, lock, revision
+
+
+def test_registration_keeps_legacy_lock_consistent(tmp_path):
+    lock_path = _legacy_registration_lock(tmp_path)
+    original = json.loads(lock_path.read_text())
+    result = register(tmp_path, standards=['nohardcode', 'ssot'])
+    lock = json.loads(lock_path.read_text())
+    assert result['registrationLockChanged'] is True
+    assert lock['managedFiles']['.governance/standard-requirements.json'] == hashlib.sha256(
+        Path(result['path']).read_bytes()).hexdigest()
+    assert lock['standard'] == original['standard']
+    assert lock['managedFiles']['.governance/manifest.json'] == original['managedFiles']['.governance/manifest.json']
+    assert register(tmp_path, standards=['nohardcode', 'ssot'])['changed'] is False
+
+
+def test_historical_reconciliation_preserves_registration_bytes_and_other_pins(tmp_path):
+    path, lock_path, revision = _historical_registration_drift(tmp_path)
+    before = path.read_bytes()
+    lock_before = lock_path.read_bytes()
+    kwargs = {'reconcile_lock_from': revision, 'expected_lock_sha256': hashlib.sha256(lock_before).hexdigest()}
+    preview = register(tmp_path, dry_run=True, **kwargs)
+    assert preview['registrationLockChanged'] is True
+    assert path.read_bytes() == before and lock_path.read_bytes() == lock_before
+    result = register(tmp_path, **kwargs)
+    assert result['changed'] and result['conformance'] == 'unverified'
+    assert path.read_bytes() == before
+    original = json.loads(lock_before)
+    repaired = json.loads(lock_path.read_bytes())
+    original['managedFiles']['.governance/standard-requirements.json'] = hashlib.sha256(before).hexdigest()
+    assert repaired == original
+
+
+@pytest.mark.parametrize('fault', ['no-opt-in', 'stale-lock', 'wrong-history', 'removed-profile',
+                                 'weakened-level', 'removed-requirement', 'unrelated-drift', 'native-lock'])
+def test_registration_reconciliation_rejects_untrusted_or_nonadditive_changes(tmp_path, fault):
+    path, lock_path, revision = _historical_registration_drift(tmp_path)
+    kwargs = {'reconcile_lock_from': revision,
+              'expected_lock_sha256': hashlib.sha256(lock_path.read_bytes()).hexdigest()}
+    data = json.loads(path.read_bytes())
+    if fault == 'no-opt-in':
+        kwargs = {}
+    elif fault == 'stale-lock':
+        kwargs['expected_lock_sha256'] = '0' * 64
+    elif fault == 'wrong-history':
+        kwargs['reconcile_lock_from'] = '0' * 40
+    elif fault == 'removed-profile':
+        # Preserve a prior custom profile that automatic baseline expansion cannot restore.
+        historical = json.loads(subprocess.check_output(
+            ['git', '-C', str(tmp_path), 'show', f'{revision}:.governance/standard-requirements.json']))
+        historical['profiles'].append('domain-pack')
+        path.write_text(json.dumps(historical))
+        lock = json.loads(lock_path.read_bytes())
+        lock['managedFiles']['.governance/standard-requirements.json'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        lock_path.write_text(json.dumps(lock))
+        subprocess.run(['git', '-C', str(tmp_path), 'add', '.governance'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(tmp_path), '-c', 'user.name=Test', '-c',
+                        'user.email=test@example.invalid', 'commit', '-qm', 'profile'], check=True, capture_output=True)
+        kwargs['reconcile_lock_from'] = subprocess.check_output(
+            ['git', '-C', str(tmp_path), 'rev-parse', 'HEAD'], text=True).strip()
+        kwargs['expected_lock_sha256'] = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+    elif fault in {'weakened-level', 'removed-requirement'}:
+        # Unknown custom requirements must survive without a catalog fallback.
+        historical = json.loads(path.read_bytes())
+        historical['requirements'].append({'id': 'company/custom', 'minimumLevel': 'S5'})
+        path.write_text(json.dumps(historical))
+        lock = json.loads(lock_path.read_bytes())
+        lock['managedFiles']['.governance/standard-requirements.json'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        lock_path.write_text(json.dumps(lock))
+        subprocess.run(['git', '-C', str(tmp_path), 'add', '.governance'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(tmp_path), '-c', 'user.name=Test', '-c',
+                        'user.email=test@example.invalid', 'commit', '-qm', 'custom'], check=True, capture_output=True)
+        kwargs['reconcile_lock_from'] = subprocess.check_output(
+            ['git', '-C', str(tmp_path), 'rev-parse', 'HEAD'], text=True).strip()
+        kwargs['expected_lock_sha256'] = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+        if fault == 'weakened-level':
+            data = historical
+            data['requirements'][-1]['minimumLevel'] = 'S0'
+    elif fault == 'unrelated-drift':
+        (tmp_path / '.governance/manifest.json').write_text('{"schema":"wellmanifest.manifest/v1"}')
+    elif fault == 'native-lock':
+        (tmp_path / '.governance/package-manifest.json').write_text('{}')
+    path.write_text(json.dumps(data, indent=2) + '\n')
+    snapshot = {p: p.read_bytes() for p in (tmp_path / '.governance').iterdir() if p.is_file()}
+    with pytest.raises(ValueError):
+        register(tmp_path, **kwargs)
+    assert all(p.read_bytes() == content for p, content in snapshot.items())
+
+
+def test_registration_rolls_back_on_lock_rename_failure(tmp_path, monkeypatch):
+    from wellman import adoption
+    lock_path = _legacy_registration_lock(tmp_path)
+    original = {p: p.read_bytes() for p in (tmp_path / '.governance').iterdir()}
+    replace = adoption.os.replace
+    def fail_lock_replace(source, target):
+        if target == lock_path:
+            raise OSError('injected lock rename failure')
+        return replace(source, target)
+    monkeypatch.setattr(adoption.os, 'replace', fail_lock_replace)
+    with pytest.raises(OSError, match='injected'):
+        register(tmp_path, standards=['ssot'])
+    assert {p: p.read_bytes() for p in (tmp_path / '.governance').iterdir()} == original
+
+
+def test_cli_historical_registration_reconciliation(tmp_path, capsys):
+    _, lock_path, revision = _historical_registration_drift(tmp_path)
+    assert main(['adopt', 'auto', '--root', str(tmp_path), '--reconcile-lock-from', revision,
+                 '--expected-lock-sha256', hashlib.sha256(lock_path.read_bytes()).hexdigest(), '--json']) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result['registrationLockChanged'] and result['conformance'] == 'unverified'
+
+
+def test_reconciliation_rejects_disconnected_history_with_identical_registration(tmp_path):
+    path, lock_path, _ = _historical_registration_drift(tmp_path)
+    tree = subprocess.check_output(['git', '-C', str(tmp_path), 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+    unrelated = subprocess.run(
+        ['git', '-C', str(tmp_path), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+         'commit-tree', tree], input='unrelated snapshot\n', capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    before = path.read_bytes(), lock_path.read_bytes()
+    with pytest.raises(ValueError, match='current checkout history'):
+        register(tmp_path, reconcile_lock_from=unrelated,
+                 expected_lock_sha256=hashlib.sha256(lock_path.read_bytes()).hexdigest())
+    assert (path.read_bytes(), lock_path.read_bytes()) == before
 
 
 @pytest.mark.parametrize('marker', [None, 'README.md', 'pyproject.toml', 'package.json',

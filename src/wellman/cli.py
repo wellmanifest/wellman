@@ -436,8 +436,10 @@ def cmd_adopt(args: argparse.Namespace) -> int:
         try:
             if args.force:
                 raise ValueError('--force is not supported by additive auto registration')
-            result = register(root, args.profile, standards=args.standard, dry_run=args.dry_run)
-        except (OSError, ValueError, UnicodeError) as error:
+            result = register(root, args.profile, standards=args.standard, dry_run=args.dry_run,
+                              reconcile_lock_from=args.reconcile_lock_from,
+                              expected_lock_sha256=args.expected_lock_sha256)
+        except (OSError, ValueError, TypeError, UnicodeError) as error:
             print(f'Error: {error}', file=sys.stderr)
             return 1
         if args.json:
@@ -447,7 +449,7 @@ def cmd_adopt(args: argparse.Namespace) -> int:
             print(f"{action} {len(result['registration']['requirements'])} required standards: {result['path']}")
             print('Requirements only: adoption pins, conformance and protected enforcement remain unverified.')
         return 0
-    if args.dry_run or args.profile or args.standard or args.json:
+    if args.dry_run or args.profile or args.standard or args.json or args.reconcile_lock_from or args.expected_lock_sha256:
         print('Error: --dry-run, --profile, --standard and --json require adopt auto.', file=sys.stderr)
         return 1
     std = get_standard(args.standard_id)
@@ -773,6 +775,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_adopt.add_argument('--standard', '-s', action='append', default=[], help='Additional standard ID for auto registration')
     p_adopt.add_argument('--dry-run', action='store_true', help='Preview auto registration without writes')
     p_adopt.add_argument('--json', action='store_true', help='Return auto registration as JSON')
+    p_adopt.add_argument('--reconcile-lock-from', help='Explicitly reconcile an additive legacy registration against this immutable Git commit')
+    p_adopt.add_argument('--expected-lock-sha256', help='Observed current lock digest required for legacy reconciliation')
     p_adopt.set_defaults(func=cmd_adopt)
 
     p_recommend = subparsers.add_parser('recommend', help='Recommend standards from code2llm structure and optional SubLLM advice')

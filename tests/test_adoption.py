@@ -148,6 +148,20 @@ def test_cli_historical_registration_reconciliation(tmp_path, capsys):
     assert result['registrationLockChanged'] and result['conformance'] == 'unverified'
 
 
+def test_reconciliation_rejects_disconnected_history_with_identical_registration(tmp_path):
+    path, lock_path, _ = _historical_registration_drift(tmp_path)
+    tree = subprocess.check_output(['git', '-C', str(tmp_path), 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+    unrelated = subprocess.run(
+        ['git', '-C', str(tmp_path), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+         'commit-tree', tree], input='unrelated snapshot\n', capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    before = path.read_bytes(), lock_path.read_bytes()
+    with pytest.raises(ValueError, match='current checkout history'):
+        register(tmp_path, reconcile_lock_from=unrelated,
+                 expected_lock_sha256=hashlib.sha256(lock_path.read_bytes()).hexdigest())
+    assert (path.read_bytes(), lock_path.read_bytes()) == before
+
+
 @pytest.mark.parametrize('marker', [None, 'README.md', 'pyproject.toml', 'package.json',
     'go.mod', 'Cargo.toml', 'pom.xml', 'build.gradle', 'CMakeLists.txt', 'App.csproj', 'unknown.xyz'])
 def test_baseline_for_every_language_and_unknown_project(tmp_path, marker):

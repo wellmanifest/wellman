@@ -416,6 +416,12 @@ def _registration_lock(root, before, current, *, reconcile_lock_from, expected_l
             target = safe_path(root / relative)
             if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != expected:
                 raise ValueError('Unrelated managed file drift; preserve and reconcile its owner first')
+        ancestry = subprocess.run(
+            ['git', '-C', str(root), 'merge-base', '--is-ancestor', reconcile_lock_from, 'HEAD'],
+            capture_output=True, timeout=10, check=False,
+        )
+        if ancestry.returncode:
+            raise ValueError('Historical registration must belong to the current checkout history')
         result = subprocess.run(
             ['git', '-C', str(root), 'show', f'{reconcile_lock_from}:{name}'],
             capture_output=True, timeout=10, check=False,

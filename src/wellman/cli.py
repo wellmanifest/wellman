@@ -74,6 +74,50 @@ def _git_worktree_records(root: Path) -> list[dict[str, str]]:
     return records
 
 
+def _absorbed_submodule_admitted(root: Path) -> bool:
+    """Verify an absorbed primary against Git's actual parent registration.
+
+    Git can list the module administration directory as its primary worktree.
+    A gitfile alone is insufficient: the parent must admit the checkout, track
+    its gitlink, and own the module metadata with the correct core.worktree.
+    """
+    def observe(checkout: Path, *arguments: str) -> str:
+        result = subprocess.run(
+            ["git", "-C", str(checkout), *arguments],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        if result.returncode != 0:
+            raise ValueError("Git could not verify absorbed submodule registration")
+        return result.stdout.strip()
+
+    if not (root / ".git").is_file():
+        return False
+    parent_value = observe(root, "rev-parse", "--show-superproject-working-tree")
+    if not parent_value:
+        return False
+    parent = Path(parent_value).resolve()
+    relative = root.relative_to(parent).as_posix()
+    if root == parent or _worktree_admission(parent) is not None:
+        return False
+
+    entries = observe(parent, "ls-files", "--stage", "-z", "--", relative).split("\0")
+    entries = [entry for entry in entries if entry]
+    if len(entries) != 1:
+        return False
+    metadata, separator, path = entries[0].partition("\t")
+    if not separator or not metadata.startswith("160000 ") or path != relative:
+        return False
+
+    git_dir = Path(observe(root, "rev-parse", "--absolute-git-dir")).resolve()
+    common = Path(observe(root, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
+    module_path = Path(observe(parent, "rev-parse", "--git-path", "modules"))
+    module_root = (parent / module_path).resolve()
+    if git_dir == module_root or not git_dir.is_relative_to(module_root) or git_dir != common:
+        return False
+    configured = Path(observe(root, "config", "--get", "core.worktree"))
+    return (git_dir / configured).resolve() == root
+
+
 def _worktree_admission(root: Path) -> Optional[Finding]:
     """Reject execution from an unregistered or system-temporary checkout.
 
@@ -122,6 +166,8 @@ def _worktree_admission(root: Path) -> Optional[Finding]:
             None,
         )
         if canonical_root is None:
+            if _absorbed_submodule_admitted(root):
+                return None
             return Finding(
                 code="GOV-WORKTREE-ADMISSION-002",
                 message="Checkout is not registered in Git's worktree set.",

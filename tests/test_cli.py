@@ -938,3 +938,54 @@ def test_ssot_cli_snapshot_never_calls_export_adapter(ssot_cli, capsys, monkeypa
     monkeypatch.setattr(adapter, 'export_ssot_backlog', forbidden)
     assert main(ssot_cli[-1] + ['--json']) == 0
     assert json.loads(capsys.readouterr().out)['schema'] == 'wellman.ssot-analysis/v1'
+
+
+@pytest.mark.parametrize("parent_kind,registered,expected_code", [
+    ("primary", True, None),
+    ("canonical", True, None),
+    ("legacy", True, "GOV-WORKTREE-ADMISSION-002"),
+    ("primary", False, "GOV-WORKTREE-ADMISSION-002"),
+])
+def test_absorbed_submodule_requires_gitlink_and_admitted_parent(parent_kind, registered, expected_code):
+    cache = Path.cwd() / ".subactor" / "cache" / "absorbed-admission-tests"
+    cache.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=cache) as temporary:
+        fixture = Path(temporary)
+        upstream, primary = fixture / "upstream", fixture / "primary"
+        for repo in (upstream, primary):
+            repo.mkdir()
+            git(repo, "init", "-q", "-b", "main")
+            git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                "commit", "--allow-empty", "-qm", "fixture")
+        git(primary, "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+            str(upstream), "packages/child")
+        git(primary, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+            "commit", "-qam", "registered submodule")
+        parent = primary
+        if parent_kind != "primary":
+            directory = ".worktrees/ticket-021--admission" if parent_kind == "canonical" else "legacy/admission"
+            parent = primary / directory
+            parent.parent.mkdir(parents=True, exist_ok=True)
+            git(primary, "worktree", "add", "-b", "ticket/021-admission", str(parent), "HEAD")
+            git(parent, "-c", "protocol.file.allow=always", "submodule", "update", "--init", "-q")
+        child = parent / "packages" / "child"
+        assert (child / ".git").is_file()
+        if not registered:
+            git(parent, "rm", "--cached", "packages/child")
+        finding = _worktree_admission(child.resolve())
+        assert (finding.code if finding else None) == expected_code
+
+
+def test_unrelated_separate_git_directory_is_not_absorbed_submodule():
+    cache = Path.cwd() / ".subactor" / "cache" / "absorbed-admission-tests"
+    cache.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=cache) as temporary:
+        fixture = Path(temporary)
+        checkout, metadata = fixture / "checkout", fixture / "metadata"
+        checkout.mkdir()
+        git(checkout, "init", "-q", "--separate-git-dir", str(metadata))
+        git(checkout, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+            "commit", "--allow-empty", "-qm", "fixture")
+        finding = _worktree_admission(checkout.resolve())
+        assert finding is not None
+        assert finding.code == "GOV-WORKTREE-ADMISSION-002"

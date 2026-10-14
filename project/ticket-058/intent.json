@@ -1,0 +1,85 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-058",
+  "summary": "Admit verified absorbed Git submodules in wellman checks",
+  "workstream": "integration",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-058/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/cli.py",
+    "tests/test_cli.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [
+    "python"
+  ],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "f6375cec9dc0a2727fd3fe911693d52393a1504c",
+    "targetBranch": "main",
+    "outcome": "wellman check accepts a verified absorbed Git submodule while retaining temporary, unknown and invalid parent checkout rejection; publish through independent Validator.",
+    "nonGoals": [
+      "No Git metadata repair or gate bypass",
+      "No device control, firmware write or broader standards rewrite",
+      "No runtime dependency or release manifest change"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Verify the actual Git submodule registration and admitted superproject before accepting an absorbed primary checkout.",
+      "components": [
+        {
+          "name": "cli admission",
+          "paths": [
+            "src/wellman/cli.py",
+            "tests/test_cli.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the material commit through protected delivery."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "pytest -q tests/test_cli.py"
+        ],
+        "evidence": "project/ticket-058/README.md"
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "pytest -q tests",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "project/ticket-058/README.md"
+      }
+    ]
+  }
+}

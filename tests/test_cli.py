@@ -82,10 +82,14 @@ def test_cli_check_fails_closed_for_unimplemented_standard(capsys, tmp_path):
     assert ret == 1
     result = json.loads(capsys.readouterr().out)
     assert result["findings"][0]["code"] == "GOV-DOCS-MISSING"
+    assert result["validation_scope"] == "wellmanifest/docs"
+    assert result["runtime_enforcement"] == "not_checked"
 
 
-def test_cli_check_rejects_git_checkout_below_system_tmp(capsys, tmp_path):
-    git(tmp_path, "init", "-q")
+def test_cli_check_rejects_git_checkout_below_system_tmp(capsys, monkeypatch):
+    # Model the forbidden root without creating any checkout outside this repo.
+    tmp_path = Path("/tmp/wellman-admission-fixture")
+    monkeypatch.setattr("wellman.adoption.repository_root", lambda _: tmp_path)
 
     ret = main([
         "check", "--root", str(tmp_path),
@@ -96,6 +100,56 @@ def test_cli_check_rejects_git_checkout_below_system_tmp(capsys, tmp_path):
     result = json.loads(capsys.readouterr().out)
     assert result["valid"] is False
     assert result["findings"][0]["code"] == "GOV-WORKTREE-ADMISSION-001"
+
+
+def test_worktree_check_rejects_non_git_directory(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kwargs: subprocess.CompletedProcess(argv, 128, "", "not a git repository"))
+    assert main(["check", "--root", str(tmp_path), "--standard", "wellmanifest/worktrees", "--json"]) == 1
+    assert json.loads(capsys.readouterr().out)["valid"] is False
+
+
+@pytest.mark.parametrize("command", ["check", "gate"])
+def test_check_and_gate_resolve_nested_root_without_mutations(tmp_path, capsys, monkeypatch, command):
+    primary = tmp_path / "primary"
+    primary.mkdir()
+    git(primary, "init", "-q")
+    nested = primary / "docs"
+    nested.mkdir()
+    observed = []
+    monkeypatch.setattr("wellman.cli._worktree_admission", lambda root: observed.append(root))
+    monkeypatch.setattr("wellman.runner.ConformanceRunner.run_standard", lambda self, standard: [])
+    monkeypatch.setattr("wellman.runner.ConformanceRunner.run_canonical_gate", lambda self, args: 0)
+    args = [command, "--root", str(nested)]
+    if command == "check":
+        args += ["--standard", "wellmanifest/worktrees", "--json"]
+    assert main(args) == 0
+    assert observed == [primary.resolve()]
+    if command == "check":
+        assert json.loads(capsys.readouterr().out)["root"] == str(primary.resolve())
+    assert not (nested / ".governance").exists()
+
+
+def test_check_ignores_git_location_overrides(tmp_path, monkeypatch, capsys):
+    git(tmp_path, "init", "-q")
+    nested = tmp_path / "docs"
+    nested.mkdir()
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "missing.git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(nested))
+    observed = []
+    monkeypatch.setattr("wellman.cli._worktree_admission", lambda root: observed.append(root))
+    monkeypatch.setattr("wellman.runner.ConformanceRunner.run_standard", lambda self, standard: [])
+    assert main(["check", "--root", str(nested), "--standard", "wellmanifest/worktrees", "--json"]) == 0
+    assert observed == [tmp_path.resolve()]
+
+
+def test_check_rejects_symlinked_requested_path(tmp_path, capsys):
+    target = tmp_path / "target"
+    target.mkdir()
+    git(target, "init", "-q")
+    link = tmp_path / "alias"
+    link.symlink_to(target, target_is_directory=True)
+    assert main(["check", "--root", str(link), "--standard", "wellmanifest/worktrees", "--json"]) == 1
+    assert json.loads(capsys.readouterr().out)["valid"] is False
 
 
 def test_cli_adopt_rejects_unknown_target_without_writing(capsys, tmp_path):

@@ -1,6 +1,10 @@
 """Tests for ConformanceRunner."""
 
 from pathlib import Path
+import subprocess
+
+import pytest
+
 from wellman.runner import ConformanceRunner
 
 
@@ -110,5 +114,119 @@ def test_runner_selected_reuse_unmitigated_clones(tmp_path):
     runner = ConformanceRunner(tmp_path)
     findings = runner.run_standard("wellmanifest/reuse")
     assert any(f.code == "GOV-REUSE-UNMITIGATED-CLONES" and f.severity == "ERROR" for f in findings)
+
+
+@pytest.mark.parametrize("error", [PermissionError("denied"), subprocess.TimeoutExpired("checker", 15)])
+def test_worktree_checker_execution_failure_is_an_error(tmp_path, monkeypatch, error):
+    monkeypatch.setattr("wellman.runner._worktree_admission", lambda _: None)
+    (tmp_path / ".git").mkdir()
+    def execute(argv, **kwargs):
+        if argv[0] == "git":
+            return subprocess.CompletedProcess(argv, 0, str(tmp_path) + "\n", "")
+        raise error
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    findings = ConformanceRunner(tmp_path).check_worktrees()
+    assert any(f.code == "GOV-WORKTREE-CHECK-002" and f.severity == "ERROR" for f in findings)
+
+
+@pytest.mark.parametrize("stdout,stderr", [("", ""), ("", "cannot inspect checkout"), ("GOV-WORKTREE-OVERLAP ERROR conflict", "")])
+def test_worktree_checker_nonzero_exit_always_fails(tmp_path, monkeypatch, stdout, stderr):
+    monkeypatch.setattr("wellman.runner._worktree_admission", lambda _: None)
+    (tmp_path / ".git").mkdir()
+
+    def execute(argv, **kwargs):
+        if argv[0] == "git":
+            return subprocess.CompletedProcess(argv, 0, str(tmp_path) + "\n", "")
+        return subprocess.CompletedProcess(argv, 2, stdout, stderr)
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    findings = ConformanceRunner(tmp_path).check_worktrees()
+    assert any(f.code == "GOV-WORKTREE-OVERLAP-001" and f.severity == "ERROR" for f in findings)
+
+
+def test_worktree_checker_missing_cannot_pass(tmp_path, monkeypatch):
+    monkeypatch.setattr("wellman.runner._worktree_admission", lambda _: None)
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr("wellman.runner._find_bundled_script", lambda _: None)
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 0, str(tmp_path) + "\n", ""))
+    assert any(f.code == "GOV-WORKTREE-CHECK-001" for f in ConformanceRunner(tmp_path).check_worktrees())
+
+
+def test_worktree_conformance_requires_a_git_checkout(tmp_path):
+    findings = ConformanceRunner(tmp_path).check_worktrees()
+    assert any(f.severity == "ERROR" for f in findings)
+
+
+def test_direct_gate_rejects_symlink_before_execution(tmp_path, monkeypatch):
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(target, target_is_directory=True)
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: calls.append(args))
+    assert ConformanceRunner(link).run_canonical_gate() == 1
+    assert calls == []
+
+
+def test_worktree_checker_real_subprocess_contract():
+    import tempfile
+    import shutil
+
+    cache = Path.cwd() / ".subactor/cache/worktree-checker-tests"
+    cache.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=cache) as temporary:
+        primary = Path(temporary)
+        subprocess.run(["git", "-C", str(primary), "init", "-q"], check=True)
+        source = Path(__file__).resolve().parents[1]
+        paths = subprocess.check_output(["git", "-C", str(source), "ls-files", ".governance"], text=True).splitlines()
+        for relative in paths:
+            destination = primary / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / relative, destination)
+        subprocess.run(["git", "-C", str(primary), "add", ".governance"], check=True)
+        subprocess.run(["git", "-C", str(primary), "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                        "commit", "--allow-empty", "-qm", "fixture"], check=True)
+        assert ConformanceRunner(primary).check_worktrees() == []
+
+
+@pytest.mark.parametrize("payload", ["", "{}", '{"status":"passed"}', '{"schema":"new-project.worktree-overlap-report/v1","status":"passed","findings":[],"summary":{"errors":0,"warnings":0,"findings":0,"checkouts":0}}'])
+def test_exit_zero_without_complete_observation_cannot_pass(tmp_path, monkeypatch, payload):
+    monkeypatch.setattr("wellman.runner._worktree_admission", lambda _: None)
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 0, payload, ""))
+    assert any(f.code == "GOV-WORKTREE-CHECK-004" for f in ConformanceRunner(tmp_path).check_worktrees())
+
+
+def test_canonical_gate_uses_verified_adoption_and_rejects_drift(tmp_path, monkeypatch):
+    import hashlib
+    import json
+
+    monkeypatch.setattr("wellman.runner._worktree_admission", lambda _: None)
+    gov = tmp_path / ".governance"
+    gov.mkdir()
+    checker = gov / "governance_check.py"
+    checker.write_text("# pinned fixture\n")
+    (gov / "manifest.lock.json").write_text(json.dumps({"managedFiles": {
+        ".governance/governance_check.py": hashlib.sha256(checker.read_bytes()).hexdigest()}}))
+    called = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: called.append(cmd) or subprocess.CompletedProcess(cmd, 0))
+    assert ConformanceRunner(tmp_path).run_canonical_gate(["--preflight"]) == 0
+    assert called[0][1] == str(checker)
+    checker.write_text("# changed bytes\n")
+    called.clear()
+    assert ConformanceRunner(tmp_path).run_canonical_gate() == 1
+    assert called == []
+
+
+def test_missing_adopted_checker_cannot_fall_back_to_bundled(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setattr("wellman.runner._worktree_admission", lambda _: None)
+    gov = tmp_path / ".governance"
+    gov.mkdir()
+    (gov / "manifest.lock.json").write_text(json.dumps({"managedFiles": {
+        ".governance/governance_check.py": "a" * 64}}))
+    monkeypatch.setattr("wellman.runner._find_bundled_script", lambda _: pytest.fail("must not fall back"))
+    assert ConformanceRunner(tmp_path).run_canonical_gate() == 1
 
 

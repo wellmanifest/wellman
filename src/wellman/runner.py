@@ -11,6 +11,7 @@ Executes deterministic checks across all Wellmanifest standards:
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import runpy
@@ -29,10 +30,212 @@ def _find_bundled_script(script_name: str) -> Optional[Path]:
     return p if p.is_file() else None
 
 
+def _adopted_checker(root: Path, relative: str, required=()) -> Optional[Path]:
+    """Check the adopter's pinned checker and its managed governance dependencies."""
+    from wellman.adoption import safe_path
+
+    checker = root / relative
+    lock_candidate = root / ".governance/manifest.lock.json"
+    if not checker.exists() and not checker.is_symlink() and not lock_candidate.exists() and not lock_candidate.is_symlink():
+        return _find_bundled_script(checker.name)
+    lock_path = safe_path(lock_candidate)
+    lock = json.loads(lock_path.read_text())
+    managed = lock.get("managedFiles")
+    if not isinstance(managed, dict) or not {relative, *required} <= managed.keys():
+        raise ValueError("Adopted checker dependency pins are missing")
+    for relative, expected in managed.items():
+        if not isinstance(relative, str) or not relative.startswith(".governance/"):
+            continue
+        path = safe_path(root / relative)
+        if not path.is_relative_to(root) or not isinstance(expected, str) or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise ValueError("Adopted governance bytes do not match their immutable pins")
+    return safe_path(checker)
+
+
+_CANONICAL_WORKTREE = re.compile(
+    r"^ticket-(?P<number>[0-9]{3,})--(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$"
+)
+_CANONICAL_BRANCH = re.compile(
+    r"^refs/heads/ticket/(?P<number>[0-9]{3,})-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$"
+)
+
+
+def _git_environment():
+    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+
+
+def _git_worktree_records(root: Path) -> list[dict[str, str]]:
+    """Read Git's registered worktrees without repairing or mutating them."""
+    result = subprocess.run(
+        ["git", "-C", str(root), "worktree", "list", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+        env=_git_environment(),
+    )
+    if result.returncode != 0:
+        raise ValueError("Git could not enumerate registered worktrees")
+
+    records: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    for line in result.stdout.splitlines() + [""]:
+        if not line:
+            if current.get("path"):
+                records.append(current)
+            current = {}
+            continue
+        key, _, value = line.partition(" ")
+        if key in {"worktree", "branch"}:
+            current["path" if key == "worktree" else key] = value
+    return records
+
+
+def _absorbed_submodule_admitted(root: Path) -> bool:
+    """Verify an absorbed primary against Git's actual parent registration.
+
+    Git can list the module administration directory as its primary worktree.
+    A gitfile alone is insufficient: the parent must admit the checkout, track
+    its gitlink, and own the module metadata with the correct core.worktree.
+    """
+    def observe(checkout: Path, *arguments: str) -> str:
+        result = subprocess.run(
+            ["git", "-C", str(checkout), *arguments],
+            capture_output=True, text=True, check=False, timeout=10,
+            env=_git_environment(),
+        )
+        if result.returncode != 0:
+            raise ValueError("Git could not verify absorbed submodule registration")
+        return result.stdout.strip()
+
+    if not (root / ".git").is_file():
+        return False
+    parent_value = observe(root, "rev-parse", "--show-superproject-working-tree")
+    if not parent_value:
+        return False
+    parent = Path(parent_value).resolve()
+    relative = root.relative_to(parent).as_posix()
+    if root == parent or _worktree_admission(parent) is not None:
+        return False
+
+    entries = observe(parent, "ls-files", "--stage", "-z", "--", relative).split("\0")
+    entries = [entry for entry in entries if entry]
+    if len(entries) != 1:
+        return False
+    metadata, separator, path = entries[0].partition("\t")
+    if not separator or not metadata.startswith("160000 ") or path != relative:
+        return False
+
+    git_dir = Path(observe(root, "rev-parse", "--absolute-git-dir")).resolve()
+    common = Path(observe(root, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
+    module_path = Path(observe(parent, "rev-parse", "--git-path", "modules"))
+    module_root = (parent / module_path).resolve()
+    if git_dir == module_root or not git_dir.is_relative_to(module_root) or git_dir != common:
+        return False
+    configured = Path(observe(root, "config", "--get", "core.worktree"))
+    return (git_dir / configured).resolve() == root
+
+
+def _worktree_admission(root: Path) -> Optional[Finding]:
+    """Reject execution from an unregistered or system-temporary checkout.
+
+    A plain clone is a valid Git repository from Git's perspective, so Git
+    alone cannot distinguish it from the adopter's primary checkout. The
+    explicit system-temp rejection closes the failure mode that caused agents
+    to work from ``/tmp``; linked delivery worktrees additionally require the
+    v5 directory/branch identity.
+    """
+    try:
+        if root == Path("/tmp") or Path("/tmp") in root.parents:
+            return Finding(
+                code="GOV-WORKTREE-ADMISSION-001",
+                message="Refusing to run from a Git checkout below /tmp.",
+                path=str(root),
+                remediation="Use the registered primary or an allocated canonical ticket worktree.",
+            )
+        top_level = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+            env=_git_environment(),
+        )
+        if top_level.returncode != 0:
+            raise ValueError("Git checkout is not readable")
+        observed_root = Path(top_level.stdout.strip()).resolve()
+        if observed_root != root:
+            raise ValueError("requested root is not the Git checkout root")
+
+        records = _git_worktree_records(root)
+        canonical_root = next(
+            (Path(record["path"]).resolve() for record in records
+             if Path(record["path"]).resolve() == root),
+            None,
+        )
+        if canonical_root is None:
+            if _absorbed_submodule_admitted(root):
+                return None
+            return Finding(
+                code="GOV-WORKTREE-ADMISSION-002",
+                message="Checkout is not registered in Git's worktree set.",
+                path=str(root),
+                remediation=(
+                    "Use git worktree add --relative-paths from the registered "
+                    "primary checkout; do not use a standalone clone."
+                ),
+            )
+
+        primary = Path(records[0]["path"]).resolve() if records else None
+        if primary is None or root == primary:
+            return None
+
+        try:
+            relative = root.relative_to(primary / ".worktrees")
+        except ValueError:
+            return Finding(
+                code="GOV-WORKTREE-ADMISSION-003",
+                message="Linked checkout is outside the canonical .worktrees directory.",
+                path=str(root),
+                remediation="Use <primary>/.worktrees/ticket-NNN--slug.",
+            )
+        if len(relative.parts) != 1:
+            return Finding(
+                code="GOV-WORKTREE-ADMISSION-003",
+                message="Linked checkout is nested below the canonical .worktrees directory.",
+                path=str(root),
+                remediation="Use one direct <primary>/.worktrees/ticket-NNN--slug directory.",
+            )
+
+        directory_match = _CANONICAL_WORKTREE.fullmatch(relative.name)
+        branch = next(
+            (record.get("branch") for record in records
+             if Path(record["path"]).resolve() == root),
+            None,
+        )
+        branch_match = _CANONICAL_BRANCH.fullmatch(branch or "")
+        if not directory_match or not branch_match or directory_match.groupdict() != branch_match.groupdict():
+            return Finding(
+                code="GOV-WORKTREE-ADMISSION-004",
+                message="Linked checkout directory and ticket branch do not share a v5 identity.",
+                path=str(root),
+                remediation="Use ticket-NNN--slug with branch ticket/NNN-slug.",
+            )
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        return Finding(
+            code="GOV-WORKTREE-ADMISSION-005",
+            message=f"Cannot verify canonical worktree admission: {error}",
+            path=str(root),
+            remediation="Re-enter through the Wellmanifest allocator and registered worktree.",
+        )
+    return None
+
+
 class ConformanceRunner:
     """Runs conformance checks across all adopted standards."""
 
     def __init__(self, root: Path):
+        self.requested_root = Path(root)
         self.root = root.resolve()
         self.validator = StandardsValidator(self.root)
 
@@ -68,31 +271,72 @@ class ConformanceRunner:
 
     def check_worktrees(self) -> List[Finding]:
         """Validate wellmanifest/worktrees standard compliance."""
+        from wellman.adoption import safe_path
+
+        try:
+            safe_path(self.requested_root)
+        except (OSError, ValueError) as error:
+            return [Finding("GOV-WORKTREE-ADMISSION-005", str(error), path=str(self.requested_root))]
+        admission = _worktree_admission(self.root)
+        if admission is not None:
+            return [admission]
         findings: List[Finding] = []
         worktrees_dir = self.root / ".worktrees"
 
         # Check bundled worktree overlap check if available
-        checker = _find_bundled_script("worktree_overlap_check.py")
-        if checker and (self.root / ".git").exists():
+        try:
+            checker = _adopted_checker(self.root, ".governance/worktree_overlap_check.py", (
+                ".governance/worktree_path_check.py", ".governance/worktrees.schema.json",
+                ".governance/ticket_activity.py",
+            ))
+        except (OSError, ValueError, TypeError) as error:
+            return [Finding("GOV-WORKTREE-CHECK-001", f"Cannot verify the required checker: {error}")]
+        if checker is None:
+            findings.append(Finding(
+                code="GOV-WORKTREE-CHECK-001",
+                message="Required worktree overlap checker is unavailable.",
+                remediation="Restore the installed checker before claiming conformance.",
+            ))
+        else:
             try:
                 res = subprocess.run(
-                    [sys.executable, str(checker), "--root", str(self.root)],
+                    [sys.executable, str(checker), "--workspace-root", str(self.root),
+                     "--identity-of", str(self.root), "--format", "json"],
                     cwd=str(self.root),
                     capture_output=True,
                     text=True,
                     timeout=15,
+                    env=_git_environment(),
                 )
                 if res.returncode != 0:
-                    for line in res.stdout.splitlines() + res.stderr.splitlines():
-                        if "OVERLAP" in line or "ERROR" in line:
-                            findings.append(Finding(
-                                code="GOV-WORKTREE-OVERLAP-001",
-                                message=line.strip(),
-                                severity="ERROR",
-                                remediation="Resolve concurrent file changes across worktrees or unbind overlapping paths.",
-                            ))
-            except Exception:
-                pass
+                    diagnostic = (res.stdout + "\n" + res.stderr).strip()[:2000]
+                    findings.append(Finding(
+                        code="GOV-WORKTREE-OVERLAP-001",
+                        message=f"Worktree overlap checker exited {res.returncode}: {diagnostic or 'no diagnostic output'}",
+                        remediation="Resolve the checker failure or reported overlap before continuing.",
+                    ))
+                else:
+                    report = json.loads(res.stdout)
+                    summary = report.get("summary", {}) if isinstance(report, dict) else {}
+                    if (not isinstance(report, dict)
+                            or report.get("schema") != "new-project.worktree-overlap-report/v1"
+                            or report.get("status") != "passed" or report.get("findings") != []
+                            or not isinstance(summary, dict)
+                            or any(type(summary.get(key)) is not int or summary[key] != 0 for key in ("errors", "warnings", "findings"))
+                            or type(summary.get("checkouts")) is not int or summary["checkouts"] < 1):
+                        raise ValueError("Checker did not prove a completed passing observation")
+            except (OSError, subprocess.SubprocessError, UnicodeError) as error:
+                findings.append(Finding(
+                    code="GOV-WORKTREE-CHECK-002",
+                    message=f"Cannot execute the required worktree checker: {type(error).__name__}: {str(error)[:2000]}",
+                    remediation="Restore checker access and execution; an unavailable observation cannot pass.",
+                ))
+            except (ValueError, TypeError) as error:
+                findings.append(Finding(
+                    code="GOV-WORKTREE-CHECK-004",
+                    message="Worktree checker returned an invalid or incomplete success report.",
+                    remediation="Restore the pinned report contract; exit zero alone does not prove conformance.",
+                ))
 
         if worktrees_dir.is_dir():
             for entry in worktrees_dir.iterdir():
@@ -473,8 +717,23 @@ class ConformanceRunner:
         )]
 
     def run_canonical_gate(self, extra_args: Optional[List[str]] = None) -> int:
-        """Run the bundled canonical governance_check.py gate."""
-        checker = _find_bundled_script("governance_check.py")
+        """Run the verified adopted gate, falling back only without adoption."""
+        from wellman.adoption import safe_path
+
+        try:
+            safe_path(self.requested_root)
+        except (OSError, ValueError) as error:
+            print(f"ERROR: Cannot establish the requested check context: {error}", file=sys.stderr)
+            return 1
+        admission = _worktree_admission(self.root)
+        if admission is not None:
+            print(f"ERROR: {admission}", file=sys.stderr)
+            return 1
+        try:
+            checker = _adopted_checker(self.root, ".governance/governance_check.py")
+        except (OSError, ValueError, TypeError):
+            print("ERROR: Cannot verify the adopted governance checker and its pinned dependencies.", file=sys.stderr)
+            return 1
         if not checker:
             print("ERROR: Canonical governance_check.py script not found.", file=sys.stderr)
             return 1
@@ -483,5 +742,9 @@ class ConformanceRunner:
         if extra_args:
             cmd.extend(extra_args)
 
-        res = subprocess.run(cmd, cwd=str(self.root))
+        try:
+            res = subprocess.run(cmd, cwd=str(self.root), env=_git_environment())
+        except (OSError, subprocess.SubprocessError):
+            print("ERROR: The required governance checker could not execute.", file=sys.stderr)
+            return 1
         return res.returncode

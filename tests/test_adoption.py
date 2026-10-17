@@ -584,3 +584,40 @@ def test_generated_analysis_failure_and_timeout_do_not_apply_selection(tmp_path,
     with pytest.raises(subprocess.TimeoutExpired):
         adoption.recommend(tmp_path, analyze=True, timeout=2)
     assert not (tmp_path / '.governance').exists()
+
+
+def test_default_new_project_docker_boilerplate_does_not_infer_deployment(tmp_path):
+    folder = tmp_path / '.governance'
+    folder.mkdir()
+    (folder / 'manifest.json').write_text(json.dumps({
+        'docker': {
+            'required': False,
+            'dockerfiles': ['Dockerfile', 'Dockerfile.e2e'],
+            'composeFiles': [
+                'compose.yml', 'compose.yaml',
+                'docker-compose.yml', 'docker-compose.yaml',
+                'compose.e2e.yml',
+            ],
+        },
+    }))
+    result = register(tmp_path)['registration']
+    assert 'deployment' not in result['profiles']
+    assert result['profiles'] == ['baseline']
+
+
+def test_generated_module_evidence_stdlib_ast_fallback_without_code2llm(tmp_path):
+    from wellman.adoption import recommend
+    import subprocess
+    subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
+    src = tmp_path / 'src'
+    src.mkdir()
+    (src / 'service.py').write_text('import fastapi\nimport korullm\nimport mcp\nimport redup\nimport koru\n')
+    result = recommend(tmp_path, analyze=True)
+    assert result['structure']['moduleCount'] == 1
+    assert 'runtime-service' in result['profiles']
+    rec_ids = {item['id'] for item in result['recommendations']}
+    assert 'wellmanifest/llm' in rec_ids
+    assert 'wellmanifest/nl-dsl-llm' in rec_ids
+    assert 'wellmanifest/reuse' in rec_ids
+    assert 'wellmanifest/repair-lifecycle' in rec_ids
+

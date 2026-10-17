@@ -405,11 +405,15 @@ def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False
     return {"schema": REPORT_SCHEMA, "target": target, "repositories": results}
 
 
-def _render_agent_instructions(repo_path: Path, host_id: str) -> str:
+def _render_agent_instructions(
+    repo_path: Path, host_id: str, repository_name: Optional[str] = None
+) -> str:
     """Render the standard agent contract instructions for a specific host ID."""
+    repo_line = f"- Repository: `{repository_name}`\n" if repository_name else ""
     header = (
         "<!-- wellmanifest:source-links:v1 -->\n"
         "## Managed standard sources\n\n"
+        f"{repo_line}"
         "- Local adoption manifest: [.governance/manifest.json](.governance/manifest.json)\n"
         "- Host contract: [.governance/agent-hosts.json](.governance/agent-hosts.json)\n\n"
         "<!-- end wellmanifest:source-links:v1 -->\n\n"
@@ -448,11 +452,11 @@ def sync_agent_instructions(repo_path: Path, repository_name: Optional[str] = No
     """Synchronize standard instruction and learning files for all registered LLM agent hosts."""
     updated: List[str] = []
     agent_hosts_files = {
-        "AGENTS.md": _render_agent_instructions(repo_path, "generic"),
-        "GEMINI.md": _render_agent_instructions(repo_path, "gemini"),
-        "CLAUDE.md": _render_agent_instructions(repo_path, "claude"),
-        ".cursor/rules/new-project-standard.mdc": _render_agent_instructions(repo_path, "cursor"),
-        ".github/copilot-instructions.md": _render_agent_instructions(repo_path, "copilot"),
+        "AGENTS.md": _render_agent_instructions(repo_path, "generic", repository_name=repository_name),
+        "GEMINI.md": _render_agent_instructions(repo_path, "gemini", repository_name=repository_name),
+        "CLAUDE.md": _render_agent_instructions(repo_path, "claude", repository_name=repository_name),
+        ".cursor/rules/new-project-standard.mdc": _render_agent_instructions(repo_path, "cursor", repository_name=repository_name),
+        ".github/copilot-instructions.md": _render_agent_instructions(repo_path, "copilot", repository_name=repository_name),
         ".aider.conf.yml": "read:\n  - AGENTS.md\n  - .governance/manifest.json\n",
     }
     for relative_path, content in agent_hosts_files.items():
@@ -901,13 +905,21 @@ def trigger_taskand_execution(
         except Exception:
             pass
 
+    if callable(engine_runner):
+        return engine_runner(
+            project_path,
+            queue_name=queue_name,
+            dry_run=dry_run,
+            tickets=tickets_data,
+        )
+
     executed_steps: List[Dict[str, Any]] = []
-    repo_name = project_path.name
 
     if dry_run:
         return {
             "ok": True,
             "dry_run": True,
+            "queue": queue_name,
             "project": str(project_path),
             "tickets_found": len(tickets_data),
             "operations_planned": ["artifact.update", "git.commit"],
@@ -931,7 +943,7 @@ def trigger_taskand_execution(
     executed_steps.append({"op": "wellman.check", "code": res_check.returncode, "stdout": res_check.stdout})
 
     # Perform Git commit if changes exist
-    git_add = subprocess.run(
+    subprocess.run(
         ["git", "add", ".governance/"],
         cwd=str(project_path),
         capture_output=True,
@@ -969,6 +981,7 @@ def trigger_taskand_execution(
     return {
         "ok": success,
         "executor": "taskand",
+        "queue": queue_name,
         "project": str(project_path),
         "steps": executed_steps,
         "commit": commit_sha,

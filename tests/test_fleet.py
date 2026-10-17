@@ -458,10 +458,25 @@ def test_emit_standardization_tickets_with_taskand():
 
 def test_trigger_taskand_execution(tmp_path):
     repo = make_repository(tmp_path, "target_repo", "https://github.com/acme/target_repo.git")
-    res = trigger_taskand_execution(repo, dry_run=True)
+    res = trigger_taskand_execution(repo, queue_name="custom-queue", dry_run=True)
     assert res["ok"] is True
     assert res["dry_run"] is True
+    assert res["queue"] == "custom-queue"
     assert "operations_planned" in res
+
+    called = {}
+    def custom_runner(project_path, **kwargs):
+        called["project_path"] = project_path
+        called.update(kwargs)
+        return {"ok": True, "runner": "custom", "queue": kwargs["queue_name"]}
+
+    res_custom = trigger_taskand_execution(
+        repo, queue_name="runner-queue", dry_run=False, engine_runner=custom_runner
+    )
+    assert res_custom["ok"] is True
+    assert res_custom["runner"] == "custom"
+    assert called["project_path"] == repo
+    assert called["queue_name"] == "runner-queue"
 
 
 def test_fleet_check_cli_emit_planfile(tmp_path, capsys):
@@ -511,7 +526,7 @@ def test_discover_repositories_contextual_auto_recursive(tmp_path):
 
 def test_sync_agent_instructions(tmp_path):
     repo = make_repository(tmp_path, "ai_repo", "https://github.com/acme/ai_repo.git")
-    updated = sync_agent_instructions(repo)
+    updated = sync_agent_instructions(repo, repository_name="acme/ai_repo")
 
     assert "AGENTS.md" in updated
     assert "GEMINI.md" in updated
@@ -530,6 +545,7 @@ def test_sync_agent_instructions(tmp_path):
     gemini_content = (repo / "GEMINI.md").read_text(encoding="utf-8")
     assert "new-project" in gemini_content
     assert "new-ticket.sh" in gemini_content
+    assert "acme/ai_repo" in gemini_content
 
 
 def test_fleet_sync_agents_cli(tmp_path, capsys):

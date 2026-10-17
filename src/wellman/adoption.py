@@ -15,26 +15,74 @@ from wellman.registry import PROFILES_CATALOG, get_standard
 
 SCHEMA = 'wellman.standard-requirements/v1'
 
+_DEFAULT_MANIFEST_DOCKERFILES = {'Dockerfile', 'Dockerfile.e2e'}
+_DEFAULT_MANIFEST_COMPOSE_FILES = {
+    'compose.yml', 'compose.yaml', 'docker-compose.yml',
+    'docker-compose.yaml', 'compose.e2e.yml',
+}
+
 # Run the public analyzer in an isolated, timeout-bounded interpreter. Selection
 # needs module evidence, not serialization of functions, nodes or CFG edges.
 _MODULE_ANALYSIS = '''
-import copy, json, sys
+import ast, copy, json, os, sys
 from pathlib import Path
-from code2llm import FAST_CONFIG, ProjectAnalyzer
 root, output = Path(sys.argv[1]), Path(sys.argv[2])
-config = copy.deepcopy(FAST_CONFIG)
-config.no_cache = True
-config.performance.enable_cache = False
-config.performance.parallel_enabled = False
-config.performance.skip_refactoring_analysis = True
-config.quiet = True
-result = ProjectAnalyzer(config=config, project_path=root).analyze_project(str(root))
-if len(result.modules) > 50000:
-    raise ValueError('Too many modules')
-data = {'project_path': str(root), 'modules': {
-    name: {'file': module.file, 'source_kind': getattr(module, 'source_kind', 'source'),
-           'imports': getattr(module, 'imports', [])}
-    for name, module in result.modules.items()}}
+try:
+    from code2llm import FAST_CONFIG, ProjectAnalyzer
+except ImportError:
+    ProjectAnalyzer = None
+modules = None
+if ProjectAnalyzer is not None:
+    try:
+        config = copy.deepcopy(FAST_CONFIG)
+        config.no_cache = True
+        config.performance.enable_cache = False
+        config.performance.parallel_enabled = False
+        config.performance.skip_refactoring_analysis = True
+        config.quiet = True
+        result = ProjectAnalyzer(config=config, project_path=root).analyze_project(str(root))
+        modules = {
+            name: {'file': module.file, 'source_kind': getattr(module, 'source_kind', 'source'),
+                   'imports': getattr(module, 'imports', [])}
+            for name, module in result.modules.items()}
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException:
+        modules = None
+    if modules is not None and len(modules) > 50000:
+        raise ValueError('Too many modules')
+if modules is None:
+    skip = {'.git', '.governance', '.koru', '.mypy_cache', '.nox', '.planfile',
+            '.pytest_cache', '.ruff_cache', '.subactor', '.tox', '.venv', '.worktrees',
+            '__pycache__', '_bundled', 'build', 'dist', 'node_modules', 'target', 'venv',
+            'test', 'tests', 'examples'}
+    suffixes = {'.py', '.js', '.ts', '.go', '.rs', '.java', '.cs'}
+    modules = {}
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = sorted(d for d in dirnames if d not in skip and not d.startswith('.'))
+        for fname in sorted(filenames):
+            fpath = Path(dirpath) / fname
+            if fpath.is_symlink() or fpath.suffix not in suffixes:
+                continue
+            rel = fpath.relative_to(root).as_posix()
+            mod_imports = []
+            if fpath.suffix == '.py' and fpath.stat().st_size <= 1024 * 1024:
+                try:
+                    tree = ast.parse(fpath.read_bytes(), filename=rel)
+                    seen = set()
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.Import):
+                            for alias in node.names:
+                                seen.add(alias.name)
+                        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                            seen.add(node.module)
+                    mod_imports = sorted(seen)[:2000]
+                except Exception:
+                    pass
+            modules[rel] = {'file': rel, 'source_kind': 'source', 'imports': mod_imports}
+            if len(modules) > 50000:
+                raise ValueError('Too many modules')
+data = {'project_path': str(root), 'modules': modules}
 raw = json.dumps(data).encode('utf-8')
 if len(raw) > 20 * 1024 * 1024:
     raise ValueError('Module evidence exceeds 20 MiB')
@@ -219,10 +267,22 @@ def recommend(root, *, ast_report=None, analyze=False, evidence=(), hints=(), ll
             for identifier, level in expand_profiles(['runtime-service']).items():
                 add(identifier, 'Source AST imports a web service framework; review runtime role before adoption')
                 levels[identifier] = max(levels[identifier], level)
-        if roots & {'subllm', 'litellm', 'openai', 'anthropic'}:
+        if roots & {'subllm', 'litellm', 'openai', 'anthropic', 'korullm'}:
             add('wellmanifest/llm', 'Source AST imports an LLM client')
         if roots & {'ast', 'astroid', 'libcst', 'tree_sitter', 'code2llm', 'code2logic'}:
             add('wellmanifest/code-dsl', 'Source AST consumes or analyzes code structure')
+        if roots & {'redup', 'prefact'}:
+            add('wellmanifest/reuse', 'Source AST imports duplication or refactoring analysis tooling')
+        if roots & {'mcp', 'fastmcp'}:
+            add('wellmanifest/nl-dsl-llm', 'Source AST imports Model Context Protocol tooling')
+        if roots & {'koru', 'pfix', 'pactfix', 'heal'}:
+            add('wellmanifest/repair-lifecycle', 'Source AST imports automated repair or patch execution tooling')
+        if roots & {'uncrash'}:
+            add('wellmanifest/session-recovery', 'Source AST imports session recovery tooling')
+        if roots & {'taskand'}:
+            add('wellmanifest/taskand', 'Source AST imports taskand capsule execution tooling')
+        if roots & {'uriprocess'}:
+            add('wellmanifest/uriprocess', 'Source AST imports URI process package manufacturing tooling')
     if analyze:
         with tempfile.TemporaryDirectory(prefix='wellman-ast-') as output:
             result = subprocess.run([sys.executable, '-I', '-c', _MODULE_ANALYSIS,
@@ -512,10 +572,18 @@ def register(root, profiles=(), *, standards=(), dry_run=False,
         if isinstance(docker_cfg, dict):
             if docker_cfg.get('required') is True:
                 selected.add('deployment')
-            for path_key in ('dockerfiles', 'composeFiles'):
+            for path_key, default_paths in (
+                ('dockerfiles', _DEFAULT_MANIFEST_DOCKERFILES),
+                ('composeFiles', _DEFAULT_MANIFEST_COMPOSE_FILES),
+            ):
                 paths = docker_cfg.get(path_key)
-                if isinstance(paths, list) and any(paths):
-                    selected.add('deployment')
+                if isinstance(paths, list):
+                    valid_paths = [p for p in paths if isinstance(p, str) and p]
+                    if any(
+                        p not in default_paths or (root / p).is_file()
+                        for p in valid_paths
+                    ):
+                        selected.add('deployment')
     deployment_dirs = ('', 'deploy', 'deployment', 'infra', 'docker')
     deployment_markers = (
         'Dockerfile', 'compose.yml', 'compose.yaml', 'docker-compose.yml', 'docker-compose.yaml'

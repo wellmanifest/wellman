@@ -315,6 +315,26 @@ class StandardsValidator:
             for item in validate_docs_adoption(self.root, required=required)
         ]
 
+    def registered_requirements(self) -> List[str]:
+        """Return list of standard IDs from standard-requirements.json."""
+        p = self.gov_dir / "standard-requirements.json"
+        if not p.is_file():
+            return []
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            raise ValueError(str(e)) from e
+
+        if not isinstance(data, dict):
+            return []
+        ids: List[str] = []
+        for item in data.get("requirements", []):
+            if isinstance(item, dict):
+                req_id = item.get("id")
+                if isinstance(req_id, str):
+                    ids.append(req_id)
+        return ids
+
     def docs_adoption_required(self) -> bool:
         """Return whether the selected manifest/profile requires docs adoption."""
 
@@ -344,11 +364,62 @@ class StandardsValidator:
                 return True
             return any(profile_includes(parent, target, seen) for parent in profile.extends)
 
+        try:
+            if "wellmanifest/docs" in self.registered_requirements():
+                return True
+        except ValueError:
+            pass
+
         return any(
             item == "wellmanifest/docs"
             or (item.startswith("profile:") and profile_includes(item, "wellmanifest/docs", set()))
             for item in selected
         )
+
+    def validate_required_standards(self) -> List[Finding]:
+        """Validate registered standard requirements from standard-requirements.json."""
+        try:
+            required = self.registered_requirements()
+        except ValueError as e:
+            return [
+                Finding(
+                    "GOV-REQUIREMENTS-JSON",
+                    f"Malformed standard-requirements.json: {e}",
+                    path=".governance/standard-requirements.json",
+                    remediation="Regenerate it with `wellman adopt auto`.",
+                )
+            ]
+
+        findings: List[Finding] = []
+        checked = {"wellmanifest/docs", "wellmanifest/logs", "wellmanifest/new-project", "wellmanifest/worktrees", "wellmanifest/ticket-lifecycle"}
+
+        if "wellmanifest/docs" in required and (self.gov_dir / "docs.json").is_file() and not (self.root / "docs" / "README.md").is_file():
+            findings.append(Finding(
+                "GOV-DOCS-INDEX-MISSING",
+                "wellmanifest/docs is required but the docs/README.md index is missing.",
+                path="docs/README.md",
+                remediation="Add the documentation index docs/README.md and link it from README.md (wellmanifest/docs adoption step 3).",
+            ))
+
+        if "wellmanifest/logs" in required and not (self.root / "errors" / "README.md").is_file():
+            findings.append(Finding(
+                "GOV-LOGS-MISSING",
+                "wellmanifest/logs is required but the error catalog errors/README.md is missing.",
+                path="errors/README.md",
+                remediation="Add the consumer error catalog errors/README.md with one errors/{CODE}.md runbook per emitted code and validate it with `logs_check.py error-adoption`.",
+            ))
+
+        unverified = sorted(r for r in required if r not in checked)
+        if unverified:
+            findings.append(Finding(
+                "GOV-REQUIREMENT-UNVERIFIED",
+                "Registered requirements without a local wellman check: " + ", ".join(unverified),
+                severity="WARNING",
+                path=".governance/standard-requirements.json",
+                remediation="Verify these standards with their own conformance tools; registration is not conformance.",
+            ))
+
+        return findings
 
     def run_all_validations(self) -> List[Finding]:
         """Execute complete suite of standards validations."""
@@ -357,4 +428,5 @@ class StandardsValidator:
         all_findings.extend(self.validate_standard_packs())
         all_findings.extend(self.validate_standard_adoption())
         all_findings.extend(self.validate_docs(required=self.docs_adoption_required()))
+        all_findings.extend(self.validate_required_standards())
         return all_findings

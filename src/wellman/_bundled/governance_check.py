@@ -1109,7 +1109,11 @@ def git_output(root: Path, args: list[str]) -> bytes:
 
 def changed_paths(root: Path, base: str | None, head: str, explicit: list[str]) -> list[str]:
     if explicit:
-        normalized = sorted({path.replace("\\", "/").removeprefix("./") for path in explicit if path})
+        normalized = sorted({
+            path.replace("\\", "/").removeprefix("./")
+            for path in explicit
+            if path and not path.replace("\\", "/").removeprefix("./").startswith(".subactor/cache/")
+        })
         for path in normalized:
             safe_repo_path(root, path)
         return normalized
@@ -1121,7 +1125,7 @@ def changed_paths(root: Path, base: str | None, head: str, explicit: list[str]) 
             tracked = git_output(root, ["diff", "--name-only", "-z", "HEAD"])
             untracked = git_output(root, ["ls-files", "--others", "--exclude-standard", "-z"])
             paths = (tracked + untracked).decode("utf-8", "surrogateescape").split("\0")
-        return sorted({path for path in paths if path})
+        return sorted({path for path in paths if path and not path.startswith(".subactor/cache/")})
     except (subprocess.CalledProcessError, FileNotFoundError) as error:
         raise RuntimeError("Git could not determine the changed-path set") from error
 

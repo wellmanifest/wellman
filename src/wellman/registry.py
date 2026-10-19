@@ -108,12 +108,43 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         id="wellmanifest/reuse",
         name="Code Reuse & Deduplication Standard",
         owner="wellmanifest/reuse",
-        description="Cross-project code discovery, AST clone detection, continuous modularization, and reuse orchestration",
+        description="Cross-project code discovery, AST clone detection, declarative decision graphs, prioritized dependency chains, and streaming composition of modules, components, and processes",
         minimum_level="S3",
         execution_model="protected-conformance",
-        owns=["code discovery", "AST clone detection", "reuse orchestration", "modular extraction", "intent dispatching"],
-        schemas=["reuse-policy.schema.json", "reuse-scan-receipt.schema.json"],
+        owns=[
+            "code discovery",
+            "AST clone detection",
+            "reuse orchestration",
+            "modular extraction",
+            "intent dispatching",
+            "declarative decision routing",
+            "prioritized dependency chains",
+            "streaming module pipelines",
+        ],
+        schemas=["reuse-policy.schema.json", "reuse-scan-receipt.schema.json", "stream-flow.schema.json"],
         docs_url="https://github.com/wellmanifest/reuse",
+    ),
+    "wellmanifest/modularity": StandardPack(
+        id="wellmanifest/modularity",
+        name="Structural Modularity & Boundary Standard",
+        owner="wellmanifest/modularity",
+        description="Deterministic module boundary contract, explicit imports/exports, acyclic dependency DAGs, and side-effect declarations",
+        minimum_level="S3",
+        execution_model="protected-conformance",
+        owns=["module boundary contracts", "acyclic module dependency DAG", "explicit symbol exports"],
+        schemas=["modularity.schema.json", "verification-receipt.schema.json"],
+        docs_url="https://github.com/wellmanifest/modularity",
+    ),
+    "wellmanifest/priority": StandardPack(
+        id="wellmanifest/priority",
+        name="Lexicographic Priority & Signal Ranking Standard",
+        owner="wellmanifest/priority",
+        description="Declarative priority DSL, lexicographic tier ordering (floor > standard > opportunistic), signal-driven revision, and ranking receipts",
+        minimum_level="S3",
+        execution_model="protected-conformance",
+        owns=["priority tier ranking", "signal-driven weight revision", "priority ranking receipts"],
+        schemas=["priority.schema.json", "readings.schema.json", "evaluation-context.schema.json", "ranking-v2.schema.json"],
+        docs_url="https://github.com/wellmanifest/priority",
     ),
     "wellmanifest/new-project": StandardPack(
         id="wellmanifest/new-project",
@@ -424,6 +455,17 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         schemas=["session-recovery.schema.json"],
         docs_url="https://github.com/wellmanifest/session-recovery",
     ),
+    "wellmanifest/lifecycle": StandardPack(
+        id="wellmanifest/lifecycle",
+        name="Lifecycle State-Machine Meta-Standard",
+        owner="wellmanifest/lifecycle",
+        description="Deterministic state-machine DSL, compaction desugaring, and graph invariants for domain lifecycles",
+        minimum_level="S4",
+        execution_model="protected-conformance",
+        owns=["lifecycle meta-DSL", "lifecycle graph invariants", "lifecycle compaction audit"],
+        schemas=["lifecycle.schema.json"],
+        docs_url="https://github.com/wellmanifest/lifecycle",
+    ),
 }
 
 # Standard profiles grouping multiple standard packs
@@ -516,7 +558,10 @@ def get_standard(standard_id: str) -> Optional[StandardPack]:
         "semver": "wellmanifest/semver",
         "nl-uri-dsl-llm": "wellmanifest/nl-uri-dsl-llm",
         "reuse": "wellmanifest/reuse",
-
+        "modularity": "wellmanifest/modularity",
+        "priority": "wellmanifest/priority",
+        "lifecycle": "wellmanifest/lifecycle",
+        "policy-dsl": "wellmanifest/policy-dsl",
     }
     normalized = aliases.get(standard_id, standard_id)
     return STANDARDS_CATALOG.get(normalized)

@@ -703,7 +703,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_gate.add_argument("--ticket", help="Active ticket ID")
     p_gate.set_defaults(func=cmd_gate)
 
+    # uri
+    p_uri = subparsers.add_parser("uri", help="Invoke a URI process with JSON or JSONL payload")
+    p_uri.add_argument("address", help="Full URI address (e.g. proc://ast-scan/complexity/horizontal)")
+    p_uri.add_argument("payload", nargs="?", default=None, help="JSON object or JSONL stream string (reads stdin if omitted)")
+    p_uri.add_argument("--stream", action="store_true", help="Force multi-line JSONL stream output")
+    p_uri.add_argument("--timeout", type=float, default=30.0, help="Subprocess timeout in seconds")
+    p_uri.add_argument("--raw", action="store_true", help="Emit only the inner data field")
+    p_uri.set_defaults(func=cmd_uri)
+
     return parser
+
+
+def cmd_uri(args: argparse.Namespace) -> int:
+    from wellman.uri import main as uri_main
+
+    argv = [args.address]
+    if args.payload is not None:
+        argv.append(args.payload)
+    if args.stream:
+        argv.append("--stream")
+    if args.timeout != 30.0:
+        argv.extend(["--timeout", str(args.timeout)])
+    if args.raw:
+        argv.append("--raw")
+    return uri_main(argv)
 
 
 def cmd_recommend(args) -> int:

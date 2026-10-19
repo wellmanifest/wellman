@@ -391,7 +391,26 @@ class StandardsValidator:
             ]
 
         findings: List[Finding] = []
-        checked = {"wellmanifest/docs", "wellmanifest/logs", "wellmanifest/new-project", "wellmanifest/worktrees", "wellmanifest/ticket-lifecycle"}
+        checked = {
+            "wellmanifest/docs",
+            "wellmanifest/logs",
+            "wellmanifest/new-project",
+            "wellmanifest/worktrees",
+            "wellmanifest/ticket-lifecycle",
+            "wellmanifest/git-lifecycle",
+            "wellmanifest/agent",
+            "wellmanifest/session-recovery",
+            "wellmanifest/reuse",
+            "wellmanifest/modularity",
+            "wellmanifest/priority",
+            "wellmanifest/policy-dsl",
+            "wellmanifest/lifecycle",
+            "wellmanifest/legal-lifecycle",
+            "wellmanifest/product-lifecycle",
+            "wellmanifest/saas-lifecycle",
+            "wellmanifest/twin-lifecycle",
+            "wellmanifest/uriprocess",
+        }
 
         if "wellmanifest/docs" in required and (self.gov_dir / "docs.json").is_file() and not (self.root / "docs" / "README.md").is_file():
             findings.append(Finding(

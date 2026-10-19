@@ -417,17 +417,27 @@ class ConformanceRunner:
         findings.extend(self.check_local_ci_publication())
         # 7. Session recovery & LLM agent storage integrity (via uncrash)
         findings.extend(self.check_session_recovery())
-        # 8. Reuse standard checks if adopted
+        # 8. Reuse standard checks if adopted or registered in standard-requirements.json
+        reuse_required = False
+        try:
+            reuse_required = "wellmanifest/reuse" in self.validator.registered_requirements()
+        except ValueError:
+            pass
         manifest_path = self.root / ".governance" / "manifest.json"
-        if manifest_path.is_file():
+        if not reuse_required and manifest_path.is_file():
             try:
                 mdata = json.loads(manifest_path.read_text(encoding="utf-8"))
                 packs = mdata.get("packs", [])
                 std_id = mdata.get("standard", {}).get("id", "")
                 if "wellmanifest/reuse" in packs or std_id in ("wellmanifest/reuse", "profile:full"):
-                    findings.extend(self.check_reuse())
+                    reuse_required = True
             except Exception:
                 pass
+        if reuse_required:
+            findings.extend(self.check_reuse())
+        # 9. Policy DSL and Lifecycle DSL validation and compaction audits when files exist
+        findings.extend(self.check_policy_dsl())
+        findings.extend(self.check_lifecycle_dsl())
         return findings
 
     def check_local_ci_publication(self) -> List[Finding]:
@@ -569,6 +579,175 @@ class ConformanceRunner:
                 remediation="Create docs/README.md conforming to the Compact v2 documentation specification.",
             ))
 
+        # 4. Optional stream-flow horizontal complexity audit (REUSE-015..018)
+        stream_flow_cfg = self.root / ".reuse" / "stream-flow.json"
+        if stream_flow_cfg.is_file():
+            from wellman.stream_flow import analyze_horizontal_complexity
+            report = analyze_horizontal_complexity(self.root)
+            for hs in report.get("hotspots", []):
+                findings.append(Finding(
+                    code="GOV-REUSE-HORIZONTAL-HOTSPOT",
+                    message=f"{hs['code']} in {hs['path']}:{hs['line']} (metric={hs['metric']}, limit={hs['limit']})",
+                    severity="WARNING",
+                    path=hs["path"],
+                    remediation=hs["remediation"],
+                ))
+
+        return findings
+
+    def check_modularity(self) -> List[Finding]:
+        """Validate wellmanifest/modularity boundary contract when present."""
+        findings: List[Finding] = []
+        candidates = [
+            self.root / "modularity.dsl",
+            self.root / ".governance" / "modularity.dsl",
+        ]
+        doc_path = next((p for p in candidates if p.is_file()), None)
+        if doc_path is None:
+            return findings
+        text = doc_path.read_text(encoding="utf-8")
+        if "modularity " not in text and "module " not in text:
+            findings.append(Finding(
+                code="GOV-MODULARITY-INVALID",
+                message=f"Modularity specification '{doc_path.relative_to(self.root)}' does not declare a modularity header or module block.",
+                severity="ERROR",
+                path=str(doc_path.relative_to(self.root)),
+                remediation="Declare `modularity <id> version <semver>` and `module <name>` blocks per wellmanifest/modularity.",
+            ))
+        return findings
+
+    def check_priority(self) -> List[Finding]:
+        """Validate wellmanifest/priority ranking contract when present."""
+        findings: List[Finding] = []
+        candidates = [
+            self.root / "priority.dsl",
+            self.root / ".priority" / "priority.dsl",
+            self.root / ".governance" / "priority.dsl",
+        ]
+        doc_path = next((p for p in candidates if p.is_file()), None)
+        if doc_path is None:
+            return findings
+        text = doc_path.read_text(encoding="utf-8")
+        if "priority_set " not in text and "priority " not in text:
+            findings.append(Finding(
+                code="GOV-PRIORITY-INVALID",
+                message=f"Priority specification '{doc_path.relative_to(self.root)}' does not declare a priority_set or priority block.",
+                severity="ERROR",
+                path=str(doc_path.relative_to(self.root)),
+                remediation="Declare `priority_set <id> version <semver>` and `priority <id> tier <tier>` blocks per wellmanifest/priority.",
+            ))
+        return findings
+
+    def check_policy_dsl(self) -> List[Finding]:
+        """Validate wellmanifest/policy-dsl .policy files and audit compaction via URI process."""
+        from wellman.uri import uri
+
+        findings: List[Finding] = []
+        candidates: List[Path] = []
+        for pattern in ("*.policy", "policies/*.policy", "profiles/**/*.policy", "examples/valid/*.policy", "examples/hosting/*.policy"):
+            for p in sorted(self.root.glob(pattern)):
+                if p.is_file() and p not in candidates:
+                    candidates.append(p)
+
+        for policy_path in candidates:
+            rel_path = str(policy_path.relative_to(self.root))
+            try:
+                env = uri("proc://policy-dsl/audit", {"path": str(policy_path)})
+                audit = env.get("result", {})
+                for item in audit.get("findings", []):
+                    findings.append(Finding(
+                        code=item.get("code", "POLICY-COMPACT"),
+                        message=item.get("message", "Policy compaction opportunity detected."),
+                        severity="WARNING",
+                        path=rel_path,
+                        remediation=f"Refactor using {item.get('construct', 'compact Policy DSL constructs')}.",
+                    ))
+            except Exception as exc:
+                findings.append(Finding(
+                    code="GOV-POLICY-DSL-INVALID",
+                    message=f"Invalid Policy DSL document '{rel_path}': {exc}",
+                    severity="ERROR",
+                    path=rel_path,
+                    remediation="Fix syntax or semantic errors per wellmanifest/policy-dsl.",
+                ))
+        return findings
+
+    def check_lifecycle_dsl(self) -> List[Finding]:
+        """Validate wellmanifest/lifecycle .lifecycle files and audit compaction via URI process."""
+        from wellman.uri import uri
+
+        findings: List[Finding] = []
+        candidates: List[Path] = []
+        for pattern in ("*.lifecycle", "standard/*.lifecycle", "profiles/*.lifecycle", "subprojects/*/*.lifecycle"):
+            for p in sorted(self.root.glob(pattern)):
+                if p.is_file() and p not in candidates:
+                    candidates.append(p)
+
+        for lc_path in candidates:
+            rel_path = str(lc_path.relative_to(self.root))
+            try:
+                uri("proc://lifecycle-dsl/validate", {"path": str(lc_path)})
+                env = uri("proc://lifecycle-dsl/audit", {"path": str(lc_path)})
+                audit = env.get("result", {})
+                for item in audit.get("findings", []):
+                    findings.append(Finding(
+                        code=item.get("code", "LIFECYCLE-COMPACT"),
+                        message=item.get("message", "Lifecycle compaction opportunity detected."),
+                        severity="WARNING",
+                        path=rel_path,
+                        remediation=f"Refactor using {item.get('construct', 'compact Lifecycle DSL constructs')}.",
+                    ))
+            except Exception as exc:
+                findings.append(Finding(
+                    code="GOV-LIFECYCLE-DSL-INVALID",
+                    message=f"Invalid Lifecycle DSL document '{rel_path}': {exc}",
+                    severity="ERROR",
+                    path=rel_path,
+                    remediation="Fix state machine syntax or graph invariants per wellmanifest/lifecycle.",
+                ))
+        return findings
+
+    def check_uriprocess(self) -> List[Finding]:
+        """Validate wellmanifest/uriprocess package metadata and polyglot uri('') invocation links."""
+        from wellman.uri import uri, validate_process_uri
+
+        findings: List[Finding] = []
+        pkg_manifest = self.root / "uriprocess.json"
+        if pkg_manifest.is_file():
+            try:
+                data = json.loads(pkg_manifest.read_text(encoding="utf-8"))
+                uris = list(data.get("public_uris", []))
+                if "process_ref" in data:
+                    uris.append(data["process_ref"])
+                if not uris:
+                    findings.append(Finding(
+                        code="URP-SCHEMA-001",
+                        message="uriprocess.json must declare 'public_uris' or 'process_ref'.",
+                        severity="ERROR",
+                        path="uriprocess.json",
+                        remediation="Declare canonical process URIs in uriprocess.json.",
+                    ))
+                for u in uris:
+                    validate_process_uri(str(u))
+            except Exception as exc:
+                findings.append(Finding(
+                    code="URP-IDENTITY-001",
+                    message=f"Invalid uriprocess.json: {exc}",
+                    severity="ERROR",
+                    path="uriprocess.json",
+                    remediation="Ensure uriprocess.json conforms to wellmanifest/uriprocess.",
+                ))
+
+        scan_env = uri("proc://uriprocess/invocation/scan", {"root": str(self.root)})
+        scan_res = scan_env.get("result", {})
+        for item in scan_res.get("invalid_links", []):
+            findings.append(Finding(
+                code=item.get("code", "URP-IDENTITY-001"),
+                message=f"{item.get('message')} at line {item.get('line')}",
+                severity="ERROR",
+                path=item.get("path", ""),
+                remediation="Use canonical 'scheme://authority/path' process URI in uri('...') invocations.",
+            ))
         return findings
 
     def _fallback_storage_health(self, home: Path) -> dict:
@@ -703,6 +882,15 @@ class ConformanceRunner:
             "wellmanifest/docs": lambda: self.validator.validate_docs(required=True),
             "wellmanifest/session-recovery": self.check_session_recovery,
             "wellmanifest/reuse": self.check_reuse,
+            "wellmanifest/modularity": self.check_modularity,
+            "wellmanifest/priority": self.check_priority,
+            "wellmanifest/policy-dsl": self.check_policy_dsl,
+            "wellmanifest/lifecycle": self.check_lifecycle_dsl,
+            "wellmanifest/legal-lifecycle": self.check_lifecycle_dsl,
+            "wellmanifest/product-lifecycle": self.check_lifecycle_dsl,
+            "wellmanifest/saas-lifecycle": self.check_lifecycle_dsl,
+            "wellmanifest/twin-lifecycle": self.check_lifecycle_dsl,
+            "wellmanifest/uriprocess": self.check_uriprocess,
         }
         check = checks.get(standard_id)
         if check is not None:

@@ -34,6 +34,8 @@ CAPABILITIES = {
     'twin-lifecycle':'lifecycle:digital-twin','anonym':'data:identifying-information',
     'legal-lifecycle':'product:published','product-lifecycle':'product:published',
     'session-recovery':'runtime:session-recovery','reuse':'quality:code-reuse',
+    'modularity':'quality:modularity','priority':'lifecycle:priority',
+    'lifecycle':'contract:lifecycle-dsl',
 }
 RULES = {identifier:{'scope':'repository' if identifier in BASELINE else 'component',
     'applies_when':{'all':[{'feature':'repository:git' if identifier in BASELINE else CAPABILITIES[identifier.split('/')[1]],'is':'present'}],'any':[]},
@@ -112,6 +114,32 @@ def _managed_control_effects(paths):
             if fnmatchcase(root, path) or not glob and root.startswith(path + '/'):
                 effects.add(effect)
     return effects
+
+
+def _apply_adoption_transition(d, adopted, current, m, inspection) -> bool:
+    if not adopted:
+        if inspection and inspection['coverage']=='complete':
+            d.update(action='add',reasons=['MATCHING_CAPABILITY_NO_ADOPTION'],risk='medium')
+            return True
+        d['reasons']=['ADOPTION_COVERAGE_UNKNOWN']
+        return False
+    if current['state']=='drifted':
+        if current['revision']!=m['revision'] and current['revision'] not in m['migration']['from_revisions']:
+            d['reasons']=['MIGRATION_UNAVAILABLE']
+            return False
+        d.update(action='repair',reasons=['LOCAL_DRIFT_REVIEW'],risk='high')
+        d['limitations'].append('LOCAL_CHANGES_MUST_BE_PRESERVED')
+        return True
+    if current['revision']==m['revision']:
+        d.update(action='keep',risk='low',reasons=['TARGET_ALREADY_ADOPTED'])
+        if current['conformance']!='verified':
+            d['limitations'].append('CONFORMANCE_UNVERIFIED')
+        return True
+    if current['revision'] not in m['migration']['from_revisions']:
+        d['reasons']=['MIGRATION_UNAVAILABLE']
+        return False
+    d.update(action='update',reasons=['DECLARED_MIGRATION'],risk='medium')
+    return True
 
 
 def resolve_applicability(observation, catalog, adoptions, *, advisory=None):
@@ -228,21 +256,8 @@ def resolve_applicability(observation, catalog, adoptions, *, advisory=None):
                 if current['state']=='unknown':d['reasons']=['ADOPTION_UNKNOWN' if bound_adoption else 'ADOPTION_OBSERVATION_UNBOUND'];continue
                 if current['exceptions']:
                     d['reasons']=['EXCEPTION_REVIEW_REQUIRED'];continue
-                if adopted and current['revision']==m['revision'] and current['state']!='drifted':
-                    d.update(action='keep',risk='low',reasons=['TARGET_ALREADY_ADOPTED'])
-                    if current['conformance']!='verified':d['limitations'].append('CONFORMANCE_UNVERIFIED')
-                elif adopted and current['state']=='drifted':
-                    if current['revision']!=m['revision'] and current['revision'] not in m['migration']['from_revisions']:
-                        d['reasons']=['MIGRATION_UNAVAILABLE'];continue
-                    d.update(action='repair',reasons=['LOCAL_DRIFT_REVIEW'],risk='high')
-                    d['limitations'].append('LOCAL_CHANGES_MUST_BE_PRESERVED')
-                elif adopted:
-                    if current['revision'] not in m['migration']['from_revisions']:
-                        d['reasons']=['MIGRATION_UNAVAILABLE'];continue
-                    d.update(action='update',reasons=['DECLARED_MIGRATION'],risk='medium')
-                elif inspection and inspection['coverage']=='complete':
-                    d.update(action='add',reasons=['MATCHING_CAPABILITY_NO_ADOPTION'],risk='medium')
-                else:d['reasons']=['ADOPTION_COVERAGE_UNKNOWN'];continue
+                if not _apply_adoption_transition(d, adopted, current, m, inspection):
+                    continue
                 if d['action'] in ('add','update','repair'):
                     if not d['managed_files'] or not d['validators']:
                         d.update(action='defer',risk='unknown');d['reasons'].append('MANAGED_SCOPE_OR_VALIDATION_UNKNOWN')

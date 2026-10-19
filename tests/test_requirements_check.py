@@ -97,3 +97,18 @@ def test_no_requirements_file_keeps_previous_behaviour(repository):
 def test_malformed_requirements_file_is_reported(repository):
     (repository / ".governance" / "standard-requirements.json").write_text("{", encoding="utf-8")
     assert codes(repository)["GOV-REQUIREMENTS-JSON"].severity == "ERROR"
+
+
+def test_implemented_runner_standards_are_not_flagged_unverified(repository):
+    from wellman.runner import ConformanceRunner
+    require(
+        repository,
+        "wellmanifest/git-lifecycle",
+        "wellmanifest/agent",
+        "wellmanifest/session-recovery",
+        "wellmanifest/reuse",
+    )
+    found = codes(repository)
+    assert "GOV-REQUIREMENT-UNVERIFIED" not in found
+    runner_codes = {f.code: f for f in ConformanceRunner(repository).run_all()}
+    assert "GOV-REUSE-NO-RECEIPT" in runner_codes

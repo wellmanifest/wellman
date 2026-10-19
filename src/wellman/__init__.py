@@ -26,6 +26,7 @@ from wellman.registry import (
     list_standards,
 )
 from wellman.runner import ConformanceRunner
+from wellman.uri import register_uri_process, uri
 from wellman.validator import Finding, StandardsValidator
 
 __all__ = [
@@ -43,4 +44,6 @@ __all__ = [
     "StandardsValidator",
     "ConformanceRunner",
     "Finding",
+    "uri",
+    "register_uri_process",
 ]

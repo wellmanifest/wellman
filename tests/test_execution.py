@@ -170,6 +170,59 @@ def test_real_nonzero_exit_is_preserved_in_receipt(project):
     assert report["status"] == "failed" and report["exit_code"] == 7
 
 
+def test_tool_caches_override_inherited_paths_and_persist_between_runs(project, tmp_path, monkeypatch):
+    environment(project)
+    names = ("XDG_CACHE_HOME", "PIP_CACHE_DIR", "UV_CACHE_DIR")
+    foreign = tmp_path / "another project's cache"
+    foreign.mkdir()
+    for name in names:
+        monkeypatch.setenv(name, str(foreign))
+    command = ["python", "-c", """
+import os, pathlib
+for name in ('XDG_CACHE_HOME', 'PIP_CACHE_DIR', 'UV_CACHE_DIR'):
+    directory = pathlib.Path(os.environ[name])
+    assert directory.is_relative_to(pathlib.Path.cwd())
+    marker = directory / 'counter'
+    marker.write_text(str(int(marker.read_text()) + 1) if marker.exists() else '1')
+"""]
+    assert execute(project, command) == 0
+    assert execute(project, command) == 0
+    reports = receipts(project)
+    assert len(reports) == 2
+    assert reports[0]["tool_caches"] == reports[1]["tool_caches"]
+    assert reports[0]["tmpdir"] != reports[1]["tmpdir"]
+    assert set(reports[0]["tool_caches"]) == set(names)
+    for directory in reports[0]["tool_caches"].values():
+        path = Path(directory)
+        assert path.is_relative_to(project / ".subactor/cache/execution/tools")
+        assert (path / "counter").read_text() == "2"
+        if os.name != "nt":
+            assert path.stat().st_mode & 0o777 == 0o700
+    assert list(foreign.iterdir()) == []
+
+
+@pytest.mark.parametrize("component", ["tools", "tools/xdg", "tools/pip", "tools/uv"])
+@pytest.mark.parametrize("redirect", [True, False], ids=["symlink", "file"])
+def test_invalid_tool_cache_fails_before_launch(project, tmp_path, component, redirect):
+    environment(project)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel"
+    sentinel.write_text("preserve")
+    target = project / ".subactor/cache/execution" / component
+    target.parent.mkdir(parents=True)
+    if redirect:
+        target.symlink_to(outside, target_is_directory=True)
+    else:
+        target.write_text("preserve")
+    with pytest.raises(ValueError, match="symlink|non-directory"):
+        execute(project, probe_command())
+    assert not (project / "observed.json").exists()
+    assert receipts(project) == []
+    assert sentinel.read_text() == "preserve"
+    assert list(outside.iterdir()) == [sentinel]
+
+
 def test_parallel_commands_own_distinct_scratch(project):
     environment(project)
     command = ["python", "-c", "import tempfile; tempfile.TemporaryFile().close()"]

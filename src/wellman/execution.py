@@ -87,6 +87,17 @@ def _command(arguments, root, venv, python):
     return [str(python), *(["-m", "pytest"] if is_pytest else []), *arguments[1:]]
 
 
+def _tool_caches(root):
+    tools = safe_path(root / ".subactor/cache/execution/tools")
+    paths = {name: safe_path(tools / directory) for name, directory in (
+        ("XDG_CACHE_HOME", "xdg"), ("PIP_CACHE_DIR", "pip"), ("UV_CACHE_DIR", "uv"),
+    )}
+    for directory in (tools, *paths.values()):
+        if directory.exists() and not directory.is_dir():
+            raise ExecutionError("Execution tool cache has a non-directory component")
+    return {name: str(path) for name, path in paths.items()}
+
+
 def _child_environment(root, venv, python, scratch):
     environment = {
         key: value for key, value in os.environ.items()
@@ -104,6 +115,7 @@ def _child_environment(root, venv, python, scratch):
         # checkout above the cache and accidentally adopt/mutate that checkout.
         "GIT_CEILING_DIRECTORIES": str(scratch),
     })
+    environment.update(_tool_caches(root))
     # Explicit candidate source only; never import a sibling/primary checkout
     # through an inherited PYTHONPATH. Dependencies remain in the admitted venv.
     source = root / "src"
@@ -135,6 +147,7 @@ def prepare(requested, arguments, *, allow_primary=False):
         "schema": "wellman.project-execution/v1", "checkout": str(root),
         "primary_checkout": str(primary), "head_sha": head,
         "venv": str(venv), "interpreter": str(python), "cache": str(cache),
+        "tool_caches": _tool_caches(root),
         "primary_venv_reused": venv == primary / ".venv" and root != primary,
         "source_binding": "dirty_worktree_not_attested" if _git(
             root, "status", "--porcelain", "--untracked-files=normal"
@@ -144,7 +157,7 @@ def prepare(requested, arguments, *, allow_primary=False):
     }, command
 
 
-def _private_run(cache):
+def _private_directory(cache):
     # Validate every existing path component before creating local state.
     safe_path(cache)
     for directory in reversed([cache, *cache.parents]):
@@ -154,6 +167,10 @@ def _private_run(cache):
         else:
             directory.mkdir(mode=0o700, exist_ok=True)
         safe_path(directory)
+
+
+def _private_run(cache):
+    _private_directory(cache)
     run = cache / uuid.uuid4().hex
     run.mkdir(mode=0o700)
     (run / "tmp").mkdir(mode=0o700)
@@ -166,6 +183,8 @@ def execute(requested, arguments, *, allow_primary=False, dry_run=False):
     if dry_run:
         print(json.dumps(context, indent=2))
         return 0
+    for directory in context["tool_caches"].values():
+        _private_directory(Path(directory))
     run = _private_run(Path(context["cache"]))
     context.update({"run_id": run.name, "tmpdir": str(run / "tmp"),
                     "started_at": datetime.now(timezone.utc).isoformat(), "status": "running"})

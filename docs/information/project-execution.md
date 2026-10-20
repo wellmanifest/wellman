@@ -139,6 +139,26 @@ External immutable tool installations, credentials and protected controller
 receipt stores keep their declared ownership. They are not development scratch
 and this profile authorizes no data migration or blanket ban on those paths.
 
+### Declared protected CI backend
+
+An independently controlled verifier may bind a dedicated backend from the
+target project's registered primary checkout instead of placing its test
+fixtures beneath the candidate Git tree. This is an explicit role, with the
+host bind mapping verified during deployment and a private directory per job.
+It is not permission to inherit a shared global `TMPDIR` or infer ownership
+from a directory name. The tested interpreter remains in the candidate's
+`.venv`; its dependency inputs and frozen support runtime remain declared.
+
+[OneDev PR #601](https://github.com/subactor/onedev-agent/pull/601) proposes
+this profile for Wellman: `/opt/wellman-job-scratch` binds to Wellman's own
+ignored primary cache, each run owns a fresh private subdirectory, and only the
+verified Planfile 0.1.126 wheel is installed into the local `.venv` over the
+frozen verifier dependencies. Global packages and other repositories' profiles
+are preserved. Keeping these CI fixtures outside the candidate Git ancestry
+also prevents older dependency configuration discovery from loading sibling
+operator policy. Source proposal, protected qualification and actual deployment
+must still be observed separately.
+
 <!-- docs:section evidence -->
 ## Qualification
 

@@ -569,6 +569,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", "-v", action="store_true", help="Show version information")
     subparsers = parser.add_subparsers(dest="command", help="Sub-commands")
 
+    from wellman.execution import add_parser as add_execution_parser
+    add_execution_parser(subparsers)
+
     # check
     p_check = subparsers.add_parser("check", help="Check standards compliance")
     p_check.add_argument("--root", "-r", default=".", help="Target repository root path")

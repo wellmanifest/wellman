@@ -333,7 +333,7 @@ def repository_root(path, *, bootstrap=False):
         raise ValueError(f'Project root must exist: {root}')
     # A caller's Git overrides must not redirect discovery to another checkout.
     environment = {key: value for key, value in os.environ.items()
-                   if not key.startswith('GIT_')}
+                   if not key.startswith('GIT_') or key == 'GIT_CEILING_DIRECTORIES'}
     try:
         result = subprocess.run(
             ['git', '-C', str(root), 'rev-parse', '--show-toplevel'],
@@ -349,9 +349,20 @@ def repository_root(path, *, bootstrap=False):
         except ValueError as error:
             raise ValueError('Git discovered a working tree outside the requested path') from error
         return discovered
-    # Bootstrap is explicit and must not hide a broken Git checkout.
+    # Mirror Git's discovery ceiling when distinguishing explicit non-Git
+    # bootstrap from broken metadata. A repository above an isolated fixture
+    # boundary is not that fixture's broken checkout.
+    ceilings = {Path(value).absolute() for value in
+                environment.get('GIT_CEILING_DIRECTORIES', '').split(os.pathsep)
+                if value and Path(value).is_absolute()}
+    ancestors = [root]
+    if root not in ceilings:
+        for parent in root.parents:
+            if parent in ceilings:
+                break
+            ancestors.append(parent)
     if any((parent / '.git').exists() or (parent / '.git').is_symlink()
-           for parent in (root, *root.parents)):
+           for parent in ancestors):
         raise ValueError('Git repository discovery failed; repair its metadata first')
     try:
         bare = subprocess.run(

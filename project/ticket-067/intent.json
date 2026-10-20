@@ -1,0 +1,27 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-067",
+  "summary": "Fail closed on unrelated Python interpreters and use checkout-owned scratch for explicit Wellman Python command execution",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-067/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/cli.py",
+    "src/wellman/execution.py",
+    "tests/test_execution.py",
+    "src/wellman/adoption.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

@@ -230,3 +230,13 @@ def test_missing_adopted_checker_cannot_fall_back_to_bundled(tmp_path, monkeypat
     assert ConformanceRunner(tmp_path).run_canonical_gate() == 1
 
 
+
+
+def test_bundled_worktree_checker_ships_its_path_contract(tmp_path, monkeypatch):
+    monkeypatch.setattr("wellman.runner._worktree_admission", lambda _: None)
+    for argv in (["git", "init", "--quiet", "--initial-branch=main", str(tmp_path)],
+                 ["git", "-C", str(tmp_path), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                  "commit", "--quiet", "--allow-empty", "-m", "fixture"]):
+        subprocess.run(argv, check=True, capture_output=True)
+    findings = ConformanceRunner(tmp_path).check_worktrees()
+    assert [f.code for f in findings if f.severity == "ERROR"] == []

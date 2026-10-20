@@ -25,6 +25,7 @@ from wellman.registry import (
 )
 from wellman.docs_adoption import validate_adoption as validate_docs_adoption
 
+STANDARD_HOME_ID = "wellmanifest/new-project"
 
 @dataclass
 class Finding:
@@ -204,8 +205,13 @@ class StandardsValidator:
         findings: List[Finding] = []
         manifest_path = self.gov_dir / "manifest.json"
         lock_path = self.gov_dir / "manifest.lock.json"
+        standard_home = False
 
-        if not manifest_path.is_file():
+        if not manifest_path.is_file() and self._is_standard_home():
+            # The standard's own source repository carries its hub manifest and no adoption lock.
+            manifest_path = self.root / "governance" / "manifest.hub.json"
+            standard_home = True
+        elif not manifest_path.is_file():
             findings.append(Finding(
                 "GOV-MANIFEST-MISSING",
                 "Missing .governance/manifest.json",
@@ -235,7 +241,9 @@ class StandardsValidator:
             findings.append(Finding("GOV-MANIFEST-NO-VERSION", "manifest.json missing 'standard.version'"))
 
         # Check lockfile
-        if lock_path.is_file():
+        if standard_home:
+            pass
+        elif lock_path.is_file():
             try:
                 lock_data = json.loads(lock_path.read_text(encoding="utf-8"))
                 managed_files = lock_data.get("managedFiles", {})
@@ -268,6 +276,17 @@ class StandardsValidator:
             ))
 
         return findings
+
+    def _is_standard_home(self) -> bool:
+        """True for the wellmanifest/new-project source repository itself."""
+        hub_manifest = self.root / "governance" / "manifest.hub.json"
+        if not hub_manifest.is_file():
+            return False
+        try:
+            standard = json.loads(hub_manifest.read_text(encoding="utf-8")).get("standard", {})
+        except (OSError, ValueError, AttributeError):
+            return False
+        return isinstance(standard, dict) and standard.get("id") == STANDARD_HOME_ID
 
     @staticmethod
     def _is_registered_adoption_target(standard_id: Any) -> bool:

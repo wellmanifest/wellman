@@ -76,4 +76,3 @@ def scan_links(root: Path, validate, invocation_error) -> Dict[str, Any]:
         "invalid_links": invalid_links,
         "migration_candidates": migration_candidates,
     }
-

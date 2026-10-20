@@ -1,0 +1,74 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-068",
+  "summary": "Document checkout-bound execution and distinguish static checks from runtime admission",
+  "workstream": "integration",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-068/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "docs/README.md",
+    "docs/information/project-execution.md"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "70edd469cbea3e417baafe6af78566bd06d34eb6",
+    "targetBranch": "main",
+    "outcome": "Publish an independently reviewable proposed execution profile with exact candidate source references and explicit non-adoption status.",
+    "nonGoals": [
+      "No global runtime replacement, protected profile change, source move, historical data migration or claim of universal shell interception."
+    ],
+    "complexity": "XS",
+    "estimatedMinutes": 10,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Document the single launcher owned by ticket-067 and separate its admission checks from static conformance, interpreter provenance, trust and deployment. Preserve existing external protected tool/receipt stores.",
+      "components": [
+        {
+          "name": "project-execution-documentation",
+          "paths": [
+            "docs/README.md",
+            "docs/information/project-execution.md"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert this bounded documentation change through protected publication; no persistent data or deployment changes."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh --approved-ticket ticket-068",
+          "git diff --check"
+        ],
+        "evidence": "Managed gate, valid JSON frontmatter and document/index link checks; refer to ticket-067 for executable qualification."
+      }
+    ]
+  }
+}

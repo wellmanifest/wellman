@@ -186,3 +186,35 @@ def test_validator_requires_docs_for_baseline_profile(tmp_path):
     findings = StandardsValidator(tmp_path).run_all_validations()
 
     assert "GOV-DOCS-MISSING" in [finding.code for finding in findings]
+
+
+def test_standard_home_uses_hub_manifest_without_adoption_lock(tmp_path):
+    governance = tmp_path / "governance"
+    governance.mkdir()
+    (governance / "manifest.hub.json").write_text(
+        json.dumps({"standard": {"id": "wellmanifest/new-project", "version": "0.20.108"}}),
+        encoding="utf-8",
+    )
+    codes = [f.code for f in StandardsValidator(tmp_path).validate_adoption_manifest()]
+    assert codes == []
+
+
+def test_hub_manifest_of_another_standard_is_not_standard_home(tmp_path):
+    governance = tmp_path / "governance"
+    governance.mkdir()
+    (governance / "manifest.hub.json").write_text(
+        json.dumps({"standard": {"id": "wellmanifest/other", "version": "1.0.0"}}),
+        encoding="utf-8",
+    )
+    codes = [f.code for f in StandardsValidator(tmp_path).validate_adoption_manifest()]
+    assert codes == ["GOV-MANIFEST-MISSING"]
+
+
+def test_standard_home_without_version_is_reported(tmp_path):
+    governance = tmp_path / "governance"
+    governance.mkdir()
+    (governance / "manifest.hub.json").write_text(
+        json.dumps({"standard": {"id": "wellmanifest/new-project"}}), encoding="utf-8",
+    )
+    codes = [f.code for f in StandardsValidator(tmp_path).validate_adoption_manifest()]
+    assert codes == ["GOV-MANIFEST-NO-VERSION"]

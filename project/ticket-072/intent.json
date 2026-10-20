@@ -1,0 +1,88 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-072",
+  "summary": "wellman check recognizes standard HOME and bundles worktree path checker",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-072/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/_bundled/worktree_path_check.py",
+    "src/wellman/validator.py",
+    "tests/test_runner.py",
+    "tests/test_validator.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "4c11cf0500006e523ac30a370e0442fdc8901fe2",
+    "targetBranch": "main",
+    "outcome": "wellman check passes on the wellmanifest/new-project standard HOME and its bundled worktree overlap fallback can run in any Git checkout.",
+    "nonGoals": [
+      "No change to adopter manifest or lock validation",
+      "No resync of other bundled checkers",
+      "No relaxation of worktree overlap findings"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 4,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Recognize the standard HOME only when .governance/manifest.json is absent and governance/manifest.hub.json names wellmanifest/new-project; validate its id/version without an adoption lock, as the bundled overlap checker already does. Ship new-project subprojects/worktrees/conformance.py as _bundled/worktree_path_check.py, the name its package manifest installs for adopters.",
+      "components": [
+        {
+          "name": "conformance-check",
+          "paths": [
+            "src/wellman/validator.py",
+            "src/wellman/_bundled/worktree_path_check.py",
+            "tests/test_validator.py",
+            "tests/test_runner.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "wellman check accepts the standard HOME hub manifest"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the commit; adopters are unaffected."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest tests/test_validator.py tests/test_runner.py"
+        ],
+        "evidence": "project/ticket-072/README.md"
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh"
+        ],
+        "evidence": "project/ticket-072/README.md"
+      }
+    ]
+  }
+}

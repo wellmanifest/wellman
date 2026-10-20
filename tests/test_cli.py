@@ -67,6 +67,88 @@ def test_cli_profiles_json(capsys):
     assert any(p["name"] == "baseline" for p in data)
 
 
+@pytest.fixture
+def governance_tool(tmp_path):
+    """A real isolated installation, independent from the candidate checkout."""
+    import os
+    import venv
+
+    tool = tmp_path / "tool"
+    venv.EnvBuilder(with_pip=False).create(tool)
+    python = tool / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    site = Path(subprocess.check_output(
+        [str(python), "-I", "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"], text=True).strip())
+    return python, site
+
+
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_actor_ci_delegates_installed_runtime_and_preserves_result(governance_tool, tmp_path, monkeypatch, capfd, exit_code):
+    python, site = governance_tool
+    package = site / "wellmanifest_governance_runtime"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "check.py").write_text("")
+    (package / "__main__.py").write_text(
+        "import json, sys\nprint(json.dumps(sys.argv[1:]))\n"
+        f"print('backend diagnostic', file=sys.stderr)\nraise SystemExit({exit_code})\n")
+    metadata = site / "wellmanifest_governance-0.20.107.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text("Name: wellmanifest-governance\nVersion: 0.20.107\n")
+    (metadata / "entry_points.txt").write_text(
+        "[console_scripts]\nwellman-governance = wellmanifest_governance_runtime.check:main\n")
+    (metadata / "RECORD").write_text("".join(
+        f"wellmanifest_governance_runtime/{name},,\n" for name in ("__init__.py", "__main__.py", "check.py")))
+    monkeypatch.setattr("wellman.cli.sys.executable", str(python))
+    root = str(tmp_path / "candidate")
+    assert main(["check", "--root", root, "--actor", "ci", "--base", "a" * 40,
+                 "--head", "b" * 40, "--json"]) == exit_code
+    output = capfd.readouterr()
+    assert json.loads(output.out) == ["check", "--root", root, "--actor", "ci",
+                                       "--json", "--base", "a" * 40, "--head", "b" * 40]
+    assert output.err == "backend diagnostic\n"
+
+
+@pytest.mark.parametrize("identity", ["missing", "unrelated", "unowned"])
+def test_actor_ci_refuses_missing_unrelated_or_unowned_runtime(governance_tool, tmp_path, monkeypatch, capfd, identity):
+    python, site = governance_tool
+    # A candidate/PYTHONPATH module must never become the installed backend.
+    shadow = tmp_path / "candidate"
+    shadow.mkdir()
+    (shadow / "wellmanifest_governance_runtime.py").write_text("print('candidate executed')\n")
+    monkeypatch.chdir(shadow)
+    monkeypatch.setenv("PYTHONPATH", str(shadow))
+    if identity != "missing":
+        package = site / "wellmanifest_governance_runtime"
+        package.mkdir()
+        (package / "__init__.py").write_text("")
+        (package / "__main__.py").write_text("print('unverified backend executed')\n")
+        metadata = site / "wellmanifest_governance-0.20.107.dist-info"
+        metadata.mkdir()
+        (metadata / "METADATA").write_text("Name: wellmanifest-governance\nVersion: 0.20.107\n")
+        entry = "other.cli:main" if identity == "unrelated" else "wellmanifest_governance_runtime.check:main"
+        (metadata / "entry_points.txt").write_text(f"[console_scripts]\nwellman-governance = {entry}\n")
+    monkeypatch.setattr("wellman.cli.sys.executable", str(python))
+    assert main(["check", "--root", str(shadow), "--actor", "ci", "--json"]) == 2
+    output = capfd.readouterr()
+    assert output.out == ""
+    assert "GOV-RUNTIME-MISSING" in output.err
+
+
+@pytest.mark.parametrize("extra", [
+    ["--base", "a" * 40], ["--head", "b" * 40],
+    ["--base", "a" * 40, "--head", "b" * 40],
+    ["--base", "", "--head", ""],
+    ["--actor", "ci", "--base", "", "--head", ""],
+    ["--actor", "ci", "--standard", "wellmanifest/docs"],
+])
+def test_governance_compatibility_rejects_ambiguous_check_arguments(extra, monkeypatch, capsys):
+    def forbidden(*args, **kwargs):
+        pytest.fail("Ambiguous arguments must fail before any backend or aggregate check")
+    monkeypatch.setattr("wellman.cli._installed_governance_check", forbidden)
+    assert main(["check", *extra]) == 2
+    assert "Use --base and --head together" in capsys.readouterr().err
+
+
 def test_cli_check_rejects_unknown_standard(capsys, tmp_path):
     ret = main(["check", "--root", str(tmp_path), "--standard", "wellmanifest/nope", "--json"])
 

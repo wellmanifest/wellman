@@ -153,7 +153,59 @@ def cmd_profiles(args: argparse.Namespace) -> int:
     return 0
 
 
+def _installed_governance_check(args: argparse.Namespace) -> int:
+    """Delegate only to the installed governance distribution in isolated Python."""
+    bootstrap = '''
+import importlib.util
+import runpy
+import sys
+from importlib.metadata import PackageNotFoundError, distribution
+from pathlib import Path
+
+try:
+    if sys.prefix == sys.base_prefix:
+        raise ValueError("an isolated tool environment is required")
+    installed = distribution("wellmanifest-governance")
+    entries = [(e.name, e.value) for e in installed.entry_points
+               if e.group == "console_scripts"]
+    if entries != [("wellman-governance", "wellmanifest_governance_runtime.check:main")]:
+        raise ValueError("incompatible governance entry point")
+    owned = {Path(installed.locate_file(f)).resolve() for f in installed.files or ()}
+    spec = importlib.util.find_spec("wellmanifest_governance_runtime")
+    if spec is None or spec.origin is None:
+        raise ValueError("governance module is missing")
+    package = Path(spec.origin).resolve().parent
+    if not package.is_relative_to(Path(sys.prefix).resolve()):
+        raise ValueError("governance module is outside the tool environment")
+    if any(package / name not in owned for name in ("__init__.py", "__main__.py", "check.py")):
+        raise ValueError("governance module is not owned by its installed distribution")
+except (PackageNotFoundError, OSError, ValueError) as error:
+    print("GOV-RUNTIME-MISSING: install an independently approved wellmanifest-governance "
+          "wheel into this tool environment: " + str(error), file=sys.stderr)
+    raise SystemExit(2)
+sys.argv[0] = "wellman-governance"
+runpy.run_module("wellmanifest_governance_runtime", run_name="__main__")
+'''
+    command = [sys.executable, "-I", "-c", bootstrap, "check", "--root", args.root, "--actor", "ci"]
+    if args.json:
+        command.append("--json")
+    if args.base:
+        command.extend(["--base", args.base, "--head", args.head])
+    try:
+        return subprocess.run(command, check=False).returncode
+    except OSError as error:
+        print(f"GOV-RUNTIME-MISSING: governance runtime could not execute: {error}", file=sys.stderr)
+        return 2
+
+
 def cmd_check(args: argparse.Namespace) -> int:
+    actor, base, head = (getattr(args, name, None) for name in ("actor", "base", "head"))
+    has_range = base is not None or head is not None
+    if ((has_range and (not base or not head or not actor)) or (actor and args.standard)):
+        print("Use --base and --head together with --actor ci; --standard selects aggregate checks only.", file=sys.stderr)
+        return 2
+    if actor == "ci":
+        return _installed_governance_check(args)
     selected_standard = get_standard(args.standard) if args.standard else None
     root, admission = _conformance_context(
         args.root or ".",
@@ -577,6 +629,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("--root", "-r", default=".", help="Target repository root path")
     p_check.add_argument("--standard", "-s", help="Check compliance for a specific standard id")
     p_check.add_argument("--json", action="store_true", help="Output findings as JSON")
+    p_check.add_argument("--actor", choices=["ci"], help="Delegate to the separately installed governance runtime")
+    p_check.add_argument("--base", help="Exact governance comparison base (requires --head and --actor ci)")
+    p_check.add_argument("--head", help="Exact governance comparison head (requires --base and --actor ci)")
     p_check.set_defaults(func=cmd_check)
 
     # standards / list

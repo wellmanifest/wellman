@@ -1,0 +1,91 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-070",
+  "summary": "Delegate legacy actor-ci check to distinct installed governance runtime",
+  "workstream": "integration",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-070/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "README.md",
+    "src/wellman/cli.py",
+    "tests/test_cli.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "d12351ce1408a9ce509ac42580f612c2d540d0d6",
+    "targetBranch": "main",
+    "outcome": "Preserve legacy wellman check --actor ci through the distinct independently installed governance distribution while retaining the full CLI and canonical project execution implementation.",
+    "nonGoals": [
+      "No global executable replacement, PyPI publication, protected runtime pin changes or worker profile activation.",
+      "No candidate/adopted-checker fallback, copied governance implementation or execution authority from static conformance."
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 3,
+      "maxAffectedComponents": 2,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Add a bounded compatibility branch to the existing CLI check handler. Explicit actor-ci invocations delegate in an isolated Python child to the separately installed wellmanifest_governance_runtime, verifying its distribution, console entry-point and module ownership. Missing or incompatible installed runtime fails with an actionable prerequisite; preserve stdout/stderr and actual exit status. Existing aggregate checks and project execution retain their implementations.",
+      "components": [
+        {
+          "name": "governance-cli-compatibility",
+          "paths": [
+            "src/wellman/cli.py",
+            "tests/test_cli.py"
+          ]
+        },
+        {
+          "name": "runtime-enrollment-guidance",
+          "paths": [
+            "README.md"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "Explicit actor-ci compatibility and exact base/head arguments on wellman check"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the bounded compatibility change; keep previously reviewed runtime artifacts and protected pins unchanged."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest -q tests/test_cli.py tests/test_execution.py"
+        ],
+        "evidence": "Run real isolated backend fixture processes, reject missing/unrelated/shadowed distributions and preserve arguments/output/exit codes."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python -m pytest -q",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Canonical ticket-local environment and scratch; independently qualify exact head before protected Validator publication."
+      }
+    ]
+  }
+}

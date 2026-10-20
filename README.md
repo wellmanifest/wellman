@@ -92,6 +92,22 @@ wellman check --root /path/to/repo
 wellman check --json
 ```
 
+Legacy CI callers can use `wellman check --actor ci --root /path/to/repo --json`
+with the separate `wellmanifest-governance` distribution installed in the same
+isolated tool environment. Supply `--base <sha> --head <sha>` together for an
+exact PR comparison. Enroll a wheel built from an independently reviewed,
+immutable `wellmanifest/new-project` revision's `packages/wellman` directory;
+retain that revision and artifact digest in the tooling profile. The source
+namespace migration does not itself publish a PyPI release or enroll a fleet.
+
+This explicit compatibility mode verifies installed module ownership and runs
+`wellmanifest_governance_runtime` with isolated Python, preserving its output
+and exit status. A missing or incompatible backend is a prerequisite to repair;
+it never falls back to candidate checkout scripts or the unrelated legacy
+package. Plain `wellman check` retains its aggregate checks, and `wellman run`
+continues to use the canonical project execution implementation. Static
+conformance does not prove runtime mediation or grant publication authority.
+
 ### 4. Adopt a standard or profile into a repository
 
 ```bash

@@ -1,0 +1,83 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-069",
+  "summary": "Preserve URI scanning under local scratch and use a valid native Planfile owned status",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-069/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/uri.py",
+    "tests/test_ssot_backlog.py",
+    "tests/test_stream_flow_and_standards.py",
+    "src/wellman/uri_scan.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "70edd469cbea3e417baafe6af78566bd06d34eb6",
+    "targetBranch": "main",
+    "outcome": "Make URI scanning relative to the selected root, prune ignored trees before traversal and preserve the native owned-ticket negative test using a valid Planfile status.",
+    "nonGoals": [
+      "No Planfile version relaxation, new skips, global dependency upgrade or deployed runtime change."
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 4,
+      "maxAffectedComponents": 2,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Extract the existing URI scanner behind its unchanged public adapter into a small scanner module. Filter directories relative to the supplied root; ignore symlinked inputs and prune ignored descendants. Use the pinned native Planfile in_progress enum for an owned non-open ticket fixture; keep preservation assertions unchanged.",
+      "components": [
+        {
+          "name": "uri-scanning",
+          "paths": [
+            "src/wellman/uri.py",
+            "src/wellman/uri_scan.py",
+            "tests/test_stream_flow_and_standards.py"
+          ]
+        },
+        {
+          "name": "native-backlog-qualification",
+          "paths": [
+            "tests/test_ssot_backlog.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert only the bounded reviewed source change; no persistent data migration."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python -m pytest -q tests/test_stream_flow_and_standards.py tests/test_ssot_backlog.py",
+          "./project/governance-check.sh --approved-ticket ticket-069"
+        ],
+        "evidence": "Run actual affected tests in a project venv with pinned Planfile 0.1.126 and project-local scratch; retain all preservation and traversal negatives."
+      }
+    ]
+  }
+}

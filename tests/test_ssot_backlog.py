@@ -156,7 +156,7 @@ def test_completed_or_blocked_proposals_are_never_reopened(tmp_path, terminal):
 @pytest.mark.parametrize(
     "change",
     [
-        {"status": "active"},
+        {"status": "in_progress"},
         {"sprint": "current"},
         {"blocked_by": ["PLF-999"]},
         {"executor": {"kind": "shell", "command": "true"}},

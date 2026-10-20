@@ -181,3 +181,45 @@ def test_uri_function_and_cli_jsonl_pipeline(tmp_path: Path, capsys: object) -> 
     assert scan_res["result"]["invalid_link_count"] == 0
 
 
+def test_uri_scanner_keeps_sources_under_ignored_ancestors(tmp_path):
+    from wellman.uri import scan_uri_link_opportunities
+
+    root = tmp_path / ".subactor/cache/checkout"
+    root.mkdir(parents=True)
+    (root / "caller.sh").write_text("uri 'proc://ast-scan/complexity/horizontal' '{}'\n")
+    (root / "broken.py").write_text("uri('not-a-process-uri', {})\n")
+    report = scan_uri_link_opportunities(root)
+    assert report["valid_link_count"] == 1
+    assert report["invalid_link_count"] == 1
+    assert report["valid_links"][0]["path"] == "caller.sh"
+
+
+def test_uri_scanner_prunes_ignored_trees_and_rejects_symlink_inputs(tmp_path, monkeypatch):
+    import os
+    from wellman.uri import scan_uri_link_opportunities
+
+    root = tmp_path / "checkout"
+    root.mkdir()
+    ignored = root / ".venv"
+    ignored.mkdir()
+    (ignored / "ignored.sh").write_text("uri 'proc://ast-scan/complexity/horizontal' '{}'\n")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    source = outside / "foreign.sh"
+    source.write_text("uri 'proc://ast-scan/complexity/horizontal' '{}'\n")
+    (root / "linked.sh").symlink_to(source)
+    (root / "linked-directory").symlink_to(outside, target_is_directory=True)
+    walked = []
+    real_walk = os.walk
+
+    def observe_walk(*args, **kwargs):
+        for item in real_walk(*args, **kwargs):
+            walked.append(Path(item[0]))
+            yield item
+
+    monkeypatch.setattr(os, "walk", observe_walk)
+    report = scan_uri_link_opportunities(root)
+    assert report["valid_link_count"] == report["invalid_link_count"] == 0
+    assert ignored not in walked and outside not in walked
+
+

@@ -426,71 +426,11 @@ def uri(
     return results[0]
 
 
-# Regexes for polyglot `uri('...')` link verification and duplication scanning
-_POLYGLOT_URI_CALL_RE = re.compile(
-    r"""(?:\buri\s*\(\s*['"]([^'"]+)['"]|\buri\s+['"]([a-z][a-z0-9+.-]*://[^'"]+)['"])"""
-)
-_SUBPROCESS_DUP_RE = re.compile(
-    r"""(?:subprocess\.(?:run|check_output|Popen)\s*\(\s*\[[^\]]*(?:policy_dsl_check|lifecycle\.py|dockuri|curictl|urirun))"""
-)
-
-
 def scan_uri_link_opportunities(root: Path) -> Dict[str, Any]:
-    """Scan scripts across languages for `uri(...)` links and subprocess calls replaceable by `uri(...)`."""
-    root = root.resolve()
-    valid_links: List[Dict[str, Any]] = []
-    invalid_links: List[Dict[str, Any]] = []
-    migration_candidates: List[Dict[str, Any]] = []
+    """Scan the selected tree, regardless of ignored ancestor directory names."""
+    from wellman.uri_scan import scan_links
 
-    ignored = {
-        ".git", ".worktrees", ".subactor", ".venv", "venv", "node_modules",
-        "target", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
-        "build", "dist",
-    }
-    extensions = {".py", ".sh", ".mjs", ".js", ".ts", ".rs", ".policy", ".curi"}
-
-    for path in sorted(root.rglob("*")):
-        if any(part in ignored for part in path.parts):
-            continue
-        if not path.is_file() or path.suffix not in extensions:
-            continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            continue
-        rel = str(path.relative_to(root))
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            for match in _POLYGLOT_URI_CALL_RE.finditer(line):
-                raw_uri = match.group(1) or match.group(2) or ""
-                try:
-                    validate_process_uri(raw_uri)
-                    valid_links.append({"path": rel, "line": line_no, "uri": raw_uri})
-                except UriInvocationError as exc:
-                    invalid_links.append({
-                        "code": exc.code,
-                        "path": rel,
-                        "line": line_no,
-                        "uri": raw_uri,
-                        "message": exc.detail,
-                    })
-            if path.name != "uri.py" and _SUBPROCESS_DUP_RE.search(line):
-                migration_candidates.append({
-                    "code": "URP-LINK-CANDIDATE",
-                    "path": rel,
-                    "line": line_no,
-                    "message": "Direct subprocess invocation of URI/DSL tool can be replaced with canonical `uri('<scheme>://<authority>/<path>', payload)`.",
-                })
-
-    return {
-        "schema": "uriprocess.link-scan/v1",
-        "root": str(root),
-        "valid_link_count": len(valid_links),
-        "invalid_link_count": len(invalid_links),
-        "migration_candidate_count": len(migration_candidates),
-        "valid_links": valid_links,
-        "invalid_links": invalid_links,
-        "migration_candidates": migration_candidates,
-    }
+    return scan_links(root, validate_process_uri, UriInvocationError)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

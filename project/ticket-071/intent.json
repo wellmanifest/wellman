@@ -1,0 +1,83 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-071",
+  "summary": "Bind common Python tool caches to project execution scratch",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-071/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/execution.py",
+    "tests/test_execution.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "57f326159a9e134024bf077f9acc900ff8f01f1a",
+    "targetBranch": "main",
+    "outcome": "Bind pip, uv and XDG caches to reusable checkout-owned ignored directories while retaining separate per-run temporary scratch and canonical interpreter admission.",
+    "nonGoals": [
+      "No filesystem sandbox, universal cache interception, global cache deletion, dependency installation, SDK pin relaxation or worker source enrollment."
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Extend the existing project execution boundary with deterministic checkout-local pip/uv/XDG cache bindings. Reuse one private-directory implementation for operational directory creation, validate redirects during read-only admission, retain stable caches across launches and separate UUID temporary directories. Record the bound cache map as an additive local observation.",
+      "components": [
+        {
+          "name": "project-execution",
+          "paths": [
+            "src/wellman/execution.py",
+            "tests/test_execution.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "Execution context adds the checkout-owned tool cache map."
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the bounded implementation; retain old pinned tool artifacts and leave generated caches available for explicitly authorized cleanup."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest -q tests/test_execution.py"
+        ],
+        "evidence": "Real child writes prove project ownership, cross-run reuse, inherited-cache override and no write through symlink/file destinations; dry-run stays read-only."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python -m pytest -q",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Native project environment, exact committed range, protected OneDev verification and independent Validator publication."
+      }
+    ]
+  }
+}

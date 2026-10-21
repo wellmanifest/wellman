@@ -1,0 +1,92 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-073",
+  "summary": "Enforce project-owned report and operational evidence placement",
+  "workstream": "integration",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-073/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "docs/README.md",
+    "docs/information/artifact-placement.md",
+    "src/wellman/cli.py",
+    "tests/test_cli.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "d4cc5d116707addeebd319b0ef3277d4b3ab4a70",
+    "targetBranch": "main",
+    "outcome": "Enforce declared project deliverable destinations and pinned Docs preparation/completion through Wellman, with project-owned operational evidence and real worktree identity. Publish through the independent protected route.",
+    "nonGoals": [
+      "No arbitrary-shell filesystem sandbox claims, protected policy writes, private-log publication or silent relocation/deletion of foreign data.",
+      "Do not replace pinned Docs/Report/Logs contracts with guessed placement rules."
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 60,
+    "budgets": {
+      "maxImplementationFiles": 4,
+      "maxAffectedComponents": 2,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Wire the pinned Docs checker at explicit preparation and completion boundaries, validate owner/worktree and paths before Wellman-owned artifact writes, reject unsafe or external destinations and distinguish document delivery from private receipts. Retain per-standard evidence semantics.",
+      "components": [
+        {
+          "name": "cli-and-docs-boundary",
+          "paths": [
+            "src/wellman/cli.py",
+            "tests/test_cli.py"
+          ]
+        },
+        {
+          "name": "consumer-contract",
+          "paths": [
+            "docs/information/artifact-placement.md",
+            "docs/README.md"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "Explicit artifact preparation/completion; declared deliverables checked by aggregate check."
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the material implementation through protected publication; preserve all original evidence hashes."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest -q tests/test_cli.py"
+        ],
+        "evidence": "project/ticket-073/README.md"
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh"
+        ],
+        "evidence": "project/ticket-073/README.md"
+      }
+    ]
+  }
+}

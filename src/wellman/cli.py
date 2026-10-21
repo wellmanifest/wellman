@@ -6,10 +6,13 @@ Unified CLI for managing, validating, and enforcing all Wellmanifest standards.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Optional, Set
 
@@ -201,6 +204,9 @@ runpy.run_module("wellmanifest_governance_runtime", run_name="__main__")
 def cmd_check(args: argparse.Namespace) -> int:
     actor, base, head = (getattr(args, name, None) for name in ("actor", "base", "head"))
     has_range = base is not None or head is not None
+    if actor and getattr(args, "deliverable", None):
+        print("Use aggregate check for --deliverable; CI governance is a separate gate.", file=sys.stderr)
+        return 2
     if ((has_range and (not base or not head or not actor)) or (actor and args.standard)):
         print("Use --base and --head together with --actor ci; --standard selects aggregate checks only.", file=sys.stderr)
         return 2
@@ -226,6 +232,13 @@ def cmd_check(args: argparse.Namespace) -> int:
         findings = runner.run_standard(selected_standard.id)
     else:
         findings = runner.run_all()
+    if getattr(args, "deliverable", None):
+        delivery = _docs_result(args, "complete")
+        if not delivery.get("ok"):
+            findings.append(Finding(
+                code="DOCS-DELIVERY-001", message=json.dumps(delivery),
+                remediation="Prepare and complete the explicit document in its owning checkout.",
+            ))
     errors = [f for f in findings if f.severity == "ERROR"]
     warnings = [f for f in findings if f.severity == "WARNING"]
 
@@ -259,6 +272,139 @@ def cmd_check(args: argparse.Namespace) -> int:
 
     print(f"\nSummary: {len(errors)} error(s), {len(warnings)} warning(s)")
     return 1 if errors else 0
+
+
+def _artifact_path(root: Path, value: str, *, receipt: bool = False) -> Path:
+    """Bind an artifact to one checkout, including its existing ancestors."""
+    from wellman.adoption import safe_path
+
+    relative = Path(value)
+    if not value or not relative.parts or relative.is_absolute() or ".." in relative.parts or "\\" in value:
+        raise ValueError("Artifact paths must be repository-relative without traversal")
+    if receipt and (relative.parts[:2] != (".subactor", "receipts") or len(relative.parts) < 3):
+        raise ValueError("Preparation evidence belongs under .subactor/receipts/")
+    if not receipt and relative.parts[0] in {".git", ".subactor", ".worktrees"}:
+        raise ValueError("Recovery, cache and other worktrees are not document delivery")
+    destination = safe_path(root / relative)
+    destination.relative_to(root)
+    for parent in (destination, *destination.parents):
+        if parent == root:
+            break
+        if (parent / ".git").exists():
+            raise ValueError("Artifact belongs to a different checkout")
+    return destination
+
+
+def _docs_runtime(directory: str, expected: str) -> dict[str, bytes]:
+    """Read once, bind all executable/package bytes, then run only that snapshot."""
+    from wellman.adoption import safe_path
+
+    if not re.fullmatch(r"[0-9a-f]{64}", expected or ""):
+        raise ValueError("An independently supplied Docs runtime SHA256 is required")
+    root = safe_path(directory)
+    files = {}
+    size = 0
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise ValueError("Docs runtime must not contain symlinks")
+        if path.is_dir():
+            continue
+        if not path.is_file() or path.suffix == ".pyc":
+            raise ValueError("Docs runtime must contain regular source files only")
+        size += path.stat().st_size
+        if size > 16 * 1024 * 1024 or len(files) >= 256:
+            raise ValueError("Docs runtime exceeds the bounded package size")
+        files[path.relative_to(root).as_posix()] = path.read_bytes()
+    inventory = {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}
+    digest = hashlib.sha256(json.dumps(inventory, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if digest != expected or "check.py" not in files or "policy.json" not in files:
+        raise ValueError("Docs runtime digest mismatch or incomplete package")
+    return files
+
+
+def _docs_result(args: argparse.Namespace, mode: str) -> dict:
+    try:
+        root, admission = _conformance_context(args.root, require_repository=True)
+        if admission is not None:
+            raise ValueError(str(admission))
+        deliverable = _artifact_path(root, args.deliverable)
+        revision = args.docs_standard_revision
+        if not re.fullmatch(r"[0-9a-f]{40}", revision or ""):
+            raise ValueError("An independently supplied immutable Docs revision is required")
+        receipt = None
+        if mode == "prepare":
+            if not all((args.kind, args.document_id, args.scope, args.receipt)):
+                raise ValueError("Preparation requires kind, id, scope and a new receipt path")
+            receipt = _artifact_path(root, args.receipt, receipt=True)
+            if receipt.exists():
+                raise ValueError("Preparation receipt already exists; preserve the prior observation")
+        else:
+            if not deliverable.is_file():
+                raise ValueError("Explicit deliverable is missing")
+            if not re.fullmatch(r"[0-9a-f]{40}", args.docs_base or ""):
+                raise ValueError("Completion requires the exact trusted base SHA")
+            prepared = _artifact_path(root, args.prepared_plan, receipt=True)
+            if not prepared.is_file():
+                raise ValueError("Preparation receipt is missing")
+        files = _docs_runtime(args.docs_runtime_root, args.docs_runtime_sha256)
+        # Snapshot under the admitted owner, never shared host scratch or another checkout.
+        cache = _artifact_path(root, ".subactor/receipts/docs-runtime", receipt=True)
+        cache.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="check-", dir=cache) as temporary:
+            runtime = Path(temporary)
+            for name, data in files.items():
+                target = runtime / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+            command = [sys.executable, "-I", "-S", "-B", str(runtime / "check.py"),
+                       "--root", str(root), "--standard-revision", revision,
+                       "--deliverable", args.deliverable, "--" + mode]
+            if mode == "prepare":
+                command += ["--kind", args.kind, "--id", args.document_id, "--scope", args.scope]
+            else:
+                command += ["--base", args.docs_base, "--prepared-plan", str(prepared)]
+            environment = {key: value for key, value in os.environ.items()
+                           if not key.startswith(("GIT_", "PYTHON"))}
+            environment.update(TMPDIR=temporary, TMP=temporary, TEMP=temporary)
+            completed = subprocess.run(command, cwd=root, env=environment,
+                                       capture_output=True, text=True, timeout=60, check=False)
+        if completed.returncode:
+            return {"ok": False, "code": "DOCS_CHECK_FAILED", "exit_code": completed.returncode,
+                    "stdout": completed.stdout[:4096], "stderr": completed.stderr[:4096]}
+        result = json.loads(completed.stdout)
+        if not isinstance(result, dict) or completed.returncode or result.get("ok") is not True:
+            return {"ok": False, "code": "DOCS_CHECK_FAILED", "result": result}
+        if mode == "complete":
+            completion = result.get("completion")
+            if not isinstance(completion, dict) or completion.get("ready") is not True:
+                raise ValueError("Docs runtime did not attest explicit document completion")
+        if mode == "prepare":
+            plan = result.get("plan", {})
+            if (not isinstance(plan, dict) or plan.get("path") != args.deliverable or plan.get("standard_revision") != revision
+                    or plan.get("owner") != plan.get("repository") or not plan.get("owner")):
+                raise ValueError("Docs preparation did not bind the requested owner/path/revision")
+            # Recheck ancestors before the sole durable write. Exclusive creation preserves evidence.
+            receipt = _artifact_path(root, args.receipt, receipt=True)
+            receipt.parent.mkdir(parents=True, exist_ok=True)
+            with receipt.open("x", encoding="utf-8") as stream:
+                stream.write(json.dumps(result, indent=2) + "\n")
+        return result
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError) as error:
+        return {"ok": False, "code": "DOCS_DELIVERY_BOUNDARY", "message": str(error)}
+
+
+def cmd_docs(args: argparse.Namespace) -> int:
+    result = _docs_result(args, args.docs_mode)
+    print(json.dumps(result, indent=2))
+    return 0 if result.get("ok") is True else 1
+
+
+def _docs_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--docs-runtime-root", help="Independently installed Docs standard package directory")
+    parser.add_argument("--docs-runtime-sha256", help="Trusted SHA256 of the complete package inventory")
+    parser.add_argument("--docs-standard-revision", help="Trusted immutable Docs revision")
+    parser.add_argument("--docs-base", help="Exact trusted base SHA for completion")
+    parser.add_argument("--prepared-plan", help="Project-relative preparation receipt")
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
@@ -632,7 +778,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_check.add_argument("--actor", choices=["ci"], help="Delegate to the separately installed governance runtime")
     p_check.add_argument("--base", help="Exact governance comparison base (requires --head and --actor ci)")
     p_check.add_argument("--head", help="Exact governance comparison head (requires --base and --actor ci)")
+    p_check.add_argument("--deliverable", help="Explicit project-relative document requiring Docs completion")
+    _docs_options(p_check)
     p_check.set_defaults(func=cmd_check)
+
+    p_docs = subparsers.add_parser("docs", help="Prepare or complete a document using the pinned Docs runtime")
+    p_docs.add_argument("docs_mode", choices=["prepare", "complete"])
+    p_docs.add_argument("--root", default=".")
+    p_docs.add_argument("--deliverable", required=True)
+    p_docs.add_argument("--receipt", help="New project-relative .subactor/receipts/ preparation result")
+    p_docs.add_argument("--kind")
+    p_docs.add_argument("--id", dest="document_id")
+    p_docs.add_argument("--scope", choices=["repository", "organization"])
+    _docs_options(p_docs)
+    p_docs.set_defaults(func=cmd_docs)
 
     # standards / list
     p_std = subparsers.add_parser("standards", help="List all supported Wellmanifest standards")

@@ -12,6 +12,149 @@ from wellman.cli import main
 from wellman.cli import _worktree_admission
 
 
+@pytest.fixture
+def docs_delivery():
+    """Real Git owner and isolated subprocess, with a small pinned protocol peer."""
+    import hashlib
+
+    cache = Path.cwd() / ".subactor" / "cache" / "docs-cli-tests"
+    cache.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=cache) as temporary:
+        root = Path(temporary) / "owner"
+        root.mkdir()
+        git(root, "init", "-q")
+        runtime = Path(temporary) / "runtime"
+        runtime.mkdir()
+        (runtime / "policy.json").write_text("{}")
+        (runtime / "check.py").write_text('''
+import json, pathlib, sys
+a = sys.argv
+root = pathlib.Path(a[a.index('--root') + 1])
+path = a[a.index('--deliverable') + 1]
+revision = a[a.index('--standard-revision') + 1]
+if (root / 'reject').exists():
+    print(json.dumps({'ok': False, 'findings': ['DOCS_OWNER']}))
+    sys.exit(1)
+if '--prepare' in a:
+    print(json.dumps({'ok': True, 'plan': {'path': path, 'owner': 'acme/owner',
+        'repository': 'acme/owner', 'standard_revision': revision}}))
+else:
+    print(json.dumps({'ok': True, 'completion': {'ready': True, 'publication_verified': False}}))
+''')
+        inventory = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in runtime.iterdir()}
+        pin = hashlib.sha256(json.dumps(inventory, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        common = ["--root", str(root), "--deliverable", "docs/analysis/result.md",
+                  "--docs-runtime-root", str(runtime), "--docs-runtime-sha256", pin,
+                  "--docs-standard-revision", "a" * 40]
+        prepare = ["docs", "prepare", *common, "--kind", "analysis", "--id", "result",
+                   "--scope", "repository", "--receipt", ".subactor/receipts/result.json"]
+        complete = ["docs", "complete", *common, "--docs-base", "b" * 40,
+                    "--prepared-plan", ".subactor/receipts/result.json"]
+        yield root, runtime, prepare, complete
+
+
+def test_docs_preparation_and_completion_are_separate(docs_delivery, capsys):
+    root, _, prepare, complete = docs_delivery
+    assert main(prepare) == 0
+    assert json.loads(capsys.readouterr().out)["ok"]
+    assert not (root / "docs/analysis/result.md").exists()
+    assert main(complete) == 1
+    assert "missing" in capsys.readouterr().out
+    document = root / "docs/analysis/result.md"
+    document.parent.mkdir(parents=True)
+    document.write_text("result")
+    assert main(complete) == 0
+    assert json.loads(capsys.readouterr().out)["completion"]["publication_verified"] is False
+    prior = (root / ".subactor/receipts/result.json").read_bytes()
+    assert main(prepare) == 1
+    assert (root / ".subactor/receipts/result.json").read_bytes() == prior
+
+
+@pytest.mark.parametrize("value", ["../outside.md", "/tmp/report.md", ".", ".subactor/recovery/REPORT.txt",
+                                    ".worktrees/ticket-999--other/docs/result.md", "docs/../../report.md"])
+def test_docs_rejects_unsafe_deliverable_before_any_write(docs_delivery, capsys, value):
+    root, _, prepare, _ = docs_delivery
+    prepare[prepare.index("--deliverable") + 1] = value
+    assert main(prepare) == 1
+    assert json.loads(capsys.readouterr().out)["ok"] is False
+    assert not (root / ".subactor").exists()
+
+
+@pytest.mark.parametrize("target", ["deliverable", "receipt"])
+def test_docs_rejects_symlinked_destination_ancestors(docs_delivery, capsys, target):
+    root, runtime, prepare, _ = docs_delivery
+    if target == "deliverable":
+        (root / "docs").symlink_to(runtime, target_is_directory=True)
+    else:
+        (root / ".subactor").symlink_to(runtime, target_is_directory=True)
+    before = sorted(p.name for p in runtime.iterdir())
+    assert main(prepare) == 1
+    assert "symlink" in capsys.readouterr().out
+    assert sorted(p.name for p in runtime.iterdir()) == before
+
+
+def test_docs_rejects_nested_foreign_checkout(docs_delivery, capsys):
+    root, _, prepare, _ = docs_delivery
+    (root / "docs").mkdir()
+    git(root / "docs", "init", "-q")
+    assert main(prepare) == 1
+    assert "different checkout" in capsys.readouterr().out
+    assert not (root / ".subactor").exists()
+
+
+def test_docs_checker_failure_does_not_create_receipt(docs_delivery, capsys):
+    root, _, prepare, _ = docs_delivery
+    (root / "reject").touch()
+    assert main(prepare) == 1
+    assert "DOCS_OWNER" in capsys.readouterr().out
+    assert not (root / ".subactor/receipts/result.json").exists()
+
+
+def test_docs_rejects_runtime_dependency_drift(docs_delivery, capsys):
+    root, runtime, prepare, _ = docs_delivery
+    (runtime / "policy.json").write_text('{"changed": true}')
+    assert main(prepare) == 1
+    assert "digest mismatch" in capsys.readouterr().out
+    assert not (root / ".subactor").exists()
+
+
+def test_docs_requires_project_owned_receipt(docs_delivery, capsys):
+    root, _, prepare, _ = docs_delivery
+    prepare[prepare.index("--receipt") + 1] = "docs/analysis/receipt.json"
+    assert main(prepare) == 1
+    assert ".subactor/receipts" in capsys.readouterr().out
+    assert not (root / "docs").exists()
+
+
+def test_docs_does_not_treat_adoption_only_success_as_completion(docs_delivery, capsys):
+    import hashlib
+
+    root, runtime, prepare, complete = docs_delivery
+    assert main(prepare) == 0
+    capsys.readouterr()
+    document = root / "docs/analysis/result.md"
+    document.parent.mkdir(parents=True)
+    document.write_text("result")
+    (runtime / "check.py").write_text('print(\'{"ok": true}\')\n')
+    inventory = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in runtime.iterdir()}
+    complete[complete.index("--docs-runtime-sha256") + 1] = hashlib.sha256(
+        json.dumps(inventory, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    assert main(complete) == 1
+    assert "did not attest" in capsys.readouterr().out
+
+
+def test_aggregate_check_cannot_pass_missing_declared_document(docs_delivery, capsys, monkeypatch):
+    from wellman.cli import ConformanceRunner
+
+    _, _, _, complete = docs_delivery
+    monkeypatch.setattr(ConformanceRunner, "run_all", lambda self: [])
+    assert main(["check", "--json", *complete[2:]]) == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["valid"] is False
+    assert result["findings"][0]["code"] == "DOCS-DELIVERY-001"
+
+
 def test_cli_version(capsys):
     ret = main(["--version"])
     assert ret == 0

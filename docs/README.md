@@ -5,6 +5,7 @@ Indeks oficjalnej dokumentacji technicznej i analitycznej repozytorium `wellmani
 ## Informacje i Specyfikacje Standardu (`docs/information/`)
 - [Wellman Unified Standards Runtime: Specyfikacja Architektury i Katalog Standardów](information/wellman-standards-runtime.md) (`wellman-standards-runtime`)
 - [Project-bound Python execution and enforcement boundaries](information/project-execution.md) (`project-execution`)
+- [Project-owned document delivery through Wellman](information/artifact-placement.md) (`artifact-placement`)
 
 ## Analizy i Raporty (`docs/analysis/`)
 - [Analiza Porównawcza: Wellman (Policy-as-Code) vs Rozwiązanie Plikowo-Szablonowe w Standaryzacji Wellmanifest](analysis/wellman-vs-file-governance-comparative-analysis.md) (`wellman-vs-file-governance-comparative-analysis`)

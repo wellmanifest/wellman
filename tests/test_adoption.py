@@ -600,6 +600,10 @@ def test_default_new_project_docker_boilerplate_does_not_infer_deployment(tmp_pa
             ],
         },
     }))
+    # Test harness files inside docker/ must not trigger deployment when docker.required is False
+    docker_dir = tmp_path / 'docker'
+    docker_dir.mkdir()
+    (docker_dir / 'docker-compose.yml').touch()
     result = register(tmp_path)['registration']
     assert 'deployment' not in result['profiles']
     assert result['profiles'] == ['baseline']
@@ -611,13 +615,16 @@ def test_generated_module_evidence_stdlib_ast_fallback_without_code2llm(tmp_path
     subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
     src = tmp_path / 'src'
     src.mkdir()
-    (src / 'service.py').write_text('import fastapi\nimport korullm\nimport mcp\nimport redup\nimport koru\n')
+    (src / 'service.py').write_text('import fastapi\nimport korullm\nimport mcp\nimport redup\nimport koru\nimport hostguard\n')
     result = recommend(tmp_path, analyze=True)
     assert result['structure']['moduleCount'] == 1
     assert 'runtime-service' in result['profiles']
     rec_ids = {item['id'] for item in result['recommendations']}
     assert 'wellmanifest/llm' in rec_ids
+    assert 'wellmanifest/mcp' in rec_ids
     assert 'wellmanifest/nl-dsl-llm' in rec_ids
     assert 'wellmanifest/reuse' in rec_ids
     assert 'wellmanifest/repair-lifecycle' in rec_ids
+    assert 'wellmanifest/hostguard' in rec_ids
+
 

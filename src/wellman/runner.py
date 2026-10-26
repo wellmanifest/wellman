@@ -750,6 +750,50 @@ class ConformanceRunner:
             ))
         return findings
 
+    def check_mcp(self) -> List[Finding]:
+        """Validate wellmanifest/mcp URI operation contract when present."""
+        findings: List[Finding] = []
+        mcp_candidates = (
+            list(self.root.glob("**/mcp_server.py"))
+            + list(self.root.glob("**/mcp.py"))
+            + list(self.root.glob("src/**/mcp*.py"))
+        )
+        source_candidates = [
+            p for p in mcp_candidates
+            if p.is_file() and ".worktrees" not in p.parts and ".venv" not in p.parts and "tests" not in p.parts
+        ]
+        if not source_candidates:
+            return [Finding(
+                code="GOV-MCP-MISSING",
+                message="Repository requires wellmanifest/mcp but no MCP server module (*mcp*.py) was found.",
+                severity="ERROR",
+                path=str(self.root),
+                remediation="Implement an MCP server module exposing registry_search/task_plan/task_execute or MCP tools.",
+            )]
+        return findings
+
+    def check_hostguard(self) -> List[Finding]:
+        """Validate wellmanifest/hostguard resource & storage guard contract when present."""
+        findings: List[Finding] = []
+        has_hostguard = (
+            (self.root / "hostguard").is_dir()
+            or (self.root / "schemas" / "hostguard.probe.v1.schema.json").is_file()
+            or any(
+                "hostguard" in p.read_text(encoding="utf-8", errors="ignore")
+                for p in self.root.glob("**/*.py")
+                if p.is_file() and ".worktrees" not in p.parts and ".venv" not in p.parts
+            )
+        )
+        if not has_hostguard:
+            findings.append(Finding(
+                code="GOV-HOSTGUARD-MISSING",
+                message="Repository requires wellmanifest/hostguard but no hostguard module or integration was found.",
+                severity="ERROR",
+                path=str(self.root),
+                remediation="Integrate hostguard probe/storage resilience per wellmanifest/hostguard.",
+            ))
+        return findings
+
     def _fallback_storage_health(self, home: Path) -> dict:
         """Fallback lightweight scan for agent storage health when uncrash is uninstalled."""
         import sqlite3
@@ -878,6 +922,8 @@ class ConformanceRunner:
             "wellmanifest/git-lifecycle": self.check_git_lifecycle,
             "wellmanifest/worktrees": self.check_worktrees,
             "wellmanifest/ticket-lifecycle": self.check_ticket_lifecycle,
+            "wellmanifest/merge": self.check_local_ci_publication,
+            "wellmanifest/validation-attestation": self.check_local_ci_publication,
             "wellmanifest/agent": self.check_agent_hosts,
             "wellmanifest/docs": lambda: self.validator.validate_docs(required=True),
             "wellmanifest/session-recovery": self.check_session_recovery,
@@ -891,6 +937,8 @@ class ConformanceRunner:
             "wellmanifest/saas-lifecycle": self.check_lifecycle_dsl,
             "wellmanifest/twin-lifecycle": self.check_lifecycle_dsl,
             "wellmanifest/uriprocess": self.check_uriprocess,
+            "wellmanifest/mcp": self.check_mcp,
+            "wellmanifest/hostguard": self.check_hostguard,
         }
         check = checks.get(standard_id)
         if check is not None:

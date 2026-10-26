@@ -1,0 +1,30 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-075",
+  "summary": "Fix deployment profile inference when docker is disabled and register mcp/hostguard standards",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-075/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/adoption.py",
+    "src/wellman/applicability.py",
+    "src/wellman/registry.py",
+    "src/wellman/runner.py",
+    "src/wellman/validator.py",
+    "tests/test_adoption.py",
+    "tests/test_cli.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

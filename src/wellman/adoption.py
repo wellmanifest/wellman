@@ -273,8 +273,11 @@ def recommend(root, *, ast_report=None, analyze=False, evidence=(), hints=(), ll
             add('wellmanifest/code-dsl', 'Source AST consumes or analyzes code structure')
         if roots & {'redup', 'prefact'}:
             add('wellmanifest/reuse', 'Source AST imports duplication or refactoring analysis tooling')
-        if roots & {'mcp', 'fastmcp'}:
+        if roots & {'mcp', 'fastmcp', 'wellmanifest_mcp'}:
+            add('wellmanifest/mcp', 'Source AST imports Model Context Protocol tooling')
             add('wellmanifest/nl-dsl-llm', 'Source AST imports Model Context Protocol tooling')
+        if roots & {'hostguard'}:
+            add('wellmanifest/hostguard', 'Source AST imports hostguard resource resilience tooling')
         if roots & {'koru', 'pfix', 'pactfix', 'heal'}:
             add('wellmanifest/repair-lifecycle', 'Source AST imports automated repair or patch execution tooling')
         if roots & {'uncrash'}:
@@ -566,6 +569,7 @@ def register(root, profiles=(), *, standards=(), dry_run=False,
     if not isinstance(existing, dict):
         raise ValueError('Requirements must be a JSON object')
     selected = {'baseline', *profiles}
+    docker_explicitly_disabled = False
     for name in ('manifest.json', 'standard-adoption.json'):
         manifest = _object(governance / name)
         profile = manifest.get('profile')
@@ -583,6 +587,8 @@ def register(root, profiles=(), *, standards=(), dry_run=False,
         if isinstance(docker_cfg, dict):
             if docker_cfg.get('required') is True:
                 selected.add('deployment')
+            elif docker_cfg.get('required') is False:
+                docker_explicitly_disabled = True
             for path_key, default_paths in (
                 ('dockerfiles', _DEFAULT_MANIFEST_DOCKERFILES),
                 ('composeFiles', _DEFAULT_MANIFEST_COMPOSE_FILES),
@@ -595,7 +601,7 @@ def register(root, profiles=(), *, standards=(), dry_run=False,
                         for p in valid_paths
                     ):
                         selected.add('deployment')
-    deployment_dirs = ('', 'deploy', 'deployment', 'infra', 'docker')
+    deployment_dirs = ('', 'deploy', 'deployment', 'infra') if docker_explicitly_disabled else ('', 'deploy', 'deployment', 'infra', 'docker')
     deployment_markers = (
         'Dockerfile', 'compose.yml', 'compose.yaml', 'docker-compose.yml', 'docker-compose.yaml'
     )

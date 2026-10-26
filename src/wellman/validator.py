@@ -417,6 +417,8 @@ class StandardsValidator:
             "wellmanifest/worktrees",
             "wellmanifest/ticket-lifecycle",
             "wellmanifest/git-lifecycle",
+            "wellmanifest/merge",
+            "wellmanifest/validation-attestation",
             "wellmanifest/agent",
             "wellmanifest/session-recovery",
             "wellmanifest/reuse",
@@ -429,6 +431,8 @@ class StandardsValidator:
             "wellmanifest/saas-lifecycle",
             "wellmanifest/twin-lifecycle",
             "wellmanifest/uriprocess",
+            "wellmanifest/mcp",
+            "wellmanifest/hostguard",
         }
 
         if "wellmanifest/docs" in required and (self.gov_dir / "docs.json").is_file() and not (self.root / "docs" / "README.md").is_file():

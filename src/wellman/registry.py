@@ -466,6 +466,28 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         schemas=["lifecycle.schema.json"],
         docs_url="https://github.com/wellmanifest/lifecycle",
     ),
+    "wellmanifest/mcp": StandardPack(
+        id="wellmanifest/mcp",
+        name="Model Context Protocol URI Reuse & Operation Contract",
+        owner="wellmanifest/mcp",
+        description="Deterministic MCP URI operation registry, read/mutate separation, and replayable execution receipts",
+        minimum_level="S4",
+        execution_model="protected-conformance",
+        owns=["MCP operation registry", "MCP URI reuse contract", "MCP task receipt replay"],
+        schemas=["mcp-operation-catalog.schema.json", "mcp-task-receipt.schema.json"],
+        docs_url="https://github.com/wellmanifest/mcp",
+    ),
+    "wellmanifest/hostguard": StandardPack(
+        id="wellmanifest/hostguard",
+        name="Host Resource & Storage Guard Contract",
+        owner="wellmanifest/hostguard",
+        description="Deterministic host probe, storage floor resilience, threat classification, and autonomous remediation",
+        minimum_level="S4",
+        execution_model="protected-conformance",
+        owns=["host resource probe", "storage floor resilience", "host remediation receipts"],
+        schemas=["hostguard.probe.v1.schema.json"],
+        docs_url="https://github.com/wellmanifest/hostguard",
+    ),
 }
 
 # Standard profiles grouping multiple standard packs
@@ -562,6 +584,8 @@ def get_standard(standard_id: str) -> Optional[StandardPack]:
         "priority": "wellmanifest/priority",
         "lifecycle": "wellmanifest/lifecycle",
         "policy-dsl": "wellmanifest/policy-dsl",
+        "mcp": "wellmanifest/mcp",
+        "hostguard": "wellmanifest/hostguard",
     }
     normalized = aliases.get(standard_id, standard_id)
     return STANDARDS_CATALOG.get(normalized)

@@ -36,6 +36,7 @@ CAPABILITIES = {
     'session-recovery':'runtime:session-recovery','reuse':'quality:code-reuse',
     'modularity':'quality:modularity','priority':'lifecycle:priority',
     'lifecycle':'contract:lifecycle-dsl',
+    'mcp':'contract:mcp-operations','hostguard':'runtime:host-guard',
 }
 RULES = {identifier:{'scope':'repository' if identifier in BASELINE else 'component',
     'applies_when':{'all':[{'feature':'repository:git' if identifier in BASELINE else CAPABILITIES[identifier.split('/')[1]],'is':'present'}],'any':[]},

@@ -132,7 +132,7 @@
           "items": { "enum": ["open-pull-request", "request-autonomous-merge", "merge", "rebuild-history", "delete-branch", "discard-worktree", "record-backlog", "no-action"] }
         },
         "executor": {
-          "description": "Who performs the authorized actions. An interactive agent may never authorize `merge` for itself; it authorizes `request-autonomous-merge` and the automated validator identity performs the merge.",
+          "description": "Who performs the authorized actions. Only the independent automated-validator may authorize `merge`; interactive-agent and owner remain valid for non-merge actions.",
           "enum": ["interactive-agent", "automated-validator", "owner"]
         },
         "destructive": { "type": "boolean" },

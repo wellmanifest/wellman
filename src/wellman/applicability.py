@@ -37,6 +37,9 @@ CAPABILITIES = {
     'modularity':'quality:modularity','priority':'lifecycle:priority',
     'lifecycle':'contract:lifecycle-dsl',
     'mcp':'contract:mcp-operations','hostguard':'runtime:host-guard',
+    'project-ssot':'quality:project-ssot','dockuri':'contract:dockuri',
+    'report':'quality:report','env-dsl':'contract:env-dsl',
+    'status':'lifecycle:status','performance':'quality:performance',
 }
 RULES = {identifier:{'scope':'repository' if identifier in BASELINE else 'component',
     'applies_when':{'all':[{'feature':'repository:git' if identifier in BASELINE else CAPABILITIES[identifier.split('/')[1]],'is':'present'}],'any':[]},

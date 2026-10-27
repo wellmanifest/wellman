@@ -137,3 +137,15 @@ def test_check_mcp_and_dockuri_procedures_work_in_worktree_path(tmp_path: Path):
     runner = ConformanceRunner(wt)
     assert runner.check_mcp() == []
     assert runner.check_dockuri() == []
+
+
+def test_adoption_register_auto_expands_transitive_standard_dependencies(tmp_path: Path):
+    from wellman.adoption import register
+
+    res = register(tmp_path, profiles=["baseline"], standards=["wellmanifest/dockuri"])
+    req_ids = {r["id"] for r in res["registration"]["requirements"]}
+    assert "wellmanifest/lifecycle" in req_ids
+    assert "wellmanifest/mcp" in req_ids
+    assert "wellmanifest/uriprocess" in req_ids
+    assert StandardsValidator(tmp_path).validate_standard_dependencies() == []
+

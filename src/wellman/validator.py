@@ -499,7 +499,24 @@ class StandardsValidator:
             "wellmanifest/hostguard",
         }
         if has_lock or has_local_ci:
-            checked.update({"wellmanifest/merge", "wellmanifest/validation-attestation"})
+            checked.update({
+                "wellmanifest/merge",
+                "wellmanifest/validation-attestation",
+                "wellmanifest/authority-lifecycle",
+                "wellmanifest/deployment",
+                "wellmanifest/poa",
+                "wellmanifest/nohardcode",
+                "wellmanifest/skills",
+                "wellmanifest/account-runtime",
+                "wellmanifest/repair-lifecycle",
+                "wellmanifest/semver",
+                "wellmanifest/status",
+                "wellmanifest/performance",
+                "wellmanifest/anonym",
+                "wellmanifest/brand",
+                "wellmanifest/offer",
+                "wellmanifest/wellman",
+            })
 
         if "wellmanifest/docs" in required and (self.gov_dir / "docs.json").is_file() and not (self.root / "docs" / "README.md").is_file():
             findings.append(Finding(

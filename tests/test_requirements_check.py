@@ -112,3 +112,22 @@ def test_implemented_runner_standards_are_not_flagged_unverified(repository):
     assert "GOV-REQUIREMENT-UNVERIFIED" not in found
     runner_codes = {f.code: f for f in ConformanceRunner(repository).run_all()}
     assert "GOV-REUSE-NO-RECEIPT" in runner_codes
+
+
+def test_local_ci_adopted_deployment_and_poa_are_not_flagged_unverified(repository):
+    from wellman.runner import ConformanceRunner
+    (repository / ".governance" / "local-ci-publication.json").write_text(
+        json.dumps({"schema": "new-project.local-ci-publication/v1", "scope": {"mode": "all"}}),
+        encoding="utf-8",
+    )
+    require(
+        repository,
+        "wellmanifest/deployment",
+        "wellmanifest/poa",
+        "wellmanifest/authority-lifecycle",
+        "wellmanifest/semver",
+    )
+    found = codes(repository)
+    assert "GOV-REQUIREMENT-UNVERIFIED" not in found
+    runner_codes = {f.code: f for f in ConformanceRunner(repository).run_all()}
+    assert "GOV-SEMVER-MISSING" in runner_codes

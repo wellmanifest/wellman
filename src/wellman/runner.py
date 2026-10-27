@@ -454,6 +454,10 @@ class ConformanceRunner:
             findings.extend(self.check_report())
         if "wellmanifest/hostguard" in registered_reqs:
             findings.extend(self.check_hostguard())
+        if "wellmanifest/deployment" in registered_reqs:
+            findings.extend(self.check_deployment())
+        if "wellmanifest/semver" in registered_reqs:
+            findings.extend(self.check_semver())
         return findings
 
     def check_local_ci_publication(self) -> List[Finding]:
@@ -948,6 +952,41 @@ class ConformanceRunner:
                 remediation="Integrate hostguard probe/storage resilience per wellmanifest/hostguard.",
             ))
         return findings
+
+    def check_deployment(self) -> List[Finding]:
+        """Validate wellmanifest/deployment indicators when registered."""
+        findings: List[Finding] = []
+        manifest_path = self.root / ".governance" / "manifest.json"
+        if manifest_path.is_file():
+            try:
+                mdata = json.loads(manifest_path.read_text(encoding="utf-8"))
+                docker_cfg = mdata.get("docker")
+                if isinstance(docker_cfg, dict) and docker_cfg.get("required") is True:
+                    dockerfiles = docker_cfg.get("dockerfiles", ["Dockerfile"])
+                    if not any((self.root / df).is_file() for df in dockerfiles if isinstance(df, str)):
+                        findings.append(Finding(
+                            code="GOV-DEPLOYMENT-DOCKERFILE-MISSING",
+                            message="docker.required is true in manifest.json but no declared Dockerfile exists.",
+                            severity="ERROR",
+                            path=".governance/manifest.json",
+                            remediation="Add the declared Dockerfile or set docker.required to false.",
+                        ))
+            except Exception:
+                pass
+        return findings
+
+    def check_semver(self) -> List[Finding]:
+        """Validate wellmanifest/semver version carrier when registered."""
+        version_files = ("VERSION", "pyproject.toml", "package.json", "Cargo.toml")
+        if not any((self.root / vf).is_file() for vf in version_files):
+            return [Finding(
+                code="GOV-SEMVER-MISSING",
+                message="Repository requires wellmanifest/semver but no version carrier (VERSION, pyproject.toml, package.json, Cargo.toml) was found.",
+                severity="WARNING",
+                path="VERSION",
+                remediation="Add a VERSION file or package manifest with a valid SemVer version.",
+            )]
+        return []
 
     def _fallback_storage_health(self, home: Path) -> dict:
         """Fallback lightweight scan for agent storage health when uncrash is uninstalled."""

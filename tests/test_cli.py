@@ -1268,3 +1268,50 @@ def test_unrelated_separate_git_directory_is_not_absorbed_submodule():
         finding = _worktree_admission(checkout.resolve())
         assert finding is not None
         assert finding.code == "GOV-WORKTREE-ADMISSION-002"
+
+
+def test_locked_baseline_requires_migrated_new_project_and_worktrees_artifacts(tmp_path):
+    from wellman.runner import ConformanceRunner
+    from wellman.validator import StandardsValidator
+
+    gov = tmp_path / ".governance"
+    gov.mkdir(parents=True)
+    (gov / "manifest.json").write_text(
+        json.dumps({"schema": "wellmanifest.manifest/v1", "standard": {"id": "profile:baseline", "version": "0.20.46"}}),
+        encoding="utf-8",
+    )
+    (gov / "manifest.lock.json").write_text(
+        json.dumps({"schema": "new-project.lock/v1", "managedFiles": {}}),
+        encoding="utf-8",
+    )
+    (gov / "standard-requirements.json").write_text(
+        json.dumps({
+            "schema": "wellman.standard-requirements/v1",
+            "profiles": ["baseline"],
+            "requirements": [
+                {"id": "wellmanifest/new-project", "minimumLevel": "S4"},
+                {"id": "wellmanifest/worktrees", "minimumLevel": "S3"},
+                {"id": "wellmanifest/ticket-lifecycle", "minimumLevel": "S3"},
+                {"id": "wellmanifest/git-lifecycle", "minimumLevel": "S4"},
+                {"id": "wellmanifest/logs", "minimumLevel": "S3"},
+                {"id": "wellmanifest/mcp", "minimumLevel": "S3"},
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    validator = StandardsValidator(tmp_path)
+    codes = {f.code for f in validator.validate_required_standards()}
+    assert "GOV-NEW-PROJECT-INCOMPLETE" in codes
+    assert "GOV-WORKTREES-INCOMPLETE" in codes
+    assert "GOV-TICKET-LIFECYCLE-INCOMPLETE" in codes
+    assert "GOV-GIT-LIFECYCLE-INCOMPLETE" in codes
+    assert "GOV-LOGS-MISSING" in codes
+
+    runner = ConformanceRunner(tmp_path)
+    log_findings = runner.run_standard("wellmanifest/logs")
+    assert [f.code for f in log_findings] == ["GOV-LOGS-MISSING"]
+    (tmp_path / "errors").mkdir()
+    (tmp_path / "errors" / "README.md").write_text("# Errors\n", encoding="utf-8")
+    assert runner.run_standard("wellmanifest/logs") == []
+

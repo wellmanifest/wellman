@@ -1,0 +1,26 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-079",
+  "summary": "Auto-expand transitive standard dependencies in adoption.register",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-079/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/adoption.py",
+    "src/wellman/applicability.py",
+    "tests/test_registry_dependencies.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

@@ -10,7 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from wellman.registry import PROFILES_CATALOG, get_standard
+from wellman.registry import PROFILES_CATALOG, expand_standard_dependencies, get_standard
 
 
 SCHEMA = 'wellman.standard-requirements/v1'
@@ -416,6 +416,8 @@ def expand_profiles(profiles):
 
     for name in profiles:
         visit(name)
+    for dep_id, dep_level in expand_standard_dependencies([k for k in requirements if get_standard(k) is not None]).items():
+        requirements[dep_id] = max(requirements.get(dep_id, 'S0'), dep_level)
     return requirements
 
 
@@ -648,6 +650,9 @@ def register(root, profiles=(), *, standards=(), dry_run=False,
     for standard, level in required.items():
         item = items.setdefault(standard, {'id': standard, 'minimumLevel': level})
         item['minimumLevel'] = max(item['minimumLevel'], level)
+    for dep_id, dep_level in expand_standard_dependencies([k for k in items if get_standard(k) is not None]).items():
+        item = items.setdefault(dep_id, {'id': dep_id, 'minimumLevel': dep_level})
+        item['minimumLevel'] = max(item['minimumLevel'], dep_level)
     result = {**existing, 'schema': SCHEMA, 'profiles': sorted(selected),
               'requirements': [items[key] for key in sorted(items)]}
     changed = existing != result

@@ -418,11 +418,12 @@ class ConformanceRunner:
         # 7. Session recovery & LLM agent storage integrity (via uncrash)
         findings.extend(self.check_session_recovery())
         # 8. Reuse standard checks if adopted or registered in standard-requirements.json
-        reuse_required = False
+        registered_reqs: List[str] = []
         try:
-            reuse_required = "wellmanifest/reuse" in self.validator.registered_requirements()
+            registered_reqs = self.validator.registered_requirements()
         except ValueError:
             pass
+        reuse_required = "wellmanifest/reuse" in registered_reqs
         manifest_path = self.root / ".governance" / "manifest.json"
         if not reuse_required and manifest_path.is_file():
             try:
@@ -438,6 +439,17 @@ class ConformanceRunner:
         # 9. Policy DSL and Lifecycle DSL validation and compaction audits when files exist
         findings.extend(self.check_policy_dsl())
         findings.extend(self.check_lifecycle_dsl())
+        # 10. Additional registered standard checks
+        if "wellmanifest/modularity" in registered_reqs:
+            findings.extend(self.check_modularity())
+        if "wellmanifest/priority" in registered_reqs:
+            findings.extend(self.check_priority())
+        if "wellmanifest/uriprocess" in registered_reqs:
+            findings.extend(self.check_uriprocess())
+        if "wellmanifest/mcp" in registered_reqs:
+            findings.extend(self.check_mcp())
+        if "wellmanifest/hostguard" in registered_reqs:
+            findings.extend(self.check_hostguard())
         return findings
 
     def check_local_ci_publication(self) -> List[Finding]:
@@ -750,6 +762,18 @@ class ConformanceRunner:
             ))
         return findings
 
+    def check_logs(self) -> List[Finding]:
+        """Validate wellmanifest/logs error catalog contract."""
+        if not (self.root / "errors" / "README.md").is_file():
+            return [Finding(
+                code="GOV-LOGS-MISSING",
+                message="wellmanifest/logs requires the error catalog errors/README.md.",
+                severity="ERROR",
+                path="errors/README.md",
+                remediation="Add the consumer error catalog errors/README.md with one errors/{CODE}.md runbook per emitted code.",
+            )]
+        return []
+
     def check_mcp(self) -> List[Finding]:
         """Validate wellmanifest/mcp URI operation contract when present."""
         findings: List[Finding] = []
@@ -926,6 +950,7 @@ class ConformanceRunner:
             "wellmanifest/validation-attestation": self.check_local_ci_publication,
             "wellmanifest/agent": self.check_agent_hosts,
             "wellmanifest/docs": lambda: self.validator.validate_docs(required=True),
+            "wellmanifest/logs": self.check_logs,
             "wellmanifest/session-recovery": self.check_session_recovery,
             "wellmanifest/reuse": self.check_reuse,
             "wellmanifest/modularity": self.check_modularity,

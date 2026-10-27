@@ -1,0 +1,26 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-076",
+  "summary": "Enforce baseline standard prerequisites for worktrees, tickets, git-lifecycle, agent hosts, and logs",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-076/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/runner.py",
+    "src/wellman/validator.py",
+    "tests/test_cli.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

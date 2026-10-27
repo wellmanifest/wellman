@@ -451,6 +451,43 @@ class StandardsValidator:
                 remediation="Add the consumer error catalog errors/README.md with one errors/{CODE}.md runbook per emitted code and validate it with `logs_check.py error-adoption`.",
             ))
 
+        has_lock = (self.gov_dir / "manifest.lock.json").is_file()
+        if has_lock:
+            if "wellmanifest/new-project" in required and not (self.root / "project" / "governance-check.sh").is_file():
+                findings.append(Finding(
+                    "GOV-NEW-PROJECT-INCOMPLETE",
+                    "wellmanifest/new-project is required with a lockfile, but native governance (project/governance-check.sh) is not installed.",
+                    path=".governance/manifest.json",
+                    remediation="Run `create_adoption_lock.py --migrate-wellman-scaffold --upgrade` to complete native adoption.",
+                ))
+            if "wellmanifest/worktrees" in required and (
+                not (self.root / ".subactor" / "manifest.json").is_file()
+                or not (self.root / "worktree-guard.yaml").is_file()
+            ):
+                findings.append(Finding(
+                    "GOV-WORKTREES-INCOMPLETE",
+                    "wellmanifest/worktrees is required, but .subactor/manifest.json or worktree-guard.yaml is missing.",
+                    path="worktree-guard.yaml",
+                    remediation="Install worktrees v5 artifacts via `create_adoption_lock.py --migrate-wellman-scaffold --upgrade`.",
+                ))
+            if "wellmanifest/ticket-lifecycle" in required and (
+                not (self.root / "project" / "new-ticket.sh").is_file()
+                or not (self.root / "project" / "TICKETS.md").is_file()
+            ):
+                findings.append(Finding(
+                    "GOV-TICKET-LIFECYCLE-INCOMPLETE",
+                    "wellmanifest/ticket-lifecycle is required, but project/new-ticket.sh or project/TICKETS.md is missing.",
+                    path="project/TICKETS.md",
+                    remediation="Install ticket lifecycle allocator and index via `create_adoption_lock.py --migrate-wellman-scaffold --upgrade`.",
+                ))
+            if "wellmanifest/git-lifecycle" in required and not (self.root / ".githooks" / "pre-commit").is_file():
+                findings.append(Finding(
+                    "GOV-GIT-LIFECYCLE-INCOMPLETE",
+                    "wellmanifest/git-lifecycle is required, but .githooks/pre-commit is missing.",
+                    path=".githooks/pre-commit",
+                    remediation="Install managed Git hooks via `create_adoption_lock.py --migrate-wellman-scaffold --upgrade` and `./scripts/install-agent-hosts.sh`.",
+                ))
+
         unverified = sorted(r for r in required if r not in checked)
         if unverified:
             findings.append(Finding(

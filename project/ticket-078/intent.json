@@ -1,0 +1,26 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-078",
+  "summary": "Fix check_mcp worktree relative path and support dockuri procedures dict",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-078/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/runner.py",
+    "src/wellman/validator.py",
+    "tests/test_registry_dependencies.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

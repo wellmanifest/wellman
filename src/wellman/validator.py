@@ -487,6 +487,15 @@ class StandardsValidator:
             "wellmanifest/mcp",
             "wellmanifest/dockuri",
             "wellmanifest/report",
+            "wellmanifest/dsl",
+            "wellmanifest/code-dsl",
+            "wellmanifest/env-dsl",
+            "wellmanifest/llm",
+            "wellmanifest/nl-dsl-llm",
+            "wellmanifest/nl-api-llm",
+            "wellmanifest/nl-uri-dsl-llm",
+            "wellmanifest/ssot",
+            "wellmanifest/project-ssot",
             "wellmanifest/hostguard",
         }
         if has_lock or has_local_ci:

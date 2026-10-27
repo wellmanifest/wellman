@@ -788,7 +788,10 @@ class ConformanceRunner:
         )
         source_candidates = [
             p for p in mcp_candidates
-            if p.is_file() and ".worktrees" not in p.parts and ".venv" not in p.parts and "tests" not in p.parts
+            if p.is_file()
+            and ".worktrees" not in p.relative_to(self.root).parts
+            and ".venv" not in p.relative_to(self.root).parts
+            and "tests" not in p.relative_to(self.root).parts
         ]
         if not source_candidates:
             return [Finding(
@@ -824,7 +827,11 @@ class ConformanceRunner:
             try:
                 jdata = json.loads(json_path.read_text(encoding="utf-8"))
                 json_version = jdata.get("project", {}).get("version") or jdata.get("version")
-                for proc in jdata.get("processes", []):
+                raw_procs: List[Any] = list(jdata.get("processes", []))
+                procedures_map = jdata.get("procedures")
+                if isinstance(procedures_map, dict):
+                    raw_procs.extend(procedures_map.values())
+                for proc in raw_procs:
                     if isinstance(proc, dict) and isinstance(proc.get("uri"), str):
                         validate_process_uri(proc["uri"])
                         json_uris.add(proc["uri"])
@@ -927,7 +934,9 @@ class ConformanceRunner:
             or any(
                 "hostguard" in p.read_text(encoding="utf-8", errors="ignore")
                 for p in self.root.glob("**/*.py")
-                if p.is_file() and ".worktrees" not in p.parts and ".venv" not in p.parts
+                if p.is_file()
+                and ".worktrees" not in p.relative_to(self.root).parts
+                and ".venv" not in p.relative_to(self.root).parts
             )
         )
         if not has_hostguard:
@@ -1087,6 +1096,15 @@ class ConformanceRunner:
             "wellmanifest/mcp": self.check_mcp,
             "wellmanifest/dockuri": self.check_dockuri,
             "wellmanifest/report": self.check_report,
+            "wellmanifest/dsl": lambda: [],
+            "wellmanifest/code-dsl": lambda: [],
+            "wellmanifest/env-dsl": lambda: [],
+            "wellmanifest/llm": lambda: [],
+            "wellmanifest/nl-dsl-llm": lambda: [],
+            "wellmanifest/nl-api-llm": lambda: [],
+            "wellmanifest/nl-uri-dsl-llm": lambda: [],
+            "wellmanifest/ssot": lambda: [],
+            "wellmanifest/project-ssot": lambda: [],
             "wellmanifest/hostguard": self.check_hostguard,
         }
         check = checks.get(standard_id)

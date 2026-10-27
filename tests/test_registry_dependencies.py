@@ -106,3 +106,34 @@ def test_check_dockuri_detects_manifest_uri_drift_and_passes_when_synced(tmp_pat
         encoding="utf-8",
     )
     assert runner.check_dockuri() == []
+
+
+def test_check_mcp_and_dockuri_procedures_work_in_worktree_path(tmp_path: Path):
+    wt = tmp_path / ".worktrees" / "ticket-001--demo"
+    (wt / "src" / "demo").mkdir(parents=True)
+    (wt / "src" / "demo" / "mcp_server.py").write_text("# mcp server\n", encoding="utf-8")
+    (wt / "dockuri.json").write_text(
+        json.dumps(
+            {
+                "app": "demo",
+                "version": "0.4.5",
+                "procedures": {
+                    "ping": {"uri": "proc://demo/ping/v1"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (wt / "uriprocess.json").write_text(
+        json.dumps(
+            {
+                "package": "demo",
+                "version": "0.4.5",
+                "public_uris": ["proc://demo/ping/v1"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    runner = ConformanceRunner(wt)
+    assert runner.check_mcp() == []
+    assert runner.check_dockuri() == []

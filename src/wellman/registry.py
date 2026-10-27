@@ -1,7 +1,8 @@
 """Wellmanifest Standards Registry and Profile Catalog.
 
 Unified single-source-of-truth definition for all Wellmanifest standards,
-execution models, conformance levels (S0-S5), and adoption profiles.
+execution models, conformance levels (S0-S5), inter-standard dependency DAGs,
+and adoption profiles.
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class StandardPack:
     execution_model: str = "protected-conformance"
     owns: List[str] = field(default_factory=list)
     excludes: List[str] = field(default_factory=list)
+    requires: List[str] = field(default_factory=list)
     schemas: List[str] = field(default_factory=list)
     docs_url: str = ""
 
@@ -74,6 +76,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         owner="wellmanifest/taskand", description="Capsule contracts, grants and digital-twin gates for autonomous URI process execution",
         minimum_level="S0", execution_model="reference-only",
         owns=["capsule contracts"], excludes=["execution authority", "verified runtime conformance"],
+        requires=["wellmanifest/uriprocess"],
         schemas=['schemas/capsule.v1.json', 'schemas/proc.v1.json', 'schemas/grants.v1.json'], docs_url="https://github.com/wellmanifest/taskand",
     ),
     "wellmanifest/uriprocess": StandardPack(
@@ -88,7 +91,16 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         owner="wellmanifest/ssot", description="Interview-first, propose-only SSOT decisions for duplicated code, configuration and vendored copies",
         minimum_level="S0", execution_model="reference-only",
         owns=["SSOT decision documents"], excludes=["execution authority", "code edits or merges", "verified runtime conformance"],
+        requires=["wellmanifest/dsl"],
         schemas=['schemas/ssot-interview.schema.json', 'schemas/ssot-decision.schema.json', 'schemas/ssot-standards-lock.schema.json'], docs_url="https://github.com/wellmanifest/ssot",
+    ),
+    "wellmanifest/project-ssot": StandardPack(
+        id="wellmanifest/project-ssot", name="Cross-Project Single Source of Truth Projection",
+        owner="wellmanifest/project-ssot", description="Cross-project SSoT projection, artifact ownership contracts, and multi-repository digest synchronization",
+        minimum_level="S3", execution_model="protected-conformance",
+        owns=["cross-project SSoT projection", "multi-repo artifact synchronization"],
+        requires=["wellmanifest/dsl", "wellmanifest/ssot"],
+        schemas=["project-ssot.schema.json"], docs_url="https://github.com/wellmanifest/project-ssot",
     ),
     "wellmanifest/semver": StandardPack(
         id="wellmanifest/semver", name="Semantic versioning for heterogeneous releases",
@@ -102,6 +114,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         owner="wellmanifest/nl-uri-dsl-llm", description="Typed action URI and resource URN selection, grammar constraints and capsule handoff",
         minimum_level="S0", execution_model="reference-only",
         owns=["NL to URI contracts"], excludes=["execution authority", "verified runtime conformance"],
+        requires=["wellmanifest/dsl", "wellmanifest/llm", "wellmanifest/uriprocess"],
         schemas=['schemas/process-uri.schema.json', 'schemas/conversational-process-snapshot.schema.json'], docs_url="https://github.com/wellmanifest/nl-uri-dsl-llm",
     ),
     "wellmanifest/reuse": StandardPack(
@@ -121,6 +134,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
             "prioritized dependency chains",
             "streaming module pipelines",
         ],
+        requires=["wellmanifest/modularity", "wellmanifest/priority"],
         schemas=["reuse-policy.schema.json", "reuse-scan-receipt.schema.json", "stream-flow.schema.json"],
         docs_url="https://github.com/wellmanifest/reuse",
     ),
@@ -165,6 +179,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S4",
         execution_model="protected-conformance",
         owns=["repository identity", "branch and ref lifecycle", "pull-request lifecycle", "remote hygiene"],
+        requires=["wellmanifest/new-project", "wellmanifest/lifecycle"],
         schemas=["git-lifecycle.schema.json", "repository-initial-ref.schema.json", "repo-hygiene.schema.json"],
         docs_url="https://github.com/wellmanifest/git-lifecycle",
     ),
@@ -176,6 +191,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S3",
         execution_model="protected-conformance",
         owns=["worktree placement", "worktree naming", "lease path identity", "local checkout audit handoff"],
+        requires=["wellmanifest/new-project"],
         schemas=["worktrees.schema.json", "worktree-guard.schema.json"],
         docs_url="https://github.com/wellmanifest/worktrees",
     ),
@@ -188,6 +204,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         execution_model="protected-conformance",
         owns=["divergent-work disposition", "merge decision contract"],
         excludes=["merge execution", "deletion"],
+        requires=["wellmanifest/new-project", "wellmanifest/git-lifecycle"],
         schemas=["merge-decision.schema.json"],
         docs_url="https://github.com/wellmanifest/merge",
     ),
@@ -199,6 +216,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S4",
         execution_model="protected-conformance",
         owns=["trusted exact-head evidence", "attestation validation"],
+        requires=["wellmanifest/new-project"],
         schemas=["approval-evidence.schema.json"],
         docs_url="https://github.com/wellmanifest/validation-attestation",
     ),
@@ -210,6 +228,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S3",
         execution_model="protected-conformance",
         owns=["ticket state semantics", "ticket transition semantics", "ticket execution lease"],
+        requires=["wellmanifest/new-project", "wellmanifest/lifecycle"],
         schemas=["ticket-lifecycle.schema.json", "ticket-execution-lease.schema.json", "split-plan.schema.json", "ticket-activity.schema.json"],
         docs_url="https://github.com/wellmanifest/ticket-lifecycle",
     ),
@@ -221,6 +240,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S5",
         execution_model="runtime-conformance",
         owns=["authority lease semantics", "fencing and expiry semantics"],
+        requires=["wellmanifest/lifecycle"],
         schemas=["change-lease.schema.json"],
         docs_url="https://github.com/wellmanifest/authority-lifecycle",
     ),
@@ -277,8 +297,21 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S4",
         execution_model="protected-conformance",
         owns=["code-level semantic query contract", "AST diagnostics model"],
+        requires=["wellmanifest/dsl"],
         schemas=[],
         docs_url="https://github.com/wellmanifest/code-dsl",
+    ),
+    "wellmanifest/env-dsl": StandardPack(
+        id="wellmanifest/env-dsl",
+        name="Environment Contract DSL",
+        owner="wellmanifest/env-dsl",
+        description="Declarative environment variable contract, secret separation, and deterministic runtime config validation",
+        minimum_level="S3",
+        execution_model="protected-conformance",
+        owns=["environment contract DSL", "secret/env separation"],
+        requires=["wellmanifest/dsl"],
+        schemas=["env-dsl.schema.json"],
+        docs_url="https://github.com/wellmanifest/env-dsl",
     ),
     "wellmanifest/nl-dsl-llm": StandardPack(
         id="wellmanifest/nl-dsl-llm",
@@ -288,6 +321,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S4",
         execution_model="protected-conformance",
         owns=["tripartite natural-language, canonical DSL, and adaptive LLM contract", "universal MCP/CLI parity"],
+        requires=["wellmanifest/dsl", "wellmanifest/llm"],
         schemas=[],
         docs_url="https://github.com/wellmanifest/nl-dsl-llm",
     ),
@@ -304,6 +338,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
             "dynamic frontend menu tree",
             "multi-protocol dispatch",
         ],
+        requires=["wellmanifest/dsl", "wellmanifest/llm"],
         schemas=[
             "api-registry.schema.json",
             "menu-tree.schema.json",
@@ -320,6 +355,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S5",
         execution_model="runtime-conformance",
         owns=["repair and remediation lifecycle"],
+        requires=["wellmanifest/lifecycle"],
         schemas=["remediation-intent.schema.json"],
         docs_url="https://github.com/wellmanifest/repair-lifecycle",
     ),
@@ -342,6 +378,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S4",
         execution_model="protected-conformance",
         owns=["agent contract", "agent host governance", "participant guidelines"],
+        requires=["wellmanifest/new-project"],
         schemas=["agent.schema.json", "agent-hosts.schema.json"],
         docs_url="https://github.com/wellmanifest/agent",
     ),
@@ -356,6 +393,18 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         schemas=["readiness.schema.json"],
         docs_url="https://github.com/wellmanifest/docs",
     ),
+    "wellmanifest/report": StandardPack(
+        id="wellmanifest/report",
+        name="Reproducible Report & Deliverable Receipts",
+        owner="wellmanifest/report",
+        description="Deterministic report envelopes, evidence digests, and machine-verifiable deliverable receipts",
+        minimum_level="S3",
+        execution_model="protected-conformance",
+        owns=["reproducible report receipts", "report verification"],
+        requires=["wellmanifest/docs"],
+        schemas=["report.schema.json"],
+        docs_url="https://github.com/wellmanifest/report",
+    ),
     "wellmanifest/policy-dsl": StandardPack(
         id="wellmanifest/policy-dsl",
         name="Policy DSL",
@@ -364,6 +413,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S4",
         execution_model="protected-conformance",
         owns=["policy DSL spec", "policy enforcement"],
+        requires=["wellmanifest/dsl"],
         schemas=[],
         docs_url="https://github.com/wellmanifest/policy-dsl",
     ),
@@ -397,6 +447,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S4",
         execution_model="runtime-conformance",
         owns=["saas adapter profile", "saas lifecycle"],
+        requires=["wellmanifest/lifecycle"],
         schemas=["saas-lifecycle.schema.json", "saas-adapter-profile.schema.json"],
         docs_url="https://github.com/wellmanifest/saas-lifecycle",
     ),
@@ -408,6 +459,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S4",
         execution_model="runtime-conformance",
         owns=["twin lifecycle"],
+        requires=["wellmanifest/lifecycle"],
         schemas=["twin-lifecycle.schema.json"],
         docs_url="https://github.com/wellmanifest/twin-lifecycle",
     ),
@@ -430,6 +482,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S3",
         execution_model="protected-conformance",
         owns=["license compliance", "contributor agreements"],
+        requires=["wellmanifest/lifecycle"],
         schemas=["legal-lifecycle.schema.json"],
         docs_url="https://github.com/wellmanifest/legal-lifecycle",
     ),
@@ -441,6 +494,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         minimum_level="S3",
         execution_model="protected-conformance",
         owns=["product maturity stages", "release gates"],
+        requires=["wellmanifest/lifecycle"],
         schemas=["product-lifecycle.schema.json"],
         docs_url="https://github.com/wellmanifest/product-lifecycle",
     ),
@@ -477,6 +531,18 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         schemas=["mcp-operation-catalog.schema.json", "mcp-task-receipt.schema.json"],
         docs_url="https://github.com/wellmanifest/mcp",
     ),
+    "wellmanifest/dockuri": StandardPack(
+        id="wellmanifest/dockuri",
+        name="DockURI Process Registry & MCP Server Standard",
+        owner="wellmanifest/dockuri",
+        description="Universal URI process registry (dockuri.json/dockuri.yaml), MCP server adapter, and process execution envelope",
+        minimum_level="S3",
+        execution_model="protected-conformance",
+        owns=["DockURI process registry", "MCP URI process dispatch", "universal process conformation"],
+        requires=["wellmanifest/uriprocess", "wellmanifest/mcp"],
+        schemas=["dockuri-manifest.schema.json", "dockuri-envelope.schema.json"],
+        docs_url="https://github.com/wellmanifest/dockuri",
+    ),
     "wellmanifest/hostguard": StandardPack(
         id="wellmanifest/hostguard",
         name="Host Resource & Storage Guard Contract",
@@ -487,6 +553,28 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         owns=["host resource probe", "storage floor resilience", "host remediation receipts"],
         schemas=["hostguard.probe.v1.schema.json"],
         docs_url="https://github.com/wellmanifest/hostguard",
+    ),
+    "wellmanifest/status": StandardPack(
+        id="wellmanifest/status",
+        name="Status Signal & Telemetry Standard",
+        owner="wellmanifest/status",
+        description="Standardized status signal taxonomy, readiness probes, and live status telemetry envelopes",
+        minimum_level="S3",
+        execution_model="protected-conformance",
+        owns=["status signal taxonomy", "live status telemetry"],
+        schemas=["status.schema.json"],
+        docs_url="https://github.com/wellmanifest/status",
+    ),
+    "wellmanifest/performance": StandardPack(
+        id="wellmanifest/performance",
+        name="Performance Budget & Regression Gate Standard",
+        owner="wellmanifest/performance",
+        description="Declarative performance budgets, latency/throughput envelopes, and benchmark regression gates",
+        minimum_level="S3",
+        execution_model="protected-conformance",
+        owns=["performance budget contracts", "benchmark regression gates"],
+        schemas=["performance-budget.schema.json"],
+        docs_url="https://github.com/wellmanifest/performance",
     ),
 }
 
@@ -548,6 +636,14 @@ PROFILES_CATALOG: Dict[str, Profile] = {
             {"id": "wellmanifest/merge", "minimumLevel": "S5"},
         ],
     ),
+    "embedded-fleet": Profile(
+        name="embedded-fleet",
+        description="Deployment + embedded semantic versioning and heterogeneous fleet release",
+        extends=["deployment"],
+        requirements=[
+            {"id": "wellmanifest/semver", "minimumLevel": "S3"},
+        ],
+    ),
     "full": Profile(
         name="full",
         description="Comprehensive profile including all Wellmanifest standards",
@@ -559,16 +655,20 @@ PROFILES_CATALOG: Dict[str, Profile] = {
 
 def get_standard(standard_id: str) -> Optional[StandardPack]:
     """Retrieve standard pack by id or alias."""
-    # Normalize aliases
     aliases = {
         "wellmanifest/git": "wellmanifest/git-lifecycle",
         "git": "wellmanifest/git-lifecycle",
+        "git-lifecycle": "wellmanifest/git-lifecycle",
         "new-project": "wellmanifest/new-project",
         "worktrees": "wellmanifest/worktrees",
         "ticket": "wellmanifest/ticket-lifecycle",
+        "ticket-lifecycle": "wellmanifest/ticket-lifecycle",
         "agent": "wellmanifest/agent",
         "merge": "wellmanifest/merge",
+        "validation-attestation": "wellmanifest/validation-attestation",
         "dsl": "wellmanifest/dsl",
+        "code-dsl": "wellmanifest/code-dsl",
+        "env-dsl": "wellmanifest/env-dsl",
         "nl-dsl": "wellmanifest/nl-dsl-llm",
         "nl-dsl-llm": "wellmanifest/nl-dsl-llm",
         "nl-api": "wellmanifest/nl-api-llm",
@@ -577,6 +677,7 @@ def get_standard(standard_id: str) -> Optional[StandardPack]:
         "taskand": "wellmanifest/taskand",
         "uriprocess": "wellmanifest/uriprocess",
         "ssot": "wellmanifest/ssot",
+        "project-ssot": "wellmanifest/project-ssot",
         "semver": "wellmanifest/semver",
         "nl-uri-dsl-llm": "wellmanifest/nl-uri-dsl-llm",
         "reuse": "wellmanifest/reuse",
@@ -585,10 +686,93 @@ def get_standard(standard_id: str) -> Optional[StandardPack]:
         "lifecycle": "wellmanifest/lifecycle",
         "policy-dsl": "wellmanifest/policy-dsl",
         "mcp": "wellmanifest/mcp",
+        "dockuri": "wellmanifest/dockuri",
         "hostguard": "wellmanifest/hostguard",
+        "docs": "wellmanifest/docs",
+        "logs": "wellmanifest/logs",
+        "llm": "wellmanifest/llm",
+        "poa": "wellmanifest/poa",
+        "report": "wellmanifest/report",
+        "session-recovery": "wellmanifest/session-recovery",
+        "status": "wellmanifest/status",
+        "performance": "wellmanifest/performance",
     }
     normalized = aliases.get(standard_id, standard_id)
     return STANDARDS_CATALOG.get(normalized)
+
+
+def expand_standard_dependencies(standard_ids: Iterable[str]) -> Dict[str, str]:
+    """Expand transitive `requires` dependencies for a set of standard IDs.
+
+    Raises ValueError on unknown standards or dependency cycles.
+    Returns a dictionary mapping canonical standard ID -> minimum conformance level.
+    """
+    resolved: Dict[str, str] = {}
+    done: set[str] = set()
+    active: set[str] = set()
+
+    def visit(raw_id: str) -> None:
+        pack = get_standard(raw_id)
+        if pack is None:
+            raise ValueError(f"Unknown standard: {raw_id}")
+        cid = pack.id
+        if cid in active:
+            raise ValueError(f"Standard dependency cycle detected at: {cid}")
+        if cid in done:
+            return
+        active.add(cid)
+        for dep_id in pack.requires:
+            visit(dep_id)
+        active.remove(cid)
+        done.add(cid)
+        resolved[cid] = max(resolved.get(cid, "S0"), pack.minimum_level)
+
+    for raw_id in standard_ids:
+        visit(raw_id)
+    return resolved
+
+
+def missing_standard_dependencies(
+    registered_ids: Iterable[str],
+    *,
+    include_baseline_meta: bool = False,
+) -> Dict[str, List[str]]:
+    """Return missing direct `requires` dependencies for a set of registered standards.
+
+    By default (`include_baseline_meta=False`), `wellmanifest/lifecycle` is only
+    required for `git-lifecycle` / `ticket-lifecycle` when non-baseline lifecycle
+    or domain standards are also registered, preserving compatibility with minimal
+    baseline-only projections.
+    """
+    canonical_set: set[str] = set()
+    packs: List[StandardPack] = []
+    for raw_id in registered_ids:
+        pack = get_standard(raw_id)
+        if pack is not None:
+            canonical_set.add(pack.id)
+            packs.append(pack)
+        else:
+            canonical_set.add(raw_id)
+
+    baseline_ids = {item["id"] for item in PROFILES_CATALOG["baseline"].requirements}
+    has_non_baseline = bool(canonical_set - baseline_ids)
+
+    missing: Dict[str, List[str]] = {}
+    for pack in packs:
+        absent: List[str] = []
+        for dep_id in pack.requires:
+            if (
+                not include_baseline_meta
+                and not has_non_baseline
+                and pack.id in ("wellmanifest/git-lifecycle", "wellmanifest/ticket-lifecycle")
+                and dep_id == "wellmanifest/lifecycle"
+            ):
+                continue
+            if dep_id not in canonical_set:
+                absent.append(dep_id)
+        if absent:
+            missing[pack.id] = sorted(absent)
+    return missing
 
 
 def list_standards() -> List[StandardPack]:

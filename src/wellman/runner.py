@@ -448,6 +448,10 @@ class ConformanceRunner:
             findings.extend(self.check_uriprocess())
         if "wellmanifest/mcp" in registered_reqs:
             findings.extend(self.check_mcp())
+        if "wellmanifest/dockuri" in registered_reqs or (self.root / "dockuri.json").is_file() or (self.root / "dockuri.yaml").is_file():
+            findings.extend(self.check_dockuri())
+        if "wellmanifest/report" in registered_reqs:
+            findings.extend(self.check_report())
         if "wellmanifest/hostguard" in registered_reqs:
             findings.extend(self.check_hostguard())
         return findings
@@ -796,6 +800,124 @@ class ConformanceRunner:
             )]
         return findings
 
+    def check_dockuri(self) -> List[Finding]:
+        """Validate wellmanifest/dockuri manifest and cross-manifest URI parity (dockuri.json vs dockuri.yaml vs uriprocess.json)."""
+        from wellman.uri import validate_process_uri
+
+        findings: List[Finding] = []
+        json_path = self.root / "dockuri.json"
+        yaml_path = self.root / "dockuri.yaml"
+        urp_path = self.root / "uriprocess.json"
+
+        if not json_path.is_file() and not yaml_path.is_file():
+            return [Finding(
+                code="GOV-DOCKURI-MISSING",
+                message="Repository requires wellmanifest/dockuri but neither dockuri.json nor dockuri.yaml exists.",
+                severity="ERROR",
+                path="dockuri.json",
+                remediation="Create dockuri.json declaring project processes and canonical proc:// URIs.",
+            )]
+
+        json_uris: set[str] = set()
+        json_version: Optional[str] = None
+        if json_path.is_file():
+            try:
+                jdata = json.loads(json_path.read_text(encoding="utf-8"))
+                json_version = jdata.get("project", {}).get("version") or jdata.get("version")
+                for proc in jdata.get("processes", []):
+                    if isinstance(proc, dict) and isinstance(proc.get("uri"), str):
+                        validate_process_uri(proc["uri"])
+                        json_uris.add(proc["uri"])
+            except Exception as exc:
+                findings.append(Finding(
+                    code="GOV-DOCKURI-INVALID",
+                    message=f"Invalid dockuri.json: {exc}",
+                    severity="ERROR",
+                    path="dockuri.json",
+                    remediation="Ensure dockuri.json conforms to wellmanifest/dockuri.",
+                ))
+
+        if yaml_path.is_file():
+            try:
+                import yaml  # type: ignore
+
+                ydata = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+                if isinstance(ydata, dict):
+                    yaml_uris = {
+                        p["uri"]
+                        for p in ydata.get("processes", [])
+                        if isinstance(p, dict) and isinstance(p.get("uri"), str)
+                    }
+                    if json_uris and yaml_uris != json_uris:
+                        diff = sorted(json_uris ^ yaml_uris)
+                        findings.append(Finding(
+                            code="GOV-DOCKURI-DRIFT",
+                            message=(
+                                f"SSoT URI drift between dockuri.json ({len(json_uris)} URIs) "
+                                f"and dockuri.yaml ({len(yaml_uris)} URIs): {', '.join(diff)}"
+                            ),
+                            severity="ERROR",
+                            path="dockuri.yaml",
+                            remediation="Synchronize canonical process URIs between dockuri.json and dockuri.yaml.",
+                        ))
+            except ImportError:
+                pass
+            except Exception as exc:
+                findings.append(Finding(
+                    code="GOV-DOCKURI-INVALID",
+                    message=f"Invalid dockuri.yaml: {exc}",
+                    severity="ERROR",
+                    path="dockuri.yaml",
+                    remediation="Ensure dockuri.yaml is valid YAML and matches dockuri.json.",
+                ))
+
+        if urp_path.is_file() and json_uris:
+            try:
+                udata = json.loads(urp_path.read_text(encoding="utf-8"))
+                urp_uris = set(udata.get("public_uris", []))
+                if "process_ref" in udata and isinstance(udata["process_ref"], str):
+                    urp_uris.add(udata["process_ref"])
+                if urp_uris and urp_uris != json_uris:
+                    diff = sorted(json_uris ^ urp_uris)
+                    findings.append(Finding(
+                        code="GOV-DOCKURI-URIPROCESS-DRIFT",
+                        message=(
+                            f"SSoT URI drift between dockuri.json ({len(json_uris)} URIs) "
+                            f"and uriprocess.json ({len(urp_uris)} URIs): {', '.join(diff)}"
+                        ),
+                        severity="ERROR",
+                        path="uriprocess.json",
+                        remediation="Synchronize public_uris in uriprocess.json with dockuri.json processes.",
+                    ))
+                urp_version = udata.get("version")
+                if json_version and urp_version and str(json_version) != str(urp_version):
+                    findings.append(Finding(
+                        code="GOV-DOCKURI-VERSION-DRIFT",
+                        message=(
+                            f"Version drift between dockuri.json ({json_version}) "
+                            f"and uriprocess.json ({urp_version})."
+                        ),
+                        severity="ERROR",
+                        path="uriprocess.json",
+                        remediation="Synchronize package version across dockuri.json and uriprocess.json.",
+                    ))
+            except Exception:
+                pass
+
+        return findings
+
+    def check_report(self) -> List[Finding]:
+        """Validate wellmanifest/report contract when required."""
+        if not (self.root / "docs").is_dir():
+            return [Finding(
+                code="GOV-REPORT-DOCS-MISSING",
+                message="Repository requires wellmanifest/report but docs/ directory is missing.",
+                severity="ERROR",
+                path="docs",
+                remediation="Create docs/ directory for reproducible reports and deliverables.",
+            )]
+        return []
+
     def check_hostguard(self) -> List[Finding]:
         """Validate wellmanifest/hostguard resource & storage guard contract when present."""
         findings: List[Finding] = []
@@ -963,6 +1085,8 @@ class ConformanceRunner:
             "wellmanifest/twin-lifecycle": self.check_lifecycle_dsl,
             "wellmanifest/uriprocess": self.check_uriprocess,
             "wellmanifest/mcp": self.check_mcp,
+            "wellmanifest/dockuri": self.check_dockuri,
+            "wellmanifest/report": self.check_report,
             "wellmanifest/hostguard": self.check_hostguard,
         }
         check = checks.get(standard_id)

@@ -22,6 +22,7 @@ from wellman.registry import (
     STANDARDS_CATALOG,
     get_profile,
     get_standard,
+    missing_standard_dependencies,
 )
 from wellman.docs_adoption import validate_adoption as validate_docs_adoption
 
@@ -395,6 +396,58 @@ class StandardsValidator:
             for item in selected
         )
 
+    def validate_standard_dependencies(self) -> List[Finding]:
+        """Validate profile and standard-pack dependency completeness in standard-requirements.json."""
+        req_path = self.gov_dir / "standard-requirements.json"
+        if not req_path.is_file():
+            return []
+        try:
+            data = json.loads(req_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        if not isinstance(data, dict):
+            return []
+
+        findings: List[Finding] = []
+        registered = {
+            item["id"]
+            for item in data.get("requirements", [])
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        }
+        profiles = [p for p in data.get("profiles", []) if isinstance(p, str)]
+        from wellman.adoption import expand_profiles
+
+        for prof_name in profiles:
+            if prof_name not in PROFILES_CATALOG:
+                continue
+            expected_reqs = expand_profiles([prof_name])
+            missing_reqs = sorted(set(expected_reqs) - registered)
+            if missing_reqs:
+                findings.append(Finding(
+                    code="STD-PROFILE-REQ-MISSING",
+                    message=(
+                        f"Profile '{prof_name}' in standard-requirements.json is missing required standards: "
+                        + ", ".join(missing_reqs)
+                    ),
+                    severity="ERROR",
+                    path=".governance/standard-requirements.json",
+                    remediation="Run `wellman adopt auto` to register all requirements of declared profiles.",
+                ))
+
+        missing_deps = missing_standard_dependencies(sorted(registered))
+        for std_id, deps in sorted(missing_deps.items()):
+            findings.append(Finding(
+                code="STD-DEP-MISSING",
+                message=(
+                    f"Standard '{std_id}' requires dependency standard(s) not registered in "
+                    f"standard-requirements.json: {', '.join(deps)}"
+                ),
+                severity="ERROR",
+                path=".governance/standard-requirements.json",
+                remediation=f"Register {', '.join(deps)} via `wellman adopt {' '.join(deps)}`.",
+            ))
+        return findings
+
     def validate_required_standards(self) -> List[Finding]:
         """Validate registered standard requirements from standard-requirements.json."""
         try:
@@ -410,6 +463,8 @@ class StandardsValidator:
             ]
 
         findings: List[Finding] = []
+        has_lock = (self.gov_dir / "manifest.lock.json").is_file()
+        has_local_ci = (self.gov_dir / "local-ci-publication.json").is_file()
         checked = {
             "wellmanifest/docs",
             "wellmanifest/logs",
@@ -417,8 +472,6 @@ class StandardsValidator:
             "wellmanifest/worktrees",
             "wellmanifest/ticket-lifecycle",
             "wellmanifest/git-lifecycle",
-            "wellmanifest/merge",
-            "wellmanifest/validation-attestation",
             "wellmanifest/agent",
             "wellmanifest/session-recovery",
             "wellmanifest/reuse",
@@ -432,8 +485,12 @@ class StandardsValidator:
             "wellmanifest/twin-lifecycle",
             "wellmanifest/uriprocess",
             "wellmanifest/mcp",
+            "wellmanifest/dockuri",
+            "wellmanifest/report",
             "wellmanifest/hostguard",
         }
+        if has_lock or has_local_ci:
+            checked.update({"wellmanifest/merge", "wellmanifest/validation-attestation"})
 
         if "wellmanifest/docs" in required and (self.gov_dir / "docs.json").is_file() and not (self.root / "docs" / "README.md").is_file():
             findings.append(Finding(
@@ -451,8 +508,8 @@ class StandardsValidator:
                 remediation="Add the consumer error catalog errors/README.md with one errors/{CODE}.md runbook per emitted code and validate it with `logs_check.py error-adoption`.",
             ))
 
-        has_lock = (self.gov_dir / "manifest.lock.json").is_file()
         if has_lock:
+            findings.extend(self.validate_standard_dependencies())
             if "wellmanifest/new-project" in required and not (self.root / "project" / "governance-check.sh").is_file():
                 findings.append(Finding(
                     "GOV-NEW-PROJECT-INCOMPLETE",

@@ -1,0 +1,33 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-077",
+  "summary": "Add standard pack dependency graph, sync schemas, and enforce dockuri/report checks",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-077/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/registry.py",
+    "src/wellman/validator.py",
+    "src/wellman/runner.py",
+    "src/wellman/schemas/standard-packs.json",
+    "src/wellman/schemas/agent-hosts.schema.json",
+    "src/wellman/schemas/intent.schema.json",
+    "src/wellman/schemas/manifest.schema.json",
+    "src/wellman/schemas/work-start-report.schema.json",
+    "src/wellman/schemas/merge-decision.schema.json",
+    "tests/test_registry_dependencies.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

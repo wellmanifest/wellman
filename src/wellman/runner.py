@@ -454,6 +454,8 @@ class ConformanceRunner:
             findings.extend(self.check_report())
         if "wellmanifest/hostguard" in registered_reqs:
             findings.extend(self.check_hostguard())
+        if "wellmanifest/flowguard" in registered_reqs or (self.root / "flowguard.policy.json").is_file():
+            findings.extend(self.check_flowguard())
         if "wellmanifest/deployment" in registered_reqs:
             findings.extend(self.check_deployment())
         if "wellmanifest/semver" in registered_reqs:
@@ -953,6 +955,55 @@ class ConformanceRunner:
             ))
         return findings
 
+    def check_flowguard(self) -> List[Finding]:
+        """Validate wellmanifest/flowguard bounded concurrency and multi-task governance."""
+        findings: List[Finding] = []
+        has_flowguard = (
+            (self.root / "flowguard").is_dir()
+            or (self.root / "src" / "flowguard").is_dir()
+            or (self.root / "flowguard.policy.json").is_file()
+            or (self.root / "schemas" / "flowguard.policy.v1.schema.json").is_file()
+            or any(
+                "flowguard" in p.read_text(encoding="utf-8", errors="ignore")
+                for p in self.root.glob("**/*.py")
+                if p.is_file()
+                and ".worktrees" not in p.relative_to(self.root).parts
+                and ".venv" not in p.relative_to(self.root).parts
+            )
+        )
+        if not has_flowguard:
+            findings.append(Finding(
+                code="GOV-FLOWGUARD-MISSING",
+                message="Repository requires wellmanifest/flowguard but no flowguard module, policy, or integration was found.",
+                severity="ERROR",
+                path=str(self.root),
+                remediation="Integrate semcod/flowguard adaptive concurrency governor and DAG scheduling per wellmanifest/flowguard.",
+            ))
+            return findings
+
+        # Check for unthrottled or synchronous blocking patterns in task execution modules
+        for py_path in self.root.glob("**/*.py"):
+            if (
+                ".worktrees" in py_path.relative_to(self.root).parts
+                or ".venv" in py_path.relative_to(self.root).parts
+                or "tests" in py_path.relative_to(self.root).parts
+            ):
+                continue
+            try:
+                content = py_path.read_text(encoding="utf-8", errors="ignore")
+                if "flowguard" in content and "subprocess.run" in content and "timeout=" not in content:
+                    findings.append(Finding(
+                        code="GOV-FLOWGUARD-UNBOUNDED-EXECUTION",
+                        message=f"Blocking subprocess call without timeout in {py_path.name}; risks pipeline freeze.",
+                        severity="WARNING",
+                        path=str(py_path.relative_to(self.root)),
+                        remediation="Add bounded timeout to external commands within flowguard execution contexts.",
+                    ))
+            except Exception:
+                continue
+
+        return findings
+
     def check_deployment(self) -> List[Finding]:
         """Validate wellmanifest/deployment indicators when registered."""
         findings: List[Finding] = []
@@ -1145,6 +1196,7 @@ class ConformanceRunner:
             "wellmanifest/ssot": lambda: [],
             "wellmanifest/project-ssot": lambda: [],
             "wellmanifest/hostguard": self.check_hostguard,
+            "wellmanifest/flowguard": self.check_flowguard,
         }
         check = checks.get(standard_id)
         if check is not None:

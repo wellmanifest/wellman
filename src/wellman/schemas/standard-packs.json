@@ -612,6 +612,14 @@
       ]
     },
     {
+      "id": "wellmanifest/flowguard",
+      "owns": [
+        "adaptive concurrency governance",
+        "DAG flow scheduling",
+        "HoL decongestion quarantine"
+      ]
+    },
+    {
       "id": "wellmanifest/status",
       "owns": [
         "status signal taxonomy",

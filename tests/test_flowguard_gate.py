@@ -49,3 +49,12 @@ def test_check_flowguard_unbounded_subprocess(tmp_path: Path):
     runner = ConformanceRunner(tmp_path)
     findings = runner.check_flowguard()
     assert any(f.code == "GOV-FLOWGUARD-UNBOUNDED-EXECUTION" for f in findings)
+
+
+def test_flowguard_applicability_rule():
+    from wellman.applicability import RULES
+    assert "wellmanifest/flowguard" in RULES
+    rule = RULES["wellmanifest/flowguard"]
+    assert rule["scope"] == "component"
+    assert rule["applies_when"]["all"][0]["feature"] == "runtime:flow-guard"
+

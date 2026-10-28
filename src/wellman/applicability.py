@@ -36,7 +36,7 @@ CAPABILITIES = {
     'session-recovery':'runtime:session-recovery','reuse':'quality:code-reuse',
     'modularity':'quality:modularity','priority':'lifecycle:priority',
     'lifecycle':'contract:lifecycle-dsl',
-    'mcp':'contract:mcp-operations','hostguard':'runtime:host-guard',
+    'mcp':'contract:mcp-operations','hostguard':'runtime:host-guard','flowguard':'runtime:flow-guard',
     'project-ssot':'quality:project-ssot','dockuri':'contract:dockuri',
     'report':'quality:report','env-dsl':'contract:env-dsl',
     'status':'lifecycle:status','performance':'quality:performance',

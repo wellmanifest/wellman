@@ -14,6 +14,8 @@
     "project/TICKETS.md",
     "src/wellman/registry.py",
     "src/wellman/runner.py",
+    "src/wellman/applicability.py",
+    "src/wellman/schemas/standard-packs.json",
     "tests/test_flowguard_gate.py",
     "tests/test_runner.py"
   ],

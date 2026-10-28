@@ -17,3 +17,5 @@ Admit `wellmanifest/flowguard` as a registered Wellmanifest standard and impleme
 - [x] AC-03: Wire `check_flowguard` into `run_standard` and `run_all`.
 - [x] AC-04: Unit tests in `tests/test_flowguard_gate.py` pass 100%.
 - [x] AC-05: Conformance passes via `./project/governance-check.sh` and `wellman check`.
+- [x] AC-06: Register capability `runtime:flow-guard` in `src/wellman/applicability.py`.
+- [x] AC-07: Synchronize `src/wellman/schemas/standard-packs.json` with flowguard standard pack ownership.

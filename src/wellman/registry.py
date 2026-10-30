@@ -79,6 +79,13 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         requires=["wellmanifest/uriprocess"],
         schemas=['schemas/capsule.v1.json', 'schemas/proc.v1.json', 'schemas/grants.v1.json'], docs_url="https://github.com/wellmanifest/taskand",
     ),
+    "wellmanifest/data-plane": StandardPack(
+        id="wellmanifest/data-plane", name="Authoritative Event Store and CQRS Read Model Data Plane",
+        owner="wellmanifest/data-plane", description="Per-stream authoritative append-only event store, SQLite/PostgreSQL CQRS read-model indexing, low-RAM profiles, and bounded reverse-tail recovery",
+        minimum_level="S3", execution_model="protected-conformance",
+        owns=["event store schema", "CQRS read-model indexes", "atomic checkpointing"], excludes=["execution authority"],
+        schemas=['manifest.json', 'schemas/event.schema.json'], docs_url="https://github.com/wellmanifest/data-plane",
+    ),
     "wellmanifest/uriprocess": StandardPack(
         id="wellmanifest/uriprocess", name="URI process package manufacturing",
         owner="wellmanifest/uriprocess", description="Deterministic URI process package manufacture, provenance, verification and delivery",
@@ -686,6 +693,7 @@ def get_standard(standard_id: str) -> Optional[StandardPack]:
         "nl-api-llm": "wellmanifest/nl-api-llm",
         "nohardcode": "wellmanifest/nohardcode",
         "taskand": "wellmanifest/taskand",
+        "data-plane": "wellmanifest/data-plane",
         "uriprocess": "wellmanifest/uriprocess",
         "ssot": "wellmanifest/ssot",
         "project-ssot": "wellmanifest/project-ssot",

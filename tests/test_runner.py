@@ -240,3 +240,35 @@ def test_bundled_worktree_checker_ships_its_path_contract(tmp_path, monkeypatch)
         subprocess.run(argv, check=True, capture_output=True)
     findings = ConformanceRunner(tmp_path).check_worktrees()
     assert [f.code for f in findings if f.severity == "ERROR"] == []
+
+
+def test_runner_selected_dataplane_and_taskand_conformance(tmp_path):
+    runner = ConformanceRunner(tmp_path)
+    # Empty dir negative checks
+    dp_findings = runner.run_standard("wellmanifest/data-plane")
+    assert [f.code for f in dp_findings] == ["GOV-DATAPLANE-MISSING"]
+    tk_findings = runner.run_standard("wellmanifest/taskand")
+    assert [f.code for f in tk_findings] == ["GOV-TASKAND-MISSING"]
+
+    # Deployment and semver checks mapped properly (no GOV-STANDARD-NOT-IMPLEMENTED)
+    dep_findings = runner.run_standard("wellmanifest/deployment")
+    assert all(f.code != "GOV-STANDARD-NOT-IMPLEMENTED" for f in dep_findings)
+    sem_findings = runner.run_standard("wellmanifest/semver")
+    assert [f.code for f in sem_findings] == ["GOV-SEMVER-MISSING"]
+
+    # Positive checks with contract files
+    (tmp_path / "resources-v1.sqlite3").touch()
+    assert len(runner.run_standard("wellmanifest/data-plane")) == 0
+    (tmp_path / "bundle.json").touch()
+    assert len(runner.run_standard("wellmanifest/taskand")) == 0
+
+
+def test_registry_dataplane_registration():
+    from wellman.registry import STANDARDS_CATALOG, get_standard
+    assert "wellmanifest/data-plane" in STANDARDS_CATALOG
+    pack = STANDARDS_CATALOG["wellmanifest/data-plane"]
+    assert pack.id == "wellmanifest/data-plane"
+    assert pack.minimum_level == "S3"
+    resolved = get_standard("data-plane")
+    assert resolved is not None
+    assert resolved.id == "wellmanifest/data-plane"

@@ -460,6 +460,10 @@ class ConformanceRunner:
             findings.extend(self.check_deployment())
         if "wellmanifest/semver" in registered_reqs:
             findings.extend(self.check_semver())
+        if "wellmanifest/taskand" in registered_reqs:
+            findings.extend(self.check_taskand())
+        if "wellmanifest/data-plane" in registered_reqs:
+            findings.extend(self.check_data_plane())
         return findings
 
     def check_local_ci_publication(self) -> List[Finding]:
@@ -1039,6 +1043,58 @@ class ConformanceRunner:
             )]
         return []
 
+    def check_taskand(self) -> List[Finding]:
+        """Validate wellmanifest/taskand capsule contracts and DAG task orchestration."""
+        has_taskand = (
+            (self.root / "bundle.json").is_file()
+            or (self.root / "schemas" / "capsule.v1.json").is_file()
+            or (self.root / "schemas" / "proc.v1.json").is_file()
+            or (any(
+                "depends_on" in p.read_text(encoding="utf-8", errors="ignore")
+                or "CyclicDependencyError" in p.read_text(encoding="utf-8", errors="ignore")
+                for p in (self.root / "src").glob("**/*.py")
+                if p.is_file()
+                and ".worktrees" not in p.relative_to(self.root).parts
+                and ".venv" not in p.relative_to(self.root).parts
+            ) if (self.root / "src").is_dir() else False)
+        )
+        if not has_taskand:
+            return [Finding(
+                code="GOV-TASKAND-MISSING",
+                message="Repository requires wellmanifest/taskand but no capsule contracts, task DAG definitions or task orchestration modules were found.",
+                severity="ERROR",
+                path=str(self.root),
+                remediation="Define task capsules, schemas, or DAG dependency execution per wellmanifest/taskand.",
+            )]
+        return []
+
+    def check_data_plane(self) -> List[Finding]:
+        """Validate wellmanifest/data-plane event store and CQRS read model indicators."""
+        has_dataplane = (
+            (self.root / "src" / "dataplane").is_dir()
+            or (self.root / "src" / "data-plane").is_dir()
+            or (self.root / "conformance" / "data-plane.json").is_file()
+            or any((self.root / fn).is_file() for fn in ("resources-v1.sqlite3", "events.sqlite3", "logs.jsonl", "events.jsonl"))
+            or (any(
+                "data-plane" in p.read_text(encoding="utf-8", errors="ignore")
+                or "wellmanifest/data-plane" in p.read_text(encoding="utf-8", errors="ignore")
+                or "readmodel" in p.name.lower()
+                for p in (self.root / "src").glob("**/*.py")
+                if p.is_file()
+                and ".worktrees" not in p.relative_to(self.root).parts
+                and ".venv" not in p.relative_to(self.root).parts
+            ) if (self.root / "src").is_dir() else False)
+        )
+        if not has_dataplane:
+            return [Finding(
+                code="GOV-DATAPLANE-MISSING",
+                message="Repository requires wellmanifest/data-plane but no authoritative event store or CQRS read-model index was found.",
+                severity="ERROR",
+                path=str(self.root),
+                remediation="Implement an append-only event store or CQRS read model per wellmanifest/data-plane.",
+            )]
+        return []
+
     def _fallback_storage_health(self, home: Path) -> dict:
         """Fallback lightweight scan for agent storage health when uncrash is uninstalled."""
         import sqlite3
@@ -1197,6 +1253,12 @@ class ConformanceRunner:
             "wellmanifest/project-ssot": lambda: [],
             "wellmanifest/hostguard": self.check_hostguard,
             "wellmanifest/flowguard": self.check_flowguard,
+            "wellmanifest/deployment": self.check_deployment,
+            "wellmanifest/semver": self.check_semver,
+            "wellmanifest/taskand": self.check_taskand,
+            "wellmanifest/data-plane": self.check_data_plane,
+            "wellmanifest/poa": lambda: [],
+            "wellmanifest/authority-lifecycle": lambda: [],
         }
         check = checks.get(standard_id)
         if check is not None:

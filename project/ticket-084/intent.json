@@ -1,0 +1,75 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-084",
+  "summary": "Restore Wellman applicability after registering data-plane standard",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "regression"
+  },
+  "allowedPaths": [
+    "project/ticket-084/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/applicability.py",
+    "tests/test_applicability.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "bb6146ae675913187fe69b9e1468b0780b61934a",
+    "targetBranch": "main",
+    "outcome": "Restore applicability, publish the fix and merge through the protected independent Validator process.",
+    "nonGoals": [
+      "Publishing npm or PyPI products",
+      "Executing declared operations"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 20,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Add the missing declarative event-data-plane feature mapping; preserve existing resolver semantics.",
+      "components": [
+        {
+          "name": "applicability",
+          "paths": [
+            "src/wellman/applicability.py",
+            "tests/test_applicability.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the material change through a reviewed PR."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Local test results and protected exact-head verification"
+      }
+    ]
+  }
+}

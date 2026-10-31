@@ -502,3 +502,10 @@ def test_uri_and_configuration_selection_requires_independent_capability(name, c
     obs['stages'][0]['status'] = 'partial'
     obs['stages'][0]['coverage'] = 'partial'
     assert choose(resolve(obs, cat), identifier)['action'] == 'defer'
+
+
+def test_every_registered_standard_has_a_declarative_applicability_rule():
+    from wellman.registry import STANDARDS_CATALOG
+    assert set(RULES) == set(STANDARDS_CATALOG)
+    assert RULES['wellmanifest/data-plane']['applies_when']['all'] == [
+        {'feature': 'contract:event-data-plane', 'is': 'present'}]

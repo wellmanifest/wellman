@@ -1,0 +1,79 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-086",
+  "summary": "Allow Python and Node cores in operational multipacks without mandatory Rust",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-086/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/multipack.py",
+    "src/wellman/schemas/operational-multipack.schema.json",
+    "tests/test_multipack.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "305ec2ba33ee606b4f79de0e0467c7cc1b0ba2e1",
+    "targetBranch": "main",
+    "outcome": "Publish support for optional Rust cores through independent protected Validator merge.",
+    "nonGoals": [
+      "Publishing npm or PyPI products",
+      "Executing declared operations"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 25,
+    "budgets": {
+      "maxImplementationFiles": 3,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Extend the existing candidate contract core-language enumeration; keep all single-core and family-parity invariants.",
+      "components": [
+        {
+          "name": "multipack",
+          "paths": [
+            "src/wellman/multipack.py",
+            "src/wellman/schemas/operational-multipack.schema.json",
+            "tests/test_multipack.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "Accept Python and Node core implementations in candidate multipack manifests"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the material change through a reviewed PR."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q tests/test_multipack.py tests/test_registry_dependencies.py",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Positive and negative core-language cases and exact-head protected validation"
+      }
+    ]
+  }
+}

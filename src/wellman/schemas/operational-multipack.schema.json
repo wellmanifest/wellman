@@ -30,7 +30,9 @@
     },
     "core_language": {
       "enum": [
-        "rust"
+        "rust",
+        "python",
+        "node"
       ]
     },
     "source": {

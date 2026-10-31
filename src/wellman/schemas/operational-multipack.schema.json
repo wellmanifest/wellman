@@ -107,7 +107,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 512,
-            "pattern": "^proc://[^\\s]+$"
+            "pattern": "^[a-z][a-z0-9+.-]*://[^\\s]+$"
           },
           "effects": {
             "type": "array",
@@ -200,6 +200,10 @@
             "minItems": 1,
             "maxItems": 256,
             "uniqueItems": true
+          },
+          "publish": {
+            "type": "boolean",
+            "description": "Defaults to true. False declares an internal binding and requests no registry publication."
           }
         }
       },
@@ -241,6 +245,13 @@
       "minItems": 1,
       "maxItems": 256,
       "uniqueItems": true
+    },
+    "version_policy": {
+      "enum": [
+        "lockstep",
+        "independent"
+      ],
+      "description": "Defaults to lockstep. Independent bindings keep their own stable versions."
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

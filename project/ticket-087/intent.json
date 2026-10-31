@@ -1,0 +1,94 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-087",
+  "summary": "Preserve multipack URI identities and independent artifact publication versions",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-087/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/multipack.py",
+    "src/wellman/schemas/operational-multipack.schema.json",
+    "tests/test_multipack.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "be51df27edf7a24f5a7b63302108f3eaa8c18ee3",
+    "targetBranch": "main",
+    "outcome": "Merge reusable multipack declarations through Goal pull-request delivery and the independent protected Validator.",
+    "nonGoals": [
+      "Registry publication",
+      "Runtime execution",
+      "Changing the canonical URIprocess standard or adopted governance"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 20,
+    "budgets": {
+      "maxImplementationFiles": 3,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Additive declaration fields with lockstep as the compatibility default; preserve URI identity and grant no execution or publication authority.",
+      "components": [
+        {
+          "name": "multipack declarations",
+          "paths": [
+            "src/wellman/multipack.py",
+            "src/wellman/schemas/operational-multipack.schema.json",
+            "tests/test_multipack.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "Optional version policy, internal bindings and preserved URI schemes in candidate declarations"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Reviewed revert of the additive candidate support."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest -q tests/test_multipack.py"
+        ],
+        "evidence": "Existing default and negative lockstep regressions"
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python -m pytest -q tests/test_multipack.py"
+        ],
+        "evidence": "URI preservation, independent version and internal-core declarations"
+      },
+      {
+        "criterion": "AC-03",
+        "commands": [
+          "python -m pytest -q tests/",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full suite and protected exact-head approval before merge"
+      }
+    ]
+  }
+}

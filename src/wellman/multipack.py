@@ -3,6 +3,11 @@
 A multipack describes one operational capability with multiple language bindings.
 This Wellman candidate is not a published revision of wellmanifest/uriprocess.
 Run: python -m wellman.multipack path/to/multipack.json
+
+Exact process URI namespaces are retained. Versions default to lockstep;
+version_policy='independent' permits separate stable binding versions.
+A binding with publish=false stays out of declared_publications, including
+an internal Rust core. These declarations never grant publication authority.
 """
 from __future__ import annotations
 
@@ -49,7 +54,8 @@ def validate(document):
             add('MULTIPACK-PATH', path, 'Entry must be a normalized relative package path')
         if not set(binding['operations']) <= set(op_ids):
             add('MULTIPACK-REFERENCE', path, 'Unknown operation reference')
-        if binding['version'] != document['version']:
+        if (document.get('version_policy', 'lockstep') == 'lockstep'
+                and binding['version'] != document['version']):
             add('MULTIPACK-VERSION', path, 'Bindings must use the family version in this profile')
         expected = {'rust': 'cargo', 'python': 'pypi', 'node': 'npm'}[binding['language']]
         if binding['registry'] != expected:
@@ -73,10 +79,11 @@ def validate(document):
             continue
         if 'pure' in operation['effects'] and len(operation['effects']) > 1:
             add('MULTIPACK-EFFECTS', path, 'Pure cannot be combined with effectful declarations')
-        if (uri.scheme != 'proc' or not uri.netloc or not uri.path.startswith('/') or
+        if (not uri.scheme or not uri.hostname or not uri.path.startswith('/') or
                 uri.query or uri.fragment or uri.username or uri.password or '%' in operation['uri'] or
+                '\\' in operation['uri'] or any(ord(c) < 32 or ord(c) == 127 for c in operation['uri']) or
                 any(p in ('', '.', '..') for p in uri.path[1:].split('/'))):
-            add('MULTIPACK-URI', path, 'Use an exact canonical proc URI without query or fragment')
+            add('MULTIPACK-URI', path, 'Use an exact process URI without query, fragment or unsafe path')
         adapters = [a for a in document['adapters'] if a['operation'] == operation['id']]
         if not adapters:
             add('MULTIPACK-ADAPTER', path, 'Every operation requires a process adapter')
@@ -94,7 +101,11 @@ def validate(document):
             add('MULTIPACK-COVERAGE', path, 'Adapter binding does not expose this operation')
     digest = hashlib.sha256(encoded).hexdigest()
     return {'ok': not findings, 'authority': 'none', 'contract_sha256': digest,
-            'validation': 'declarations-only', 'findings': findings}
+            'validation': 'declarations-only', 'findings': findings,
+            'declared_publications': [
+                {'binding': b['id'], 'registry': b['registry'], 'package': b['package'], 'version': b['version']}
+                for b in bindings if b.get('publish', True)
+            ] if not findings else []}
 
 
 def main(argv=None):

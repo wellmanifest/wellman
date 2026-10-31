@@ -111,3 +111,69 @@ def test_rust_client_does_not_implicitly_become_the_core():
     assert validate(d)['ok']
     d['bindings'][0]['implementation'] = 'core'
     assert not validate(d)['ok']
+
+
+@pytest.mark.parametrize('uri', [
+    'dockuri://local/network/scan/v1',
+    'taskand://operations/netprobe/scan',
+    'uriloop+json://local/netprobe/scan',
+])
+def test_foreign_uri_namespace_is_preserved(uri):
+    d = manifest(); d['operations'][0]['uri'] = uri; before = deepcopy(d)
+    result = validate(d)
+    assert result['ok'] and result['authority'] == 'none'
+    assert d == before
+    other = deepcopy(d); other['operations'][0]['uri'] = 'proc://netprobe/scan/v1'
+    assert result['contract_sha256'] != validate(other)['contract_sha256']
+
+
+def test_independent_versions_are_explicit_and_keep_lockstep_as_default():
+    d = manifest(); d['bindings'][1]['version'] = '1.2.3'
+    assert 'MULTIPACK-VERSION' in {f['code'] for f in validate(d)['findings']}
+    d['version_policy'] = 'independent'; before = deepcopy(d)
+    assert validate(d)['ok'] and d == before
+    d['version_policy'] = 'lockstep'
+    assert 'MULTIPACK-VERSION' in {f['code'] for f in validate(d)['findings']}
+
+
+def test_internal_core_is_excluded_from_declared_publications():
+    d = manifest(); d['bindings'][0]['publish'] = False; before = deepcopy(d)
+    result = validate(d)
+    assert result['ok'] and result['validation'] == 'declarations-only'
+    assert result['declared_publications'] == [
+        {'binding': b['id'], 'registry': b['registry'], 'package': b['package'], 'version': b['version']}
+        for b in d['bindings'][1:]
+    ]
+    assert d == before and result['authority'] == 'none'
+
+
+@pytest.mark.parametrize('field,value', [('version_policy', 'auto'), ('publish', 'false'), ('publish', 0)])
+def test_publication_policy_rejects_unknown_or_ambiguous_values(field, value):
+    d = manifest()
+    if field == 'publish':
+        d['bindings'][0][field] = value
+    else:
+        d[field] = value
+    assert not validate(d)['ok']
+
+
+@pytest.mark.parametrize('uri', [
+    'dockuri://:80/scan', 'taskand://local:bad/scan', 'dockuri:///scan',
+    'dockuri://local', 'dockuri://local//scan', 'dockuri://local/../scan',
+    'dockuri://user:secret@local/scan', 'dockuri://local/scan?q=1',
+    'uriloop://local/scan#x', 'dockuri://local/%2fscan',
+    'dockuri://loc\\al/scan', 'dockuri://local/sc\x00an',
+])
+def test_foreign_uri_still_requires_safe_exact_identity(uri):
+    d = manifest(); d['operations'][0]['uri'] = uri
+    result = validate(d)
+    assert not result['ok']
+    assert result.get('declared_publications', []) == []
+
+
+def test_default_publication_declarations_include_all_bindings_without_authority():
+    d = manifest(); result = validate(d)
+    assert result['ok'] and result['authority'] == 'none'
+    assert [b['binding'] for b in result['declared_publications']] == ['rust', 'python', 'node']
+    d['bindings'][0]['registry'] = 'npm'
+    assert validate(d)['declared_publications'] == []

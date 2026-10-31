@@ -3,7 +3,7 @@
 - **ID**: ticket-083
 - **Owner**: agent:codex (user-requested session)
 - **Status**: IN_PROGRESS
-- **Workflow state**: EDIT
+- **Workflow state**: PUBLICATION
 - **Created**: 2026-10-31
 
 ## Goal and scope
@@ -31,3 +31,7 @@ Multipack is an artifact family, not an execution framework. Prefer extending we
 - Full suite: collection fails in existing applicability.py because registry data-plane has no CAPABILITIES mapping. Neither file is modified by this ticket.
 - Remaining: independently admitted canonical URIprocess profile extension; main Wellman CLI integration; runtime parity tests; immutable release provenance and per-platform build matrix; publication through protected delivery.
 - Canonical URIprocess checkout contains unknown untracked governance files and lacks managed work_start_check.py; preserved without modification.
+
+## Publication authorization
+
+User requested continuation and merging. Delivery must use the protected controller and independent Validator. The data-plane collection regression is handled separately by ticket-084.

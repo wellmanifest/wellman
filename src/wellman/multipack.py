@@ -43,7 +43,8 @@ def validate(document):
     for binding in bindings:
         path = 'bindings.' + binding['id']
         entry = binding['entry']
-        if (entry.startswith('/') or '\\' in entry or
+        if (entry.startswith('/') or ':' in entry.split('/')[0] or
+                any(ord(c) < 32 or ord(c) == 127 for c in entry) or '\\' in entry or
                 any(part in ('', '.', '..') for part in entry.split('/'))):
             add('MULTIPACK-PATH', path, 'Entry must be a normalized relative package path')
         if not set(binding['operations']) <= set(op_ids):
@@ -68,6 +69,7 @@ def validate(document):
         path = 'operations.' + operation['id']
         try:
             uri = urlsplit(operation['uri'])
+            _ = uri.port  # Reject malformed authorities consistently with CLI validation.
         except ValueError:
             add('MULTIPACK-URI', path, 'Malformed process URI')
             continue

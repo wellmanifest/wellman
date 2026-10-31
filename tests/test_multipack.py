@@ -39,6 +39,8 @@ def test_family_is_declarative_and_deterministic():
     ('version', '0.2.0', 'MULTIPACK-VERSION'),
     ('entry', '../escape.py', 'MULTIPACK-PATH'),
     ('entry', '/tmp/escape.py', 'MULTIPACK-PATH'),
+    ('entry', 'C:/escape.py', 'MULTIPACK-PATH'),
+    ('entry', 'src/invalid\x00.rs', 'MULTIPACK-PATH'),
     ('entry', 'src//lib.rs', 'MULTIPACK-PATH'),
     ('operations', ['missing'], 'MULTIPACK-REFERENCE'),
 ])
@@ -48,7 +50,7 @@ def test_reject_inconsistent_binding(field, value, code):
 
 
 @pytest.mark.parametrize('uri', ['proc://netprobe/../scan', 'proc://netprobe/scan?q=x',
-                                  'proc://netprobe/scan#x', 'proc://netprobe/%2e%2e/scan', 'proc://[broken/scan'])
+                                  'proc://netprobe/scan#x', 'proc://netprobe/%2e%2e/scan', 'proc://[broken/scan', 'proc://netprobe:bad/scan'])
 def test_reject_noncanonical_process_uri(uri):
     d = manifest(); d['operations'][0]['uri'] = uri
     assert not validate(d)['ok']

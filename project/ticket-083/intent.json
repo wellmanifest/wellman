@@ -22,5 +22,58 @@
   "stacks": [],
   "dependsOn": [],
   "conflictsWith": [],
-  "integrationTicket": null
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "bb6146ae675913187fe69b9e1468b0780b61934a",
+    "targetBranch": "main",
+    "outcome": "Publish and merge the offline operational multipack validator through the protected delivery controller after trusted exact-head approval.",
+    "nonGoals": [
+      "Publishing npm or PyPI products",
+      "Executing declared operations"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 3,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Independent stdlib validator for a candidate multipack profile; canonical standard remains URIprocess.",
+      "components": [
+        {
+          "name": "wellman multipack",
+          "paths": [
+            "src/wellman/multipack.py",
+            "src/wellman/schemas/operational-multipack.schema.json",
+            "tests/test_multipack.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "python -m wellman.multipack manifest.json"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the material change through a reviewed PR."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-03",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q tests/test_multipack.py",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Local command results and protected exact-head validation"
+      }
+    ]
+  }
 }

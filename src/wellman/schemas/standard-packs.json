@@ -632,6 +632,17 @@
         "performance budget contracts",
         "benchmark regression gates"
       ]
+    },
+    {
+      "id": "wellmanifest/data-plane",
+      "owns": [
+        "event store schema",
+        "CQRS read-model indexes",
+        "atomic checkpointing"
+      ],
+      "excludes": [
+        "execution authority"
+      ]
     }
   ]
 }

@@ -1,0 +1,73 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-085",
+  "summary": "Synchronize bundled standard catalog with registered data-plane pack",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "regression"
+  },
+  "allowedPaths": [
+    "project/ticket-085/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/schemas/standard-packs.json"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "1e19eadc4a1e00ce17021ed367fcb890c97d62dd",
+    "targetBranch": "main",
+    "outcome": "Restore bundled catalog parity and publish through protected exact-head Validator merge.",
+    "nonGoals": [
+      "Publishing npm or PyPI products",
+      "Executing declared operations"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 15,
+    "budgets": {
+      "maxImplementationFiles": 1,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Synchronize Wellman composition metadata with its existing runtime registry entry.",
+      "components": [
+        {
+          "name": "bundled standard catalog",
+          "paths": [
+            "src/wellman/schemas/standard-packs.json"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the material change through a reviewed PR."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src python3 -m pytest -q tests/test_registry_dependencies.py tests/test_multipack.py",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Full preceding run: only catalog parity failed; targeted rerun verifies the correction."
+      }
+    ]
+  }
+}

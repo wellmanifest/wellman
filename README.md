@@ -3,7 +3,7 @@
 
 ## AI Cost Tracking
 
-![PyPI](https://img.shields.io/badge/pypi-costs-blue) ![Version](https://img.shields.io/badge/version-0.20.36-blue) ![Python](https://img.shields.io/badge/python-3.9+-blue) ![License](https://img.shields.io/badge/license-Apache--2.0-green)
+![PyPI](https://img.shields.io/badge/pypi-costs-blue) ![Version](https://img.shields.io/badge/version-0.21.0-blue) ![Python](https://img.shields.io/badge/python-3.9+-blue) ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 ![AI Cost](https://img.shields.io/badge/AI%20Cost-$0.66-orange) ![Human Time](https://img.shields.io/badge/Human%20Time-1.0h-blue) ![Model](https://img.shields.io/badge/Model-openrouter%2Fqwen%2Fqwen3--coder--next-lightgrey)
 
 - 🤖 **LLM usage:** $0.6582 (4 commits)
@@ -16,6 +16,34 @@ Generated on 2026-09-19 using [openrouter/qwen/qwen3-coder-next](https://openrou
 **Wellman** is the unified runtime, standards catalog, and policy-as-code validator for all **Wellmanifest** standards.
 
 Instead of copying hundreds of kilobytes of vendored checker scripts into every repository, `wellman` provides a standardized, dependency-free CLI and programmatic engine that enforces Wellmanifest standards across your organization.
+
+---
+
+## Candidate operational multipacks
+
+Validate a local descriptor without a Git checkout:
+
+```bash
+wellman multipack validate path/to/multipack.json
+```
+
+The command writes JSON and returns 0 for consistent declarations or 1 for
+invalid/unreadable input. It delegates to the same checker as
+`python -m wellman.multipack` and performs no network calls, process invocation,
+build or registry upload.
+
+[The illustrative family](docs/examples/network-multipack.json) declares npm
+and PyPI artifacts with independent stable versions and an internal Rust core
+(`publish: false`). Rust is optional; a Python or Node core is also supported.
+Omitting `version_policy` retains the default lockstep version policy. Exact
+URI namespaces are preserved. Invalid descriptors produce no declared
+publication targets.
+
+This is the `wellman.operational-multipack/v1` candidate, pending canonical
+URIprocess adoption. The example uses placeholder provenance and contract
+hashes. A successful result grants no authority and proves no source origin,
+installed-artifact behavior or cross-binding runtime parity. Those need their
+own verified evidence before production use or publication.
 
 ---
 

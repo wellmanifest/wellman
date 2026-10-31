@@ -12,6 +12,44 @@ from wellman.cli import main
 from wellman.cli import _worktree_admission
 
 
+def test_multipack_cli_validates_example_outside_git(tmp_path, monkeypatch, capsys):
+    example = Path(__file__).resolve().parents[1] / 'docs/examples/network-multipack.json'
+    monkeypatch.chdir(tmp_path)
+    assert main(['multipack', 'validate', str(example)]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report['ok'] and report['authority'] == 'none'
+    assert report['validation'] == 'declarations-only'
+    assert [(p['registry'], p['version']) for p in report['declared_publications']] == [
+        ('pypi', '0.2.0'), ('npm', '0.3.0')]
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize('content', ['{"schema":"bad"}', '{"id":1,"id":2}', 'not json'])
+def test_multipack_cli_reports_invalid_input_without_authority(tmp_path, monkeypatch, capsys, content):
+    path = tmp_path / 'descriptor.json'; path.write_text(content)
+    monkeypatch.chdir(tmp_path)
+    assert main(['multipack', 'validate', str(path)]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert not report['ok'] and report['authority'] == 'none'
+    assert report['findings'] and not report.get('declared_publications')
+    assert path.read_text() == content
+
+
+def test_multipack_cli_missing_input_is_structured(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    assert main(['multipack', 'validate', 'missing.json']) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report['findings'][0]['code'] == 'MULTIPACK-INPUT'
+    assert report['authority'] == 'none'
+
+
+def test_multipack_cli_requires_subcommand_and_manifest():
+    for args in [['multipack'], ['multipack', 'validate']]:
+        with pytest.raises(SystemExit) as error:
+            main(args)
+        assert error.value.code == 2
+
+
 @pytest.fixture
 def docs_delivery():
     """Real Git owner and isolated subprocess, with a small pinned protocol peer."""

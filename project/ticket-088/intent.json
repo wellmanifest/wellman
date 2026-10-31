@@ -1,0 +1,106 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-088",
+  "summary": "Expose multipack validation through the main CLI and prepare its installable release",
+  "workstream": "integration",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-088/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "CHANGELOG.md",
+    "README.md",
+    "VERSION",
+    "docs/examples/network-multipack.json",
+    "pyproject.toml",
+    "src/wellman/__init__.py",
+    "src/wellman/cli.py",
+    "tests/test_cli.py",
+    "uv.lock"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "ed74cbec0d583c34f97d5258d70ab252ad17e24b",
+    "targetBranch": "main",
+    "outcome": "Deliver the public multipack validation CLI and release projections as Wellman 0.21.0 via Goal and independent protected merge; verify the installed wheel and use the declared Goal registry publication path after trusted merge.",
+    "nonGoals": [
+      "Executing URI processes",
+      "Treating candidate validation as canonical standard conformance or release authority",
+      "Changing adopted governance"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 45,
+    "budgets": {
+      "maxImplementationFiles": 9,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "A thin CLI adapter delegates to the existing offline validator; example and installed-distribution checks bind the public entrypoint to its declaration-only behavior.",
+      "components": [
+        {
+          "name": "Wellman CLI and distribution",
+          "paths": [
+            "CHANGELOG.md",
+            "README.md",
+            "VERSION",
+            "docs/examples/network-multipack.json",
+            "pyproject.toml",
+            "src/wellman/__init__.py",
+            "src/wellman/cli.py",
+            "tests/test_cli.py",
+            "uv.lock"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "wellman multipack validate MANIFEST"
+      ],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Reviewed revert or subsequent compatible release; never overwrite a published artifact."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest -q tests/test_cli.py tests/test_multipack.py"
+        ],
+        "evidence": "CLI works outside Git and retains structured failures and no authority"
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "python -m pip wheel --no-index --no-deps --no-build-isolation ."
+        ],
+        "evidence": "Install the wheel in a separate venv and invoke its real console entrypoint outside the source tree"
+      },
+      {
+        "criterion": "AC-03",
+        "commands": [
+          "python -m pytest -q tests/",
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Goal -a and exact-head independent approval before merge; separate registry readback after publication"
+      }
+    ]
+  }
+}

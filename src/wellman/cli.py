@@ -920,6 +920,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_gate.add_argument("--ticket", help="Active ticket ID")
     p_gate.set_defaults(func=cmd_gate)
 
+    # Offline candidate multipack declarations; never invoke the described processes.
+    p_multipack = subparsers.add_parser('multipack', help='Inspect candidate operational multipack declarations')
+    multipack_commands = p_multipack.add_subparsers(dest='multipack_command', required=True)
+    p_multipack_validate = multipack_commands.add_parser('validate', help='Validate a descriptor and emit JSON; grants no authority')
+    p_multipack_validate.add_argument('manifest', type=Path, help='Path to the candidate JSON descriptor')
+    p_multipack_validate.set_defaults(func=cmd_multipack_validate)
+
     # uri
     p_uri = subparsers.add_parser("uri", help="Invoke a URI process with JSON or JSONL payload")
     p_uri.add_argument("address", help="Full URI address (e.g. proc://ast-scan/complexity/horizontal)")
@@ -930,6 +937,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_uri.set_defaults(func=cmd_uri)
 
     return parser
+
+
+def cmd_multipack_validate(args: argparse.Namespace) -> int:
+    from wellman.multipack import main as multipack_main
+
+    return multipack_main([str(args.manifest)])
 
 
 def cmd_uri(args: argparse.Namespace) -> int:

@@ -90,3 +90,24 @@ def test_cli_has_stable_machine_readable_results(tmp_path, capsys):
 def test_pure_is_not_an_execution_effect():
     d = manifest(); d['operations'][0]['effects'] = ['pure', 'network']
     assert 'MULTIPACK-EFFECTS' in {f['code'] for f in validate(d)['findings']}
+
+
+@pytest.mark.parametrize('language', ['python', 'node'])
+def test_rust_is_optional_when_family_has_another_shared_core(language):
+    d = manifest(); d['bindings'] = [b for b in d['bindings'] if b['language'] != 'rust']
+    d['core_language'] = language
+    for b in d['bindings']:
+        b['implementation'] = 'core' if b['language'] == language else 'process-client'
+    d['adapters'][0]['binding'] = language
+    assert validate(d)['ok']
+    d['core_language'] = 'rust'
+    assert not validate(d)['ok']
+
+
+def test_rust_client_does_not_implicitly_become_the_core():
+    d = manifest(); d['core_language'] = 'python'
+    d['bindings'][0]['implementation'] = 'process-client'
+    d['bindings'][1]['implementation'] = 'core'
+    assert validate(d)['ok']
+    d['bindings'][0]['implementation'] = 'core'
+    assert not validate(d)['ok']

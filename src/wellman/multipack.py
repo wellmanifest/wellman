@@ -54,8 +54,6 @@ def validate(document):
         expected = {'rust': 'cargo', 'python': 'pypi', 'node': 'npm'}[binding['language']]
         if binding['registry'] != expected:
             add('MULTIPACK-REGISTRY', path, 'Language and registry do not match')
-        if binding['language'] == 'rust' and binding['implementation'] != 'core':
-            add('MULTIPACK-CORE', path, 'Rust binding must identify the shared core')
     for binding in bindings:
         if set(binding['operations']) != set(op_ids):
             add('MULTIPACK-COVERAGE', 'bindings.' + binding['id'], 'Every binding must expose the family operation set')

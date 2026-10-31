@@ -1,0 +1,26 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-083",
+  "summary": "Validate portable operational multipack contracts before package generation",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-083/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/multipack.py",
+    "src/wellman/schemas/operational-multipack.schema.json",
+    "tests/test_multipack.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

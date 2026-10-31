@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-31
+
+### Added
+- `wellman multipack validate MANIFEST` exposes offline candidate validation as structured JSON outside a Git checkout.
+- Multipack descriptors preserve URI namespaces, optionally use independent stable artifact versions, and distinguish internal cores with `publish: false`.
+- The illustrative npm/PyPI family and installed-wheel verification retain declaration-only results and no execution or publication authority.
+
 ## [0.20.46] - 2026-10-13
 
 ### Added

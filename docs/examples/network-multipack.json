@@ -1,0 +1,72 @@
+{
+  "schema": "wellman.operational-multipack/v1",
+  "id": "netprobe",
+  "version": "0.1.0",
+  "version_policy": "independent",
+  "core_language": "rust",
+  "source": {
+    "repository": "https://example.invalid/acme/netprobe",
+    "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "contract": {
+    "input_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "output_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "conformance_vectors_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "operations": [
+    {
+      "id": "scan",
+      "uri": "dockuri://local/network/scan/v1",
+      "effects": [
+        "read",
+        "network"
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "id": "rust",
+      "language": "rust",
+      "implementation": "core",
+      "registry": "cargo",
+      "package": "netprobe-core",
+      "version": "0.1.0",
+      "entry": "core/src/lib.rs",
+      "operations": [
+        "scan"
+      ],
+      "publish": false
+    },
+    {
+      "id": "python",
+      "language": "python",
+      "implementation": "native-extension",
+      "registry": "pypi",
+      "package": "example-netprobe",
+      "version": "0.2.0",
+      "entry": "python/netprobe/__init__.py",
+      "operations": [
+        "scan"
+      ]
+    },
+    {
+      "id": "node",
+      "language": "node",
+      "implementation": "native-extension",
+      "registry": "npm",
+      "package": "@example/netprobe",
+      "version": "0.3.0",
+      "entry": "node/index.js",
+      "operations": [
+        "scan"
+      ]
+    }
+  ],
+  "adapters": [
+    {
+      "operation": "scan",
+      "binding": "rust",
+      "transport": "jsonl"
+    }
+  ]
+}

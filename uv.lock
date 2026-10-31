@@ -6042,7 +6042,7 @@ wheels = [
 
 [[package]]
 name = "wellman"
-version = "0.20.46"
+version = "0.21.0"
 source = { editable = "." }
 
 [package.optional-dependencies]

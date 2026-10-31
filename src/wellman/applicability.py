@@ -40,6 +40,7 @@ CAPABILITIES = {
     'project-ssot':'quality:project-ssot','dockuri':'contract:dockuri',
     'report':'quality:report','env-dsl':'contract:env-dsl',
     'status':'lifecycle:status','performance':'quality:performance',
+    'data-plane':'contract:event-data-plane',
 }
 RULES = {identifier:{'scope':'repository' if identifier in BASELINE else 'component',
     'applies_when':{'all':[{'feature':'repository:git' if identifier in BASELINE else CAPABILITIES[identifier.split('/')[1]],'is':'present'}],'any':[]},

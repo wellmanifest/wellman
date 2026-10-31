@@ -1,0 +1,247 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "version",
+    "core_language",
+    "source",
+    "contract",
+    "operations",
+    "bindings",
+    "adapters"
+  ],
+  "properties": {
+    "schema": {
+      "const": "wellman.operational-multipack/v1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "core_language": {
+      "enum": [
+        "rust"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "revision"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^https://[^\\s]+$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input_sha256",
+        "output_sha256",
+        "conformance_vectors_sha256"
+      ],
+      "properties": {
+        "input_sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "output_sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "conformance_vectors_sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "uri",
+          "effects"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "uri": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^proc://[^\\s]+$"
+          },
+          "effects": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "pure",
+                "read",
+                "write",
+                "process",
+                "network"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 256,
+            "uniqueItems": true
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true
+    },
+    "bindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "language",
+          "implementation",
+          "registry",
+          "package",
+          "version",
+          "entry",
+          "operations"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "language": {
+            "enum": [
+              "rust",
+              "python",
+              "node"
+            ]
+          },
+          "implementation": {
+            "enum": [
+              "core",
+              "native-extension",
+              "process-client"
+            ]
+          },
+          "registry": {
+            "enum": [
+              "cargo",
+              "pypi",
+              "npm"
+            ]
+          },
+          "package": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+          },
+          "entry": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            "minItems": 1,
+            "maxItems": 256,
+            "uniqueItems": true
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true
+    },
+    "adapters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operation",
+          "binding",
+          "transport"
+        ],
+        "properties": {
+          "operation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "binding": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "transport": {
+            "enum": [
+              "stdin-json",
+              "jsonl"
+            ]
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:wellman:candidate:operational-multipack:v1",
+  "description": "Candidate URIprocess multipack profile. Declaration validation grants no authority, proves no builds, and performs no publication. The conformance corpus binds identical input/output vectors across declared bindings."
+}

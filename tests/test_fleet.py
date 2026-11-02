@@ -546,6 +546,26 @@ def test_sync_agent_instructions(tmp_path):
     assert "new-project" in gemini_content
     assert "new-ticket.sh" in gemini_content
     assert "acme/ai_repo" in gemini_content
+    assert "Never leave outputs or state only in" in gemini_content
+
+    # Without overwrite, existing files are not modified
+    updated_noop = sync_agent_instructions(repo, repository_name="acme/ai_repo", overwrite=False)
+    assert updated_noop == []
+
+    # With overwrite, differing files are updated
+    (repo / "AGENTS.md").write_text("# Old Outdated Instructions\n", encoding="utf-8")
+    updated_overwrite = sync_agent_instructions(repo, repository_name="acme/ai_repo", overwrite=True)
+    assert "AGENTS.md" in updated_overwrite
+    assert "new-project" in (repo / "AGENTS.md").read_text(encoding="utf-8")
+
+    # With .githooks directory, core.hooksPath is configured
+    githooks_dir = repo / ".githooks"
+    githooks_dir.mkdir()
+    (githooks_dir / "pre-commit").write_text("#!/bin/sh\nexit 0\n")
+    sync_agent_instructions(repo, repository_name="acme/ai_repo")
+    import subprocess
+    res = subprocess.run(["git", "-C", str(repo), "config", "--get", "core.hooksPath"], capture_output=True, text=True)
+    assert res.stdout.strip() == ".githooks"
 
 
 def test_fleet_sync_agents_cli(tmp_path, capsys):

@@ -272,3 +272,37 @@ def test_registry_dataplane_registration():
     resolved = get_standard("data-plane")
     assert resolved is not None
     assert resolved.id == "wellmanifest/data-plane"
+
+
+def test_runner_selected_nohardcode_and_ssot(tmp_path):
+    runner = ConformanceRunner(tmp_path)
+    # Both standards are mapped to concrete checks
+    nh_findings = runner.run_standard("wellmanifest/nohardcode")
+    assert all(f.code != "GOV-STANDARD-NOT-IMPLEMENTED" for f in nh_findings)
+    ssot_findings = runner.run_standard("wellmanifest/ssot")
+    assert all(f.code != "GOV-STANDARD-NOT-IMPLEMENTED" for f in ssot_findings)
+
+    # Test nohardcode path leak detection
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    leak_file = src_dir / "worker.py"
+    leak_file.write_text(
+        'STATE_FILE = "~/.local/state/app.db"\n'
+        'TMP_PATH = "/tmp/scratch.txt"\n'
+        'HOME_PATH = "/home/developer/data"\n'
+    )
+
+    findings = runner.check_nohardcode()
+    codes = [f.code for f in findings]
+    assert "GOV-NOHARDCODE-PATH-LEAK" in codes
+    assert "GOV-NOHARDCODE-TMP-LEAK" in codes
+    assert "GOV-NOHARDCODE-HOME-PATH" in codes
+
+    # Test ssot schema validation
+    gov_dir = tmp_path / ".governance"
+    gov_dir.mkdir()
+    ssot_file = gov_dir / "ssot.json"
+    ssot_file.write_text('{"invalid": true}')
+    ssot_findings = runner.check_ssot()
+    assert any(f.code == "GOV-SSOT-SCHEMA-INVALID" for f in ssot_findings)
+

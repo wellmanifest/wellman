@@ -645,7 +645,7 @@ def cmd_fleet_discover(args: argparse.Namespace) -> int:
 
 
 def cmd_fleet_sync_agents(args: argparse.Namespace) -> int:
-    payload = sync_fleet_agents(Path(args.root), args.recursive)
+    payload = sync_fleet_agents(Path(args.root), args.recursive, overwrite=getattr(args, "overwrite", False))
     _print_fleet_payload(payload, args.json)
     return 0
 
@@ -878,6 +878,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_fleet_sync.add_argument("--root", "-r", default=".")
     p_fleet_sync.add_argument("--recursive", dest="recursive", action="store_true", default=None, help="Force recursive repository search")
     p_fleet_sync.add_argument("--no-recursive", dest="recursive", action="store_false", help="Disable recursive search")
+    p_fleet_sync.add_argument("--overwrite", action="store_true", help="Overwrite existing agent instruction files when content differs")
     p_fleet_sync.add_argument("--json", action="store_true")
     p_fleet_sync.set_defaults(func=cmd_fleet_sync_agents)
 

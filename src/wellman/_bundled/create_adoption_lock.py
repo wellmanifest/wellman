@@ -4,12 +4,18 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
+import contextlib
+import fnmatch
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -56,7 +62,253 @@ VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
 
 
 def git_bytes(root: Path, revision: str, source: str) -> bytes:
-    return subprocess.check_output(["git", "show", f"{revision}:{source}"], cwd=root)
+    return subprocess.check_output(["git", "show", f"{revision}:{source}"], cwd=root,
+                                   env=plan_git_environment())
+
+
+def plan_git_environment() -> dict[str, str]:
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(GIT_NO_REPLACE_OBJECTS="1", GIT_OPTIONAL_LOCKS="0")
+    return environment
+
+
+ALLOCATION_PLAN_SCHEMA = "new-project.standard-adoption-plan/v1"
+
+
+def plan_path(root: Path, name: str) -> Path:
+    if (not name or Path(name).is_absolute() or Path(name).as_posix() != name
+            or any(part in {"", ".", "..", ".git"} for part in name.split("/"))
+            or any(character in name for character in "*?[]\\\x00\r\n")):
+        raise SystemExit("adoption plan requires canonical literal repository paths")
+    path = root / name
+    if any(part.is_symlink() for part in (path, *path.parents)):
+        raise SystemExit("adoption plan refuses symlinked paths")
+    return path
+
+
+def plan_file(path: Path) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    if not path.is_file():
+        raise SystemExit("adoption plan requires regular files")
+    checksum = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(65536), b""):
+            checksum.update(chunk)
+    return {"sha256": checksum.hexdigest(), "mode": stat.S_IMODE(path.stat().st_mode)}
+
+
+def plan_git(root: Path, *arguments: str) -> bytes:
+    return subprocess.check_output(["git", "--no-optional-locks", *arguments], cwd=root,
+                                   env=plan_git_environment(), stderr=subprocess.DEVNULL)
+
+
+def allocation_target_state(root: Path, names: set[str]) -> dict[str, object]:
+    if any(part.is_symlink() for part in (root, *root.parents)):
+        raise SystemExit("adoption plan refuses symlinked repository roots")
+    top = Path(os.fsdecode(plan_git(root, "rev-parse", "--show-toplevel")).strip())
+    primary = os.fsdecode(plan_git(root, "worktree", "list", "--porcelain")).splitlines()[0]
+    if (top != root or primary != "worktree " + str(root)
+            or not (root / ".git").is_dir() or (root / ".git").is_symlink()):
+        raise SystemExit("adoption plan requires the registered primary Git checkout")
+    try:
+        branch_ref = os.fsdecode(plan_git(root, "symbolic-ref", "HEAD")).strip()
+        head = os.fsdecode(plan_git(root, "rev-parse", "--verify", "HEAD^{commit}")).strip()
+        if branch_ref != "refs/heads/main":
+            local_target = plan_git(root, "rev-parse", "--verify", "refs/heads/main^{commit}").strip()
+            remote_target = plan_git(root, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}").strip()
+            if not branch_ref.startswith("refs/heads/") or local_target != head.encode() or remote_target != head.encode():
+                raise SystemExit("adoption plan requires an exact named alias of local and origin main")
+    except subprocess.CalledProcessError as error:
+        raise SystemExit("adoption plan requires a named primary and complete target observations") from error
+    branch = branch_ref.removeprefix("refs/heads/")
+    status = plan_git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+    fields = iter(os.fsdecode(status).split("\0"))
+    dirty = set()
+    for field in fields:
+        if field:
+            dirty.add(field[3:])
+            if "R" in field[:2] or "C" in field[:2]:
+                dirty.add(next(fields))
+    index = root / ".git/index"
+    if index.is_symlink():
+        raise SystemExit("adoption plan refuses a symlinked Git index")
+    return {
+        "root": str(root), "head": head,
+        "branch": branch, "statusSha256": hashlib.sha256(status).hexdigest(),
+        "index": plan_file(index),
+        "dirtyFiles": {name: plan_file(plan_path(root, name)) for name in sorted(dirty)},
+        "files": {name: plan_file(plan_path(root, name)) for name in sorted(names)},
+    }
+
+
+def allocation_seed_ownership(root: Path, files: list[dict[str, object]],
+                              source_manifest: dict, manifest: dict) -> list[str]:
+    """Add exact absent/unowned incoming seeds, preserving every existing owner."""
+    coordination = manifest["coordination"]
+    streams = coordination["workstreams"]
+    incoming = source_manifest["coordination"]["workstreams"]["governance"]["ownedPaths"]
+    integration = coordination["integration"]
+    additions = []
+    for item in files:
+        name = str(item["target"])
+        if item["strategy"] != "seed" or (root / name).exists():
+            continue
+        if any(fnmatch.fnmatchcase(name, pattern) for stream in streams.values()
+               for pattern in stream["ownedPaths"]):
+            continue
+        if (not any(fnmatch.fnmatchcase(name, pattern) for pattern in incoming)
+                or any(fnmatch.fnmatchcase(name, pattern) for pattern in integration["requiredForPaths"])):
+            raise SystemExit("incoming seed has no independently derived governance ownership")
+        streams["governance"]["ownedPaths"].append(name)
+        additions.append(name)
+    return sorted(additions)
+
+
+def allocation_delivery(manifest: dict, state: dict, scope: list[str],
+                        previous: str, revision: str) -> dict:
+    policy = manifest["delivery"]
+    if policy.get("targetBranches") != ["main"] or "L" not in policy.get("allowedComplexityClasses", []):
+        raise SystemExit("adoption allocation requires a supported declared delivery profile")
+    profile = policy.get("profiles", {}).get("L", policy)
+    return {
+        "acceptedBaseSha": state["head"], "targetBranch": "main",
+        "outcome": "Adopt the complete verified immutable wellmanifest/new-project package.",
+        "nonGoals": ["Allocation grants no editing or publication authority",
+                     "Preserve local overrides and unrelated implementation"],
+        "complexity": "L", "estimatedMinutes": min(120, policy["maxActiveMinutes"]),
+        "budgets": {"maxImplementationFiles": min(policy["maxImplementationFiles"], profile["maxImplementationFiles"]),
+                    "maxAffectedComponents": 1, "maxPublicInterfaceChanges": 0, "maxRuntimeDependencies": 0},
+        "architecture": {
+            "status": "accepted", "decision": "Native allocation independently recomputes the exact published package and target state. Only its closed adoption paths are admitted; protected authority remains separate.",
+            "components": [{"name": "immutable-standard-adoption", "paths": scope}],
+            "responsibilityChanges": False, "interfaceChanges": [],
+            "dataChanges": ["Immutable standard package and adoption lock"],
+            "ui": {"impact": "none", "states": [], "evidence": []},
+            "rollback": "Revert through protected review; preserve the previous immutable adoption pin.",
+        },
+        "runtimeDependencies": [],
+        "validation": [{"criterion": "AC-01", "commands": ["./project/governance-check.sh"],
+                        "evidence": "Complete immutable package, exact-base scope and independent protected publication"}],
+        "standardAdoption": {"sourceRepository": "wellmanifest/new-project",
+                             "fromRevision": previous, "toRevision": revision},
+    }
+
+
+def adoption_allocation_plan(standard_root: Path, revision: str, version: str,
+                             target_root: Path, files: list[dict[str, object]],
+                             payloads: dict[str, bytes], expected_lock: bytes,
+                             executable: set[str], manifest: dict, before: dict,
+                             additions: list[str]) -> dict:
+    after = allocation_target_state(target_root, set(before["files"]))
+    if before != after:
+        raise SystemExit("target changed while preparing the adoption plan")
+    old_lock = json.loads((target_root / ".governance/manifest.lock.json").read_bytes())
+    standard = old_lock.get("standard", {})
+    previous = standard.get("sourceRevision")
+    if (standard.get("publicationStatus") != "published"
+            or standard.get("sourceRepository") != "wellmanifest/new-project"
+            or not isinstance(previous, str) or re.fullmatch(r"[0-9a-f]{40}", previous) is None
+            or previous == revision):
+        raise SystemExit("allocation plan requires a distinct published installed adoption")
+    for name in (MANIFEST_TARGET, MANIFEST_BASE_TARGET, ".governance/manifest.lock.json",
+                 ".governance/package-manifest.json"):
+        if plan_git(target_root, "show", f"HEAD:{name}") != (target_root / name).read_bytes():
+            raise SystemExit("current adoption metadata differs from the committed target base")
+    strategies = {str(item["target"]): str(item["strategy"]) for item in files}
+    owned = manifest["coordination"]["workstreams"]["governance"]["ownedPaths"]
+    integration = manifest["coordination"]["integration"]["requiredForPaths"]
+    changes = planned_changes(target_root, payloads, expected_lock, executable)
+    scope = sorted({name for _action, name in changes})
+    if not scope:
+        raise SystemExit("adoption allocation plan has no material changes")
+    old_managed = old_lock.get("managedFiles", {})
+    if not isinstance(old_managed, dict) or not old_managed:
+        raise SystemExit("installed adoption has no managed hash closure")
+    for name, checksum in old_managed.items():
+        current = plan_file(plan_path(target_root, name))
+        if (not isinstance(checksum, str) or re.fullmatch(r"[0-9a-f]{64}", checksum) is None
+                or current is None or current["sha256"] != checksum):
+            raise SystemExit("installed managed closure differs from its adoption pin")
+    old_package = json.loads((target_root / ".governance/package-manifest.json").read_bytes())
+    old_strategies = {item["target"]: item["strategy"] for item in old_package["files"]}
+    for name in scope:
+        if strategies.get(name) == "managed":
+            current = before["files"][name]
+            if current is not None and (old_strategies.get(name) != "managed"
+                    or old_managed.get(name) != current["sha256"]):
+                raise SystemExit("managed adoption path requires explicit takeover or repair")
+        elif (not any(fnmatch.fnmatchcase(name, pattern) for pattern in owned)
+                or any(fnmatch.fnmatchcase(name, pattern) for pattern in integration)):
+            raise SystemExit("adoption plan cannot transfer target-owned path: " + name)
+    desired = {**payloads, ".governance/manifest.lock.json": expected_lock}
+    def desired_mode(name, content):
+        current = before["files"].get(name)
+        if name != ".governance/manifest.lock.json" and current is not None and current["sha256"] == hashlib.sha256(content).hexdigest():
+            mode = current["mode"]
+            if name not in executable or mode & 0o111:
+                return "100755" if mode & 0o100 else "100644"
+        return "100755" if name in executable else "100644"
+    plan = {
+        "schema": ALLOCATION_PLAN_SCHEMA, "readOnly": True, "grantsAuthority": False,
+        "source": {"repository": "wellmanifest/new-project", "revision": revision,
+                   "version": version, "packageSha256": hashlib.sha256(git_bytes(standard_root, revision, PACKAGE_MANIFEST)).hexdigest(),
+                   "exporterSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                   "allocatorSha256": hashlib.sha256(git_bytes(standard_root, revision, "project/new-ticket.sh")).hexdigest()},
+        "target": before, "prospectiveManifest": manifest, "ownershipAdditions": additions,
+        "files": [{"path": name, "sha256": hashlib.sha256(content).hexdigest(),
+                   "gitMode": desired_mode(name, content),
+                   "strategy": strategies.get(name, "generated")}
+                  for name, content in sorted(desired.items())],
+        "allowedPaths": scope,
+        "delivery": allocation_delivery(manifest, before, scope, previous, revision),
+    }
+    plan["digest"] = hashlib.sha256(json_bytes(plan)).hexdigest()
+    return plan
+
+
+def verify_allocation_plan(path: Path, target_root: Path, workstream: str,
+                           requested_paths: list[str] | None = None) -> dict:
+    """Recompute using this trusted package; never load executable paths from a plan."""
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise SystemExit("duplicate adoption allocation plan field")
+            result[key] = value
+        return result
+
+    if (any(part.is_symlink() for part in (path, *path.parents))
+            or not path.is_file() or path.stat().st_size > MAX_RELEASE_METADATA_BYTES):
+        raise SystemExit("adoption allocation plan requires a bounded regular file")
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_RELEASE_METADATA_BYTES + 1)
+    if len(raw) > MAX_RELEASE_METADATA_BYTES:
+        raise SystemExit("adoption allocation plan exceeds size limit")
+    try:
+        plan = json.loads(raw, object_pairs_hook=pairs)
+        revision = plan["source"]["revision"]
+    except (ValueError, UnicodeError, KeyError, TypeError) as error:
+        raise SystemExit("invalid adoption allocation plan") from error
+    if (not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None
+            or workstream != "governance"):
+        raise SystemExit("invalid adoption allocation source or workstream")
+    standard_root = Path(__file__).resolve().parent.parent
+    if (standard_root / "project/new-ticket.sh").read_bytes() != git_bytes(standard_root, revision, "project/new-ticket.sh"):
+        raise SystemExit("allocator differs from the immutable source package")
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        result = main(["--target-root", str(target_root), "--source-revision", revision,
+                       "--check", "--allocation-plan"])
+    if result != 0 or json_bytes(plan) != json_bytes(json.loads(output.getvalue())):
+        raise SystemExit("adoption allocation plan changed or target state is stale")
+    with path.open("rb") as stream:
+        unchanged = stream.read(MAX_RELEASE_METADATA_BYTES + 1) == raw
+    if not unchanged:
+        raise SystemExit("adoption allocation plan changed during verification")
+    if requested_paths is not None and requested_paths != plan["allowedPaths"]:
+        raise SystemExit("caller scope differs from the exact derived adoption scope")
+    return plan
 
 
 def canonical_tag_revision(version: str) -> str:
@@ -71,6 +323,7 @@ def canonical_tag_revision(version: str) -> str:
             f"refs/tags/{tag}",
             f"refs/tags/{tag}^{{}}",
         ],
+        env=plan_git_environment(),
         capture_output=True,
         text=True,
         check=False,
@@ -390,6 +643,18 @@ def worktree_ignore_payload(target_root: Path) -> bytes:
         f"/.subactor/{name}/".encode()
         for name in ("leases", "sessions", "recovery", "receipts", "cache", "snapshots")
     ]
+    has_python = (
+        (target_root / "pyproject.toml").exists()
+        or (target_root / "setup.py").exists()
+        or (target_root / "setup.cfg").exists()
+        or ((target_root / "packages").is_dir() and any((target_root / "packages").iterdir()))
+    )
+    if has_python:
+        rules.extend([b"*.egg-info/", b"*.egg", b"build/", b"dist/"])
+    if (target_root / "package.json").exists():
+        rules.append(b"node_modules/")
+    if (target_root / "Cargo.toml").exists():
+        rules.append(b"/target/")
     present = set(content.splitlines())
     missing = [rule for rule in rules if rule not in present]
     if not missing:
@@ -461,6 +726,7 @@ def ignored_payload_targets(target_root: Path, targets: set[str]) -> list[str]:
         return []
     work_tree = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
+        env=plan_git_environment(),
         cwd=target_root,
         capture_output=True,
         text=True,
@@ -468,9 +734,18 @@ def ignored_payload_targets(target_root: Path, targets: set[str]) -> list[str]:
     )
     if work_tree.returncode != 0 or work_tree.stdout.strip() != "true":
         return []
+    checkout = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"], cwd=target_root,
+        env=plan_git_environment(), capture_output=True, text=True, check=False,
+    )
+    if checkout.returncode != 0 or Path(checkout.stdout.strip()).resolve() != target_root.resolve():
+        # An unborn scaffold inside another checkout has no Git ignore rules
+        # of its own. Never borrow its ancestor's identity or ignored cache.
+        return []
     encoded = b"".join(target.encode("utf-8") + b"\0" for target in sorted(targets))
     result = subprocess.run(
         ["git", "check-ignore", "--stdin", "-z"],
+        env=plan_git_environment(),
         cwd=target_root,
         input=encoded,
         capture_output=True,
@@ -485,9 +760,218 @@ def ignored_payload_targets(target_root: Path, targets: set[str]) -> list[str]:
     )
 
 
+def _git_show_blob(target_root: Path, ref: str, relative: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ["git", "-C", str(target_root), "show", f"{ref}:{relative}"],
+        capture_output=True,
+        check=False,
+    )
+
+
+def _run_mirror_git(mirror: Path, git_env: dict[str, str], args: list[str]) -> None:
+    subprocess.run(
+        ["git", "-C", str(mirror), *args],
+        env=git_env,
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+
+def _git_cat_file_exists(target_root: Path, ref_path: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ["git", "-C", str(target_root), "cat-file", "-e", ref_path],
+        capture_output=True,
+    )
+
+
+def bootstrap_ownership_paths(
+    target_root: Path,
+    manifest: dict[str, object],
+    package_targets: set[str],
+    plan_path: Path,
+) -> tuple[str, list[str]]:
+    """Declare exact unowned prerequisites; never transfer an existing owner."""
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise SystemExit("duplicate bootstrap ownership plan key")
+            result[key] = value
+        return result
+
+    if (any(path.is_symlink() for path in (plan_path, *plan_path.parents))
+            or not plan_path.is_file() or plan_path.stat().st_size > MAX_RELEASE_METADATA_BYTES
+            or target_root.resolve() in plan_path.resolve().parents):
+        raise SystemExit("bootstrap ownership plan must be a bounded external regular file")
+    try:
+        plan = json.loads(plan_path.read_bytes(), object_pairs_hook=unique)
+    except (ValueError, UnicodeDecodeError) as error:
+        raise SystemExit("invalid bootstrap ownership plan JSON") from error
+    if (not isinstance(plan, dict)
+            or set(plan) != {"schema", "baseSha", "workstream", "paths"}
+            or plan.get("schema") != "new-project.bootstrap-ownership-plan/v1"
+            or not isinstance(plan.get("baseSha"), str)
+            or re.fullmatch(r"[0-9a-f]{40}", plan["baseSha"]) is None):
+        raise SystemExit("unsupported bootstrap ownership plan shape")
+    workstreams = manifest["coordination"]["workstreams"]
+    workstream = plan.get("workstream")
+    if not isinstance(workstream, str) or workstream not in workstreams:
+        raise SystemExit("bootstrap ownership plan requires a declared workstream")
+    entries = plan.get("paths")
+    if (not isinstance(entries, list) or not entries
+            or len(entries) > manifest["delivery"]["maxImplementationFiles"]):
+        raise SystemExit("bootstrap ownership plan paths exceed the declared implementation budget")
+    head = subprocess.check_output(["git", "-C", str(target_root), "rev-parse", "HEAD"], text=True).strip()
+    if head != plan["baseSha"]:
+        raise SystemExit("bootstrap ownership plan is not bound to the current committed HEAD")
+    paths = []
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {"path", "baseDigest"}:
+            raise SystemExit("invalid bootstrap prerequisite binding")
+        name, checksum = entry["path"], entry["baseDigest"]
+        if (not isinstance(name, str) or not name or Path(name).is_absolute()
+                or Path(name).as_posix() != name or any(part in {".", "..", ".git"} for part in name.split("/"))
+                or any(character in name for character in "*?[\\")
+                or not isinstance(checksum, str) or re.fullmatch(r"[0-9a-f]{64}", checksum) is None):
+            raise SystemExit("unsafe bootstrap prerequisite path or digest")
+        if name in paths or name in package_targets or name == ".gitignore":
+            raise SystemExit("bootstrap prerequisite overlaps a package target or duplicate binding")
+        if any(fnmatch.fnmatchcase(name, pattern) for stream in workstreams.values()
+               for pattern in stream["ownedPaths"]):
+            raise SystemExit("bootstrap prerequisite already has a declared owner")
+        integration = manifest["coordination"]["integration"]
+        if (workstream != integration["workstream"] and any(
+                fnmatch.fnmatchcase(name, pattern) for pattern in integration["requiredForPaths"])):
+            raise SystemExit("bootstrap prerequisite requires the integration workstream")
+        path = target_root / name
+        if any(part.is_symlink() for part in (path, *path.parents)) or not path.is_file():
+            raise SystemExit("bootstrap prerequisite must match its exact regular-file digest")
+        content = path.read_bytes()
+        if hashlib.sha256(content).hexdigest() != checksum:
+            raise SystemExit("bootstrap prerequisite must match its exact regular-file digest")
+        committed = _git_show_blob(target_root, head, name)
+        if committed.returncode or committed.stdout != content:
+            raise SystemExit("bootstrap prerequisite must match the committed base bytes")
+        paths.append(name)
+    return workstream, paths
+
+
+def bootstrap_reusable_declaration(
+    target_root: Path, payloads: dict[str, bytes], plan_path: Path,
+    implementation_paths: list[str] | None = None,
+) -> dict[str, object]:
+    """Project future check names without writing or verifying target CI."""
+    fields = {"schema", "baseSha", "callerFile", "callerSha256", "originalUses",
+              "uses", "sourceFile", "sourceSha256", "sourceBase64"}
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise SystemExit("duplicate bootstrap reusable plan key")
+            result[key] = value
+        return result
+
+    if (plan_path.is_symlink() or not plan_path.is_file()
+            or plan_path.stat().st_size > 2 * 1024 * 1024
+            or target_root.resolve() in plan_path.resolve().parents):
+        raise SystemExit("bootstrap reusable plan must be a bounded external regular file")
+    try:
+        plan = json.loads(plan_path.read_bytes(), object_pairs_hook=unique)
+    except (ValueError, UnicodeDecodeError) as error:
+        raise SystemExit("invalid bootstrap reusable plan JSON") from error
+    if (not isinstance(plan, dict) or set(plan) != fields
+            or any(not isinstance(value, str) for value in plan.values())
+            or plan["schema"] != "new-project.bootstrap-reusable-plan/v1"):
+        raise SystemExit("unsupported bootstrap reusable plan shape")
+    if (re.fullmatch(r"[0-9a-f]{40}", plan["baseSha"]) is None
+            or any(re.fullmatch(r"[0-9a-f]{64}", plan[key]) is None
+                   for key in ("callerSha256", "sourceSha256"))
+            or re.fullmatch(r"\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml", plan["callerFile"]) is None
+            or re.fullmatch(r"\.github/reusable-workflows/[A-Za-z0-9_.-]+\.ya?ml", plan["sourceFile"]) is None):
+        raise SystemExit("unsafe bootstrap reusable plan identity or path")
+    uses = re.fullmatch(r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml)@([0-9a-f]{40})", plan["uses"])
+    if uses is None or re.fullmatch(re.escape(uses[1]) + r"@[A-Za-z0-9_./-]+", plan["originalUses"]) is None:
+        raise SystemExit("bootstrap callee must pin the same original workflow to a full SHA")
+    if plan["callerFile"] in payloads:
+        raise SystemExit("bootstrap plan cannot modify a managed workflow")
+    for relative in (plan["callerFile"], plan["sourceFile"], ".github/reusable-workflows.lock.json"):
+        candidate = target_root
+        for part in Path(relative).parts:
+            candidate /= part
+            if candidate.is_symlink():
+                raise SystemExit("symlinked bootstrap workflow path")
+    if any((target_root / relative).exists() for relative in
+           (plan["sourceFile"], ".github/reusable-workflows.lock.json")):
+        raise SystemExit("existing reusable source contracts require ordinary adoption")
+    head = subprocess.check_output(["git", "-C", str(target_root), "rev-parse", "HEAD"], text=True).strip()
+    if head != plan["baseSha"]:
+        raise SystemExit("bootstrap plan is not bound to the current committed HEAD")
+    caller = target_root / plan["callerFile"]
+    if not caller.is_file() or caller.stat().st_size > 1024 * 1024:
+        raise SystemExit("missing or oversized bootstrap caller")
+    committed = subprocess.run(["git", "-C", str(target_root), "show",
+                                f'{head}:{plan["callerFile"]}'], capture_output=True)
+    current = caller.read_bytes()
+    if (committed.returncode or current != committed.stdout
+            or hashlib.sha256(current).hexdigest() != plan["callerSha256"]):
+        raise SystemExit("bootstrap caller must match the exact committed source bytes")
+    try:
+        source = base64.b64decode(plan["sourceBase64"], validate=True)
+        source.decode("utf-8")
+        text = current.decode("utf-8")
+    except (ValueError, binascii.Error, UnicodeDecodeError) as error:
+        raise SystemExit("invalid bootstrap workflow encoding") from error
+    if len(source) > 1024 * 1024 or hashlib.sha256(source).hexdigest() != plan["sourceSha256"]:
+        raise SystemExit("bootstrap callee source hash mismatch")
+    line = re.compile(r"^    uses: " + re.escape(plan["originalUses"]) + r"[ \t]*$", re.M)
+    if len(line.findall(text)) != 1:
+        raise SystemExit("bootstrap plan requires one literal unquoted caller uses line")
+    planned = line.sub("    uses: " + plan["uses"], text).encode("utf-8")
+    spec = importlib.util.spec_from_file_location("bootstrap_checks", Path(__file__).with_name("generate_required_checks.py"))
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+    repository = generator.repository_name(target_root)
+    if not repository or re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) is None:
+        raise SystemExit("bootstrap reusable plan requires an authoritative origin identity")
+    with tempfile.TemporaryDirectory(prefix="new-project-bootstrap-ci-") as directory:
+        mirror = Path(directory)
+        workflows = mirror / ".github/workflows"
+        workflows.mkdir(parents=True)
+        for path in sorted((target_root / ".github/workflows").glob("*.y*ml")):
+            if path.is_symlink() or not path.is_file():
+                raise SystemExit("unsafe target workflow in bootstrap plan")
+            (workflows / path.name).write_bytes(path.read_bytes())
+        for relative, content in payloads.items():
+            if relative.startswith(".github/workflows/"):
+                (mirror / relative).write_bytes(content)
+        (mirror / plan["callerFile"]).write_bytes(planned)
+        callee = mirror / plan["sourceFile"]
+        callee.parent.mkdir()
+        callee.write_bytes(source)
+        entry = {key: plan[key] for key in ("uses", "sourceFile", "sourceSha256")}
+        (mirror / ".github/reusable-workflows.lock.json").write_bytes(json_bytes({
+            "schema": "new-project.reusable-workflows/v1", "workflows": [entry]}))
+        git_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        for args in (["init", "-q"], ["remote", "add", "origin", f"https://github.com/{repository}.git"]):
+            _run_mirror_git(mirror, git_env, args)
+        derived = generator.declaration_for(mirror, ignored=())
+        if (derived is None or derived["repository"] != repository
+                or derived.get("reusableWorkflowCallers")):
+            raise SystemExit("bootstrap plan leaves unresolved workflow callers")
+    print(f'PLANNED {plan["callerFile"]} uses {plan["uses"]}; target CI unchanged and unverified')
+    if implementation_paths is not None:
+        implementation_paths.extend([plan["callerFile"], plan["sourceFile"],
+                                     ".github/reusable-workflows.lock.json"])
+    return derived
+
+
 def project_inherited_required_checks(
     target_root: Path,
     payloads: dict[str, bytes],
+    bootstrap_plan: Path | None = None,
+    implementation_paths: list[str] | None = None,
+    repository: str | None = None,
 ) -> None:
     """Replace only the hub's inherited check declaration with target truth.
 
@@ -508,6 +992,8 @@ def project_inherited_required_checks(
     if not isinstance(document, dict) or document.get("repository") not in {
         UNRESOLVED_ADOPTER, "wellmanifest/new-project",
     }:
+        if bootstrap_plan is not None:
+            raise SystemExit("bootstrap plan cannot replace a target-owned check declaration")
         return
     workflow_payloads = {
         target: content
@@ -520,21 +1006,26 @@ def project_inherited_required_checks(
         raise SystemExit("cannot load the managed required-checks generator")
     generator = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(generator)
-    derived = generator.declaration_for(
-        target_root,
-        ignored=(),
-        workflow_payloads=workflow_payloads,
-    )
+    origin = generator.repository_name(target_root)
+    if repository is not None and origin is not None and origin.casefold() != repository.casefold():
+        raise SystemExit(f"--repository {repository} disagrees with origin {origin}")
+    derived = (bootstrap_reusable_declaration(target_root, workflow_payloads, bootstrap_plan,
+                                              implementation_paths)
+               if bootstrap_plan is not None else generator.declaration_for(
+                   target_root, ignored=(), workflow_payloads=workflow_payloads,
+                   repository=repository))
     if derived is None:
-        # A non-Git bootstrap has no authoritative repository identity. Keep
-        # the source declaration rather than inventing one; a later adoption
-        # in the real repository will project the local workflow truth.
+        # A target without an origin remote or --repository has no
+        # authoritative identity. Keep the source declaration rather than
+        # inventing one, and say so: the first material PR fails GOV-SYNC-001
+        # until a rerun binds the name.
+        if document.get("repository") == UNRESOLVED_ADOPTER:
+            print(f"UNBOUND {CHECKS_TARGET} keeps {UNRESOLVED_ADOPTER}: no origin remote; "
+                  "rerun with --repository OWNER/NAME or after git remote add origin", file=sys.stderr)
         return
-    callers = [
-        caller for caller in derived.get("reusableWorkflowCallers", [])
-        if caller not in {"governance", "new-project-governance"}
-        and not str(caller).endswith(("/governance.yml", "/new-project-governance.yml"))
-    ]
+    # A display name is not source identity. Even a caller named governance
+    # must bind its actual callee before we can project its published checks.
+    callers = derived.get("reusableWorkflowCallers", [])
     if callers:
         raise SystemExit(
             "cannot project inherited required-checks through reusable workflow callers: "
@@ -548,7 +1039,85 @@ def report_missing_target_prerequisites(paths: list[str]) -> None:
         print(f"MISSING target prerequisite {path}")
 
 
-def main() -> int:
+def validate_wellman_scaffold(target_root: Path, files: list[dict[str, object]]) -> None:
+    """Accept only an explicit, policy-free legacy baseline initialization."""
+    targets = {str(item["target"]) for item in files}
+    targets.update({".gitignore", ".governance/manifest.lock.json"})
+    for target in targets:
+        path = target_root / target
+        if any(part.is_symlink() for part in (path, *path.parents)):
+            raise SystemExit("Wellman scaffold migration refuses symlinked target paths")
+    for name in ("manifest.base.json", "package-manifest.json"):
+        if (target_root / ".governance" / name).exists():
+            raise SystemExit("Wellman scaffold migration refuses existing native adoption evidence")
+
+    def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate manifest key")
+            result[key] = value
+        return result
+
+    try:
+        document = json.loads((target_root / MANIFEST_TARGET).read_bytes(), object_pairs_hook=unique_object)
+    except (OSError, ValueError, UnicodeError) as error:
+        raise SystemExit("migration requires the exact minimal Wellman baseline scaffold") from error
+    standard = document.get("standard") if isinstance(document, dict) else None
+    if not (
+        isinstance(document, dict) and set(document) == {"schema", "standard"}
+        and document["schema"] == "wellmanifest.manifest/v1"
+        and isinstance(standard, dict) and set(standard) == {"id", "version"}
+        and standard["id"] == "profile:baseline"
+        and isinstance(standard["version"], str) and VERSION_PATTERN.fullmatch(standard["version"])
+    ):
+        raise SystemExit("migration requires the exact minimal Wellman baseline scaffold")
+
+    lock_path = target_root / ".governance/manifest.lock.json"
+    if not lock_path.exists():
+        return
+    # A baseline registration is not a complete native adoption. Accept only
+    # its closed seven-file inventory, already committed at the target HEAD.
+    legacy_paths = {
+        "AGENTS.md", "GEMINI.md", ".governance/manifest.json",
+        ".governance/standard-requirements.json", ".governance/standard-packs.json",
+        ".governance/docs.json", ".governance/local-ci-publication.json",
+    }
+    try:
+        lock = json.loads(lock_path.read_bytes(), object_pairs_hook=unique_object)
+        standard = lock.get("standard") if isinstance(lock, dict) else None
+        managed = lock.get("managedFiles") if isinstance(lock, dict) else None
+        if not (
+            isinstance(lock, dict) and set(lock) == {"schema", "standard", "managedFiles"}
+            and lock["schema"] == "new-project.lock/v1"
+            and isinstance(standard, dict)
+            and set(standard) == {"id", "sourceRepository", "sourceRevision", "version", "publicationStatus"}
+            and standard["id"] == standard["sourceRepository"] == "wellmanifest/new-project"
+            and standard["publicationStatus"] == "published"
+            and isinstance(standard["version"], str) and VERSION_PATTERN.fullmatch(standard["version"])
+            and isinstance(standard["sourceRevision"], str) and re.fullmatch(r"[0-9a-f]{40}", standard["sourceRevision"])
+            and isinstance(managed, dict) and set(managed) == legacy_paths
+        ):
+            raise ValueError("not the closed legacy inventory")
+        for relative in sorted(legacy_paths | {".governance/manifest.lock.json"}):
+            path = target_root / relative
+            if any(part.is_symlink() for part in (path, *path.parents)):
+                raise ValueError("symlinked registration")
+            content = path.read_bytes()
+            if relative in managed and (
+                not isinstance(managed[relative], str)
+                or re.fullmatch(r"[0-9a-f]{64}", managed[relative]) is None
+                or hashlib.sha256(content).hexdigest() != managed[relative]
+            ):
+                raise ValueError("registration digest mismatch")
+            committed = _git_show_blob(target_root, "HEAD", relative)
+            if committed.returncode or committed.stdout != content:
+                raise ValueError("registration differs from committed target bytes")
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        raise SystemExit("Wellman scaffold migration refuses existing native adoption evidence or invalid legacy registration") from error
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target-root", required=True)
     parser.add_argument("--source-revision", required=True)
@@ -562,21 +1131,81 @@ def main() -> int:
     )
     parser.add_argument("--upgrade", action="store_true", help="Replace differing standard-managed files")
     parser.add_argument(
+        "--migrate-wellman-scaffold", action="store_true",
+        help="Explicitly initialize native governance over the exact minimal legacy Wellman baseline scaffold",
+    )
+    parser.add_argument(
+        "--bootstrap-native-adoption", action="store_true",
+        help="Record first-allocation bootstrap for a committed repository without governance",
+    )
+    parser.add_argument("--bootstrap-reusable-plan", type=Path,
+                        help="External exact-state future reusable CI plan; never edits target workflows")
+    parser.add_argument("--bootstrap-ownership-plan", type=Path,
+                        help="External exact-base/digest plan declaring only existing unowned prerequisites")
+    parser.add_argument(
         "--check",
         action="store_true",
         help="Report adoption drift and planned changes without writing files",
     )
-    args = parser.parse_args()
+    parser.add_argument("--allocation-plan", action="store_true",
+                        help="With --check, export a read-only exact-state native upgrade allocation plan")
+    parser.add_argument("--repository", metavar="OWNER/NAME",
+                        help="Bind required checks to this repository before an origin remote exists")
+    args = parser.parse_args(argv)
+
+    if args.allocation_plan and (not args.check or args.allow_unpublished_for_testing
+            or args.bootstrap_native_adoption or args.migrate_wellman_scaffold
+            or args.bootstrap_reusable_plan or args.bootstrap_ownership_plan):
+        parser.error("--allocation-plan requires --check and a published native upgrade")
 
     if args.check and args.upgrade:
         parser.error("--check and --upgrade are mutually exclusive")
+    if args.migrate_wellman_scaffold and not (args.check or args.upgrade):
+        parser.error("--migrate-wellman-scaffold requires --check or --upgrade after review")
+    if args.bootstrap_native_adoption and args.migrate_wellman_scaffold:
+        parser.error("fresh bootstrap and scaffold migration are mutually exclusive")
+    if args.bootstrap_reusable_plan and not (args.bootstrap_native_adoption or args.migrate_wellman_scaffold):
+        parser.error("a reusable CI bootstrap plan requires explicit fresh native bootstrap or scaffold migration")
+    if args.bootstrap_ownership_plan and not (args.bootstrap_native_adoption or args.migrate_wellman_scaffold):
+        parser.error("a prerequisite ownership plan requires explicit fresh native bootstrap or scaffold migration")
 
     if re.fullmatch(r"[0-9a-f]{40}", args.source_revision) is None:
         parser.error("--source-revision must be a full lowercase 40-character commit SHA")
+    if args.repository is not None and (
+            re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repository) is None
+            or args.repository == UNRESOLVED_ADOPTER):
+        parser.error("--repository must be OWNER/NAME")
     standard_root = Path(__file__).resolve().parent.parent
-    target_root = Path(args.target_root).resolve()
+    requested_root = Path(args.target_root).absolute()
+    if (args.migrate_wellman_scaffold or args.bootstrap_native_adoption or args.allocation_plan) and any(
+        path.is_symlink() for path in (requested_root, *requested_root.parents)
+    ):
+        raise SystemExit("Wellman scaffold migration refuses symlinked target paths")
+    target_root = requested_root.resolve()
+    if args.allocation_plan and ".." in Path(args.target_root).parts:
+        raise SystemExit("adoption plan refuses traversal in target roots")
+    fresh_base_sha = None
+    if args.bootstrap_native_adoption:
+        for name in ("manifest.json", "manifest.lock.json", "manifest.base.json", "package-manifest.json"):
+            path = target_root / ".governance" / name
+            if path.exists() or path.is_symlink():
+                raise SystemExit("fresh bootstrap requires absent governance; use its existing adoption route")
+        observed = subprocess.run(["git", "-C", str(target_root), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True)
+        if observed.returncode:
+            raise SystemExit("fresh bootstrap requires a committed Git repository")
+        fresh_base_sha = observed.stdout.strip()
+        checkout = subprocess.check_output(
+            ["git", "-C", str(target_root), "rev-parse", "--show-toplevel"], text=True).strip()
+        if Path(checkout).resolve() != target_root:
+            raise SystemExit("fresh bootstrap requires the repository checkout root")
+        for name in ("manifest.json", "manifest.lock.json", "manifest.base.json", "package-manifest.json"):
+            present = _git_cat_file_exists(target_root, f"HEAD:.governance/{name}")
+            if present.returncode == 0:
+                raise SystemExit("fresh bootstrap cannot replace committed governance")
     subprocess.run(
         ["git", "cat-file", "-e", f"{args.source_revision}^{{commit}}"],
+        env=plan_git_environment(),
         cwd=standard_root,
         check=True,
         stdout=subprocess.DEVNULL,
@@ -589,6 +1218,19 @@ def main() -> int:
         publication_status = "published"
 
     files = package_files(standard_root, args.source_revision)
+    plan_before = None
+    if args.allocation_plan:
+        if Path(__file__).read_bytes() != git_bytes(standard_root, args.source_revision, "scripts/create_adoption_lock.py"):
+            raise SystemExit("plan exporter differs from the immutable source package")
+        old_lock = json.loads(plan_path(target_root, ".governance/manifest.lock.json").read_bytes())
+        old_managed = old_lock.get("managedFiles")
+        if not isinstance(old_managed, dict):
+            raise SystemExit("adoption plan requires an installed managed hash closure")
+        plan_before = allocation_target_state(target_root,
+            {str(item["target"]) for item in files} | set(old_managed)
+            | {".governance/manifest.lock.json", ".gitignore"})
+    if args.migrate_wellman_scaffold:
+        validate_wellman_scaffold(target_root, files)
     managed_targets = {
         str(item["target"]) for item in files if item["strategy"] == "managed"
     }
@@ -610,6 +1252,9 @@ def main() -> int:
             payloads[target] = source_content
         elif strategy == "extendable" and target == MANIFEST_TARGET:
             current_base = manifest_projection(source_content)
+            if args.migrate_wellman_scaffold:
+                payloads[target] = json_bytes(load_json_bytes(source_content, "standard manifest"))
+                continue
             target_document = load_json_bytes(target_path.read_bytes(), "target manifest")
             if previous_base is None:
                 base_document = load_json_bytes(current_base, "managed manifest base")
@@ -638,7 +1283,32 @@ def main() -> int:
     if manifest.get("standard", {}).get("version") != version:
         raise SystemExit(f"target manifest version must equal adopted standard version {version}")
 
-    project_inherited_required_checks(target_root, payloads)
+    seed_additions: list[str] = []
+    if previous_base is not None and "governance" in manifest["coordination"]["workstreams"]:
+        seed_additions = allocation_seed_ownership(target_root, files,
+            json.loads(git_bytes(standard_root, args.source_revision, MANIFEST_SOURCE)), manifest)
+        if seed_additions:
+            payloads[MANIFEST_TARGET] = json_bytes(manifest)
+
+    bootstrap_paths: list[str] = []
+    project_inherited_required_checks(target_root, payloads, args.bootstrap_reusable_plan,
+                                     bootstrap_paths, args.repository)
+    if bootstrap_paths:
+        # These three exact target paths need an owner before real allocation.
+        # This is a target manifest declaration, never a writer/merge grant.
+        owned_paths = manifest["coordination"]["workstreams"]["governance"]["ownedPaths"]
+        owned_paths.extend(path for path in bootstrap_paths if path not in owned_paths)
+        payloads[MANIFEST_TARGET] = json_bytes(manifest)
+    ownership_base = json.loads(json.dumps(manifest))
+    ownership = None
+    if args.bootstrap_ownership_plan:
+        ownership = bootstrap_ownership_paths(target_root, ownership_base,
+            {str(item["target"]) for item in files}, args.bootstrap_ownership_plan)
+        stream, paths = ownership
+        manifest["coordination"]["workstreams"][stream]["ownedPaths"].extend(paths)
+        payloads[MANIFEST_TARGET] = json_bytes(manifest)
+        for path in paths:
+            print(f"PLANNED prerequisite ownership {stream}: {path}; no writer or publication authority")
     payloads[".gitignore"] = worktree_ignore_payload(target_root)
 
     expected_lock = lock_content(
@@ -657,6 +1327,15 @@ def main() -> int:
         )
     changes = planned_changes(target_root, payloads, expected_lock, executable_targets)
     missing_prerequisites = missing_target_prerequisites(target_root, manifest, payloads)
+
+    if args.allocation_plan:
+        if missing_prerequisites:
+            raise SystemExit("adoption allocation requires all target prerequisites")
+        assert plan_before is not None
+        print(json.dumps(adoption_allocation_plan(standard_root, args.source_revision, version,
+            target_root, files, payloads, expected_lock, executable_targets, manifest,
+            plan_before, seed_additions), sort_keys=True))
+        return 0
 
     if args.check:
         if not changes:
@@ -683,6 +1362,25 @@ def main() -> int:
     if conflicts and not args.upgrade:
         raise SystemExit(f"adoption files differ; rerun with --upgrade after review: {', '.join(sorted(conflicts))}")
 
+    bootstrap_head = None
+    if args.migrate_wellman_scaffold or args.bootstrap_native_adoption:
+        receipt = target_root / ".subactor/receipts/bootstrap-adoption.json"
+        if any(path.is_symlink() for path in (receipt, *receipt.parents)):
+            raise SystemExit("bootstrap receipt path is symlinked")
+        if any(path.exists() and not path.is_dir() for path in receipt.parents):
+            raise SystemExit("bootstrap receipt parent is not a directory")
+        observed = subprocess.run(["git", "-C", str(target_root), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True)
+        if observed.returncode == 0:
+            bootstrap_head = observed.stdout.strip()
+        if fresh_base_sha is not None and bootstrap_head != fresh_base_sha:
+            raise SystemExit("repository HEAD changed before bootstrap; reconcile ownership")
+        if args.migrate_wellman_scaffold:
+            validate_wellman_scaffold(target_root, files)
+    if ownership is not None:
+        if bootstrap_ownership_paths(target_root, ownership_base,
+                {str(item["target"]) for item in files}, args.bootstrap_ownership_plan) != ownership:
+            raise SystemExit("bootstrap ownership plan changed before writes")
     for target, content in sorted(payloads.items()):
         path = target_root / target
         if not path.exists() or path.read_bytes() != content:
@@ -693,6 +1391,35 @@ def main() -> int:
         target_root / ".governance/manifest.lock.json",
         expected_lock,
     )
+    if args.migrate_wellman_scaffold or args.bootstrap_native_adoption:
+        # Local ownership acknowledgement is not writer or publication authority.
+        result = subprocess.run(["git", "-C", str(target_root), "rev-parse", "HEAD"],
+                                capture_output=True, text=True)
+        if result.returncode == 0 and bootstrap_head:
+            if result.stdout.strip() != bootstrap_head:
+                raise SystemExit("repository HEAD changed during bootstrap; reconcile installed files")
+            owned = dict(payloads)
+            owned[".governance/manifest.lock.json"] = expected_lock
+            for rel in manifest.get("requiredFiles", []):
+                before = _git_cat_file_exists(target_root, f"HEAD:{rel}")
+                path = target_root / rel
+                if before.returncode and path.is_file() and not path.is_symlink():
+                    owned.setdefault(rel, path.read_bytes())
+            receipt = target_root / ".subactor/receipts/bootstrap-adoption.json"
+            if any(path.is_symlink() for path in (receipt, *receipt.parents)):
+                raise SystemExit("bootstrap receipt path is symlinked")
+            common = subprocess.check_output(
+                ["git", "-C", str(target_root), "rev-parse", "--path-format=absolute",
+                 "--git-common-dir"], text=True).strip()
+            atomic_write(receipt, (json.dumps({
+                "schema": "new-project.bootstrap-adoption/v1",
+                "baseSha": result.stdout.strip(), "commonGitDir": common,
+                "sourceRevision": args.source_revision,
+                "bootstrapKind": "fresh" if args.bootstrap_native_adoption else "legacy-scaffold",
+                "files": {rel: hashlib.sha256(data).hexdigest()
+                          for rel, data in sorted(owned.items())},
+                "grantsWriterAuthority": False, "grantsPublicationAuthority": False,
+            }, indent=2, sort_keys=True) + "\n").encode())
     agent_hosts_script = target_root / "scripts/install-agent-hosts.sh"
     if agent_hosts_script.is_file() and (target_root / ".git").exists():
         try:

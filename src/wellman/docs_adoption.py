@@ -19,6 +19,8 @@ SUPPORTED_DOCS_POLICIES = {
     # Upstream wellmanifest/docs 0.5.0 tag/release revision
     "6f475fb223e7a259d514b5483fb0d62f0e80a46e": DOCS_POLICY_SHA256,
     # Existing adopters keep their published policy until an explicit upgrade.
+    "f4cb34926d7369d74b0a1fe09e896a35b72c016c":
+        "fac05e720ec49370ba393e817a4a03b895d7ed33828e09b3420f9fcfb09264b0",
     "19efafbeb18923cfd51cc69bd519330488500137":
         "fac05e720ec49370ba393e817a4a03b895d7ed33828e09b3420f9fcfb09264b0",
     "ebe7501063ef4f3e63ded610c2d3183010ca636e":

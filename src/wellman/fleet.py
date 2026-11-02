@@ -396,7 +396,7 @@ def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False
             result["conformance"] = registration["conformance"]
 
         if sync_agents and any(action.startswith("project agent host instruction contracts (") for action in actions):
-            agent_updates = sync_agent_instructions(path, item["repository"])
+            agent_updates = sync_agent_instructions(path, item["repository"], overwrite=True)
             if agent_updates:
                 result["agent_instructions"] = agent_updates
 
@@ -425,7 +425,8 @@ def _render_agent_instructions(
         "2. Allocate tickets only through `./project/new-ticket.sh`. Never commit on `main` or a dirty primary checkout.\n"
         "3. Work in a canonical worktree v5 (`.worktrees/ticket-NNN--slug`).\n"
         "4. Stay inside that ticket's `intent.json` `allowedPaths`.\n"
-        "5. Run `./project/governance-check.sh` before claiming done.\n"
+        "5. Put every final result in the owning repository through its ticket: reports and analyses under `docs/` per `wellmanifest/docs`, error runbooks under `errors/` per `wellmanifest/logs`, and runtime leases under `.subactor/leases/`. Never leave outputs or state only in `~/.local/state`, `/tmp`, or scratchpads.\n"
+        "6. Run `./project/governance-check.sh` before claiming done.\n"
     )
 
     if host_id == "generic":
@@ -448,7 +449,11 @@ def _render_agent_instructions(
     return contract_body
 
 
-def sync_agent_instructions(repo_path: Path, repository_name: Optional[str] = None) -> List[str]:
+def sync_agent_instructions(
+    repo_path: Path,
+    repository_name: Optional[str] = None,
+    overwrite: bool = False,
+) -> List[str]:
     """Synchronize standard instruction and learning files for all registered LLM agent hosts."""
     updated: List[str] = []
     agent_hosts_files = {
@@ -461,19 +466,44 @@ def sync_agent_instructions(repo_path: Path, repository_name: Optional[str] = No
     }
     for relative_path, content in agent_hosts_files.items():
         target = repo_path / relative_path
+        new_bytes = content.encode("utf-8")
         if not target.exists():
             target.parent.mkdir(parents=True, exist_ok=True)
-            _atomic_write(target, content.encode("utf-8"))
+            _atomic_write(target, new_bytes)
             updated.append(relative_path)
+        elif overwrite:
+            existing = target.read_bytes()
+            if existing != new_bytes:
+                _atomic_write(target, new_bytes)
+                updated.append(relative_path)
+
+    # Configure local git hooks if .githooks directory exists
+    githooks_dir = repo_path / ".githooks"
+    git_dir = repo_path / ".git"
+    if githooks_dir.is_dir() and (git_dir.is_dir() or git_dir.is_file()):
+        try:
+            subprocess.run(
+                ["git", "-C", str(repo_path), "config", "--local", "core.hooksPath", ".githooks"],
+                check=False,
+                capture_output=True,
+                timeout=5,
+            )
+        except Exception:
+            pass
+
     return updated
 
 
-def sync_fleet_agents(root: Path, recursive: Optional[bool] = None) -> Dict[str, Any]:
+def sync_fleet_agents(
+    root: Path,
+    recursive: Optional[bool] = None,
+    overwrite: bool = False,
+) -> Dict[str, Any]:
     """Synchronize agent instructions across all discovered repositories in a fleet."""
     repositories: List[Dict[str, Any]] = []
     for path in discover_repositories(root, recursive):
         record = inspect_repository(path)
-        updated = sync_agent_instructions(path, record.repository)
+        updated = sync_agent_instructions(path, record.repository, overwrite=overwrite)
         repositories.append({
             "path": str(path),
             "repository": record.repository,

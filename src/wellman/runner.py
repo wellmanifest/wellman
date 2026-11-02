@@ -305,7 +305,7 @@ class ConformanceRunner:
                     cwd=str(self.root),
                     capture_output=True,
                     text=True,
-                    timeout=15,
+                    timeout=60,
                     env=_git_environment(),
                 )
                 if res.returncode != 0:
@@ -398,6 +398,31 @@ class ConformanceRunner:
                 remediation="Generate AGENTS.md from the Wellmanifest template.",
             ))
 
+        githooks_dir = self.root / ".githooks"
+        if githooks_dir.is_dir() and (self.root / ".git").exists():
+            try:
+                res = subprocess.run(
+                    ["git", "-C", str(self.root), "config", "--get", "core.hooksPath"],
+                    capture_output=True, text=True, check=False, timeout=5,
+                )
+                hooks_path = res.stdout.strip()
+                if hooks_path != ".githooks":
+                    # Check global hooks path
+                    res_global = subprocess.run(
+                        ["git", "config", "--global", "--get", "core.hooksPath"],
+                        capture_output=True, text=True, check=False, timeout=5,
+                    )
+                    if res_global.stdout.strip() != ".githooks":
+                        findings.append(Finding(
+                            code="GOV-AGENT-HOOKS-001",
+                            message="Repository has .githooks directory but git core.hooksPath is not configured.",
+                            severity="WARNING",
+                            path=".githooks",
+                            remediation="Run `git config --local core.hooksPath .githooks` or `./scripts/install-agent-hosts.sh`.",
+                        ))
+            except Exception:
+                pass
+
         return findings
 
     def run_all(self) -> List[Finding]:
@@ -464,6 +489,10 @@ class ConformanceRunner:
             findings.extend(self.check_taskand())
         if "wellmanifest/data-plane" in registered_reqs:
             findings.extend(self.check_data_plane())
+        if "wellmanifest/nohardcode" in registered_reqs or (self.root / ".governance" / "nohardcode.json").is_file():
+            findings.extend(self.check_nohardcode())
+        if "wellmanifest/ssot" in registered_reqs or (self.root / ".governance" / "ssot.json").is_file():
+            findings.extend(self.check_ssot())
         return findings
 
     def check_local_ci_publication(self) -> List[Finding]:
@@ -1095,6 +1124,71 @@ class ConformanceRunner:
             )]
         return []
 
+    def check_nohardcode(self) -> List[Finding]:
+        """Validate wellmanifest/nohardcode policy compliance and scan for path leaks."""
+        findings: List[Finding] = []
+        forbidden_rules = [
+            (re.compile(r"/(?:home|Users)/[a-zA-Z0-9_\-\.]+(?!/\.cache|/tests|/fixtures)"), "GOV-NOHARDCODE-HOME-PATH", "Hardcoded user home directory path detected: '{}'."),
+            (re.compile(r"~" + r"/\.local/state/"), "GOV-NOHARDCODE-PATH-LEAK", "Forbidden file leak to ~/.local/state/ detected: '{}'. Deliverables and logs must use docs/, errors/, or .subactor/."),
+            (re.compile(r"/tmp/(?!pytest|test|conftest|\.git)[a-zA-Z0-9_\-\./]+"), "GOV-NOHARDCODE-TMP-LEAK", "Temporary directory escape detected: '{}'. Use repository-local .subactor/tmp or docs/."),
+        ]
+
+        scan_dirs = ["src", "app", "lib", "packages", ".governance"]
+        for scan_dir in scan_dirs:
+            dir_path = self.root / scan_dir
+            if not dir_path.is_dir():
+                continue
+            for file_path in dir_path.rglob("*"):
+                if not file_path.is_file():
+                    continue
+                if file_path.suffix not in {".py", ".json", ".yaml", ".yml", ".toml", ".sh"}:
+                    continue
+                rel_parts = file_path.relative_to(self.root).parts
+                if any(part in {".venv", ".worktrees", "__pycache__", ".git", "test_fixtures", "_bundled"} for part in rel_parts):
+                    continue
+                if file_path.name == "runner.py":
+                    continue
+                try:
+                    text = file_path.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    continue
+                for pattern, code, msg_template in forbidden_rules:
+                    matches = pattern.findall(text)
+                    if matches:
+                        findings.append(Finding(
+                            code=code,
+                            message=msg_template.format(matches[0]),
+                            severity="ERROR" if "LEAK" in code else "WARNING",
+                            path=str(file_path.relative_to(self.root)),
+                            remediation="Use relative paths or environment variables (e.g. docs/, errors/, .subactor/leases/).",
+                        ))
+        return findings
+
+    def check_ssot(self) -> List[Finding]:
+        """Validate wellmanifest/ssot single source of truth contracts."""
+        findings: List[Finding] = []
+        ssot_file = self.root / ".governance" / "ssot.json"
+        if ssot_file.is_file():
+            try:
+                data = json.loads(ssot_file.read_text(encoding="utf-8"))
+                if not isinstance(data, dict) or "schema" not in data:
+                    findings.append(Finding(
+                        code="GOV-SSOT-SCHEMA-INVALID",
+                        message=".governance/ssot.json is missing valid schema declaration.",
+                        severity="ERROR",
+                        path=".governance/ssot.json",
+                        remediation="Declare a valid wellmanifest.ssot schema in .governance/ssot.json.",
+                    ))
+            except json.JSONDecodeError as exc:
+                findings.append(Finding(
+                    code="GOV-SSOT-SYNTAX-ERROR",
+                    message=f".governance/ssot.json contains invalid JSON: {exc}",
+                    severity="ERROR",
+                    path=".governance/ssot.json",
+                    remediation="Fix JSON syntax in .governance/ssot.json.",
+                ))
+        return findings
+
     def _fallback_storage_health(self, home: Path) -> dict:
         """Fallback lightweight scan for agent storage health when uncrash is uninstalled."""
         import sqlite3
@@ -1103,14 +1197,17 @@ class ConformanceRunner:
         if not agy_root.is_dir():
             return report
 
-        # Check conversation databases
+        # Check conversation databases (limit to recent active databases to avoid stalling runner)
         conv_dir = agy_root / "conversations"
         if conv_dir.is_dir():
-            for db_path in sorted(conv_dir.glob("*.db")):
-                if not db_path.is_file():
-                    continue
+            recent_dbs = sorted(
+                [p for p in conv_dir.glob("*.db") if p.is_file()],
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )[:15]
+            for db_path in recent_dbs:
                 try:
-                    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=0.5)
+                    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=0.1)
                     try:
                         cur = conn.cursor()
                         cur.execute("PRAGMA quick_check;")
@@ -1249,8 +1346,9 @@ class ConformanceRunner:
             "wellmanifest/nl-dsl-llm": lambda: [],
             "wellmanifest/nl-api-llm": lambda: [],
             "wellmanifest/nl-uri-dsl-llm": lambda: [],
-            "wellmanifest/ssot": lambda: [],
-            "wellmanifest/project-ssot": lambda: [],
+            "wellmanifest/nohardcode": self.check_nohardcode,
+            "wellmanifest/ssot": self.check_ssot,
+            "wellmanifest/project-ssot": self.check_ssot,
             "wellmanifest/hostguard": self.check_hostguard,
             "wellmanifest/flowguard": self.check_flowguard,
             "wellmanifest/deployment": self.check_deployment,

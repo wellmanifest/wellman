@@ -1,0 +1,31 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-089",
+  "summary": "wire-nohardcode-ssot-and-fleet-freshness-update",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-089/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/cli.py",
+    "src/wellman/adoption.py",
+    "src/wellman/docs_adoption.py",
+    "src/wellman/fleet.py",
+    "src/wellman/runner.py",
+    "src/wellman/_bundled/create_adoption_lock.py",
+    "tests/test_fleet.py",
+    "tests/test_runner.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

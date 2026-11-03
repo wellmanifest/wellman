@@ -22,6 +22,26 @@ def test_standards_catalog_not_empty():
     assert "wellmanifest/agent" in STANDARDS_CATALOG
     assert "wellmanifest/nl-dsl-llm" in STANDARDS_CATALOG
     assert "wellmanifest/nl-api-llm" in STANDARDS_CATALOG
+    assert "wellmanifest/python" in STANDARDS_CATALOG
+
+
+def test_python_standard():
+    py = get_standard("wellmanifest/python")
+    assert py is not None
+    assert py.id == "wellmanifest/python"
+    assert "wellmanifest/semver" in py.requires
+    assert "PYTHON-DIST-001" in py.description
+
+    standards = list_standards()
+    assert len(standards) >= 20
+    assert "wellmanifest/new-project" in STANDARDS_CATALOG
+    assert "wellmanifest/git-lifecycle" in STANDARDS_CATALOG
+    assert "wellmanifest/worktrees" in STANDARDS_CATALOG
+    assert "wellmanifest/ticket-lifecycle" in STANDARDS_CATALOG
+    assert "wellmanifest/merge" in STANDARDS_CATALOG
+    assert "wellmanifest/agent" in STANDARDS_CATALOG
+    assert "wellmanifest/nl-dsl-llm" in STANDARDS_CATALOG
+    assert "wellmanifest/nl-api-llm" in STANDARDS_CATALOG
 
 
 def test_conformance_levels():

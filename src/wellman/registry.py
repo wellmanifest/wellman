@@ -111,10 +111,18 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
     ),
     "wellmanifest/semver": StandardPack(
         id="wellmanifest/semver", name="Semantic versioning for heterogeneous releases",
-        owner="wellmanifest/semver", description="Separate SemVer for system, host and firmware with binary identity, safe-state and OTA rollback rules",
+        owner="wellmanifest/semver", description="Separate SemVer for system, host, firmware and packages with binary identity, commit-artifact SHA-256 pairing, safe-state and OTA rollback rules",
         minimum_level="S0", execution_model="reference-only",
         owns=["release version contracts"], excludes=["execution authority", "flashing or deployment", "verified runtime conformance"],
         schemas=['schemas/embedded-release.schema.json', 'schemas/hardware-matrix.schema.json', 'schemas/pipeline-run.schema.json'], docs_url="https://github.com/wellmanifest/semver",
+    ),
+    "wellmanifest/python": StandardPack(
+        id="wellmanifest/python", name="Python runtime, distribution lifecycle and build parity",
+        owner="wellmanifest/python", description="Normative rules for commit-artifact parity (PYTHON-DIST-001), three-fact version introspection (PYTHON-DIST-002), and startup byte-for-byte verification (PYTHON-DIST-003)",
+        minimum_level="S0", execution_model="reference-only",
+        owns=["Python distribution integrity", "wheel byte parity", "version probe contract"], excludes=["execution authority", "verified runtime conformance"],
+        requires=["wellmanifest/semver"],
+        schemas=['schemas/python-dist.schema.json'], docs_url="https://github.com/wellmanifest/python",
     ),
     "wellmanifest/nl-uri-dsl-llm": StandardPack(
         id="wellmanifest/nl-uri-dsl-llm", name="Natural language to URI and DSL",

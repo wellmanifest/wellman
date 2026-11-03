@@ -643,6 +643,18 @@
       "excludes": [
         "execution authority"
       ]
+    },
+    {
+      "id": "wellmanifest/python",
+      "owns": [
+        "Python distribution integrity",
+        "wheel byte parity",
+        "version probe contract"
+      ],
+      "excludes": [
+        "execution authority",
+        "verified runtime conformance"
+      ]
     }
   ]
 }

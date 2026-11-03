@@ -1357,6 +1357,7 @@ class ConformanceRunner:
             "wellmanifest/data-plane": self.check_data_plane,
             "wellmanifest/poa": lambda: [],
             "wellmanifest/authority-lifecycle": lambda: [],
+            "wellmanifest/python": lambda: [],
         }
         check = checks.get(standard_id)
         if check is not None:

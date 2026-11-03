@@ -13,6 +13,9 @@
     "TODO.md",
     "project/TICKETS.md",
     "src/wellman/registry.py",
+    "src/wellman/applicability.py",
+    "src/wellman/runner.py",
+    "src/wellman/schemas/standard-packs.json",
     "tests/test_registry.py"
   ],
   "forbiddenPaths": [

@@ -1133,18 +1133,34 @@ class ConformanceRunner:
             (re.compile(r"/tmp/(?!pytest|test|conftest|\.git)[a-zA-Z0-9_\-\./]+"), "GOV-NOHARDCODE-TMP-LEAK", "Temporary directory escape detected: '{}'. Use repository-local .subactor/tmp or docs/."),
         ]
 
+        # Directories holding installed or generated third-party content, not
+        # project source. A directory is also pruned when it is a virtualenv
+        # (it contains ``pyvenv.cfg``), whatever its name, so the walk never
+        # descends into it.
+        skipped_dirs = {
+            ".venv", "venv", ".worktrees", "__pycache__", ".git", "test_fixtures",
+            "_bundled", "node_modules", "site-packages",
+        }
+
+        def project_files(base: Path):
+            for current, dirs, files in os.walk(base):
+                current_path = Path(current)
+                dirs[:] = [
+                    name for name in dirs
+                    if name not in skipped_dirs and not (current_path / name / "pyvenv.cfg").is_file()
+                ]
+                for name in files:
+                    yield current_path / name
+
         scan_dirs = ["src", "app", "lib", "packages", ".governance"]
         for scan_dir in scan_dirs:
             dir_path = self.root / scan_dir
             if not dir_path.is_dir():
                 continue
-            for file_path in dir_path.rglob("*"):
+            for file_path in project_files(dir_path):
                 if not file_path.is_file():
                     continue
                 if file_path.suffix not in {".py", ".json", ".yaml", ".yml", ".toml", ".sh"}:
-                    continue
-                rel_parts = file_path.relative_to(self.root).parts
-                if any(part in {".venv", ".worktrees", "__pycache__", ".git", "test_fixtures", "_bundled"} for part in rel_parts):
                     continue
                 if file_path.name == "runner.py":
                     continue

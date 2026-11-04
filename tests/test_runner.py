@@ -306,3 +306,26 @@ def test_runner_selected_nohardcode_and_ssot(tmp_path):
     ssot_findings = runner.check_ssot()
     assert any(f.code == "GOV-SSOT-SCHEMA-INVALID" for f in ssot_findings)
 
+
+
+def test_nohardcode_scan_skips_virtualenv_and_dependency_trees(tmp_path):
+    """Installed dependencies are not project source and must not raise findings."""
+    leak = 'SCRATCH = "/tmp/scratch.txt"\n'
+    skipped = [
+        "packages/venv/lib/python3.13/site-packages/lib.py",  # plain "venv" directory
+        "packages/custom_env/lib/python3.13/site-packages/lib.py",  # any dir with pyvenv.cfg
+        "packages/web/node_modules/dep/config.json",
+        "src/vendor/site-packages/dep.py",
+    ]
+    for name in skipped:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(leak)
+    (tmp_path / "packages/custom_env/pyvenv.cfg").write_text("home = /usr/bin\n")
+    real = tmp_path / "packages/app/real.py"
+    real.parent.mkdir(parents=True)
+    real.write_text(leak)
+
+    findings = ConformanceRunner(tmp_path).check_nohardcode()
+    paths = {f.path for f in findings if f.code == "GOV-NOHARDCODE-TMP-LEAK"}
+    assert paths == {"packages/app/real.py"}

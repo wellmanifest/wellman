@@ -407,18 +407,19 @@ def test_emit_standardization_tickets_with_findings():
     assert "wellmanifest" in ticket["labels"]
     assert "koru-refactor" in ticket["labels"]
     assert "governance-handoff" in ticket["labels"]
-    assert ticket["source"] == {"tool": "wellman"}
-    assert ticket["executor"]["kind"] == "shell"
-    assert "script" in ticket["inputs"]
-    assert "git" in ticket["inputs"]["script"]
+    assert ticket["source"]["tool"] == "wellman"
+    assert ticket["source"]["context"]["target_repo"] == "org/repo-a"
     assert ticket["execution"]["queue"] == "governance-handoff"
-    assert ticket["execution"]["state"] == "ready"
-    assert ticket["executor_kind"] == "koru"
-    assert ticket["remediation_intent"]["schema"] == "new-project.remediation-intent/v1"
-    assert len(ticket["remediation_intent"]["findings"]) == 2
+    assert ticket["requested_executor"] == "koru"
+    assert len(ticket["remediation_request"]["findings"]) == 2
     assert "strategy" in ticket
     assert "phases" in ticket["strategy"]
     assert len(ticket["children"]) == 2
+    for request in result["tickets"]:
+        assert request["status"] == "blocked"
+        assert request["execution"]["state"] == "blocked"
+        assert request["execution"]["last_error"] == "native_admission_required"
+        assert not {"executor", "executor_kind", "executor_mode", "inputs", "taskand", "remediation_intent"} & request.keys()
 
     # Check subtasks
     assert subtask_remed["parent"] == ticket["id"]
@@ -449,11 +450,14 @@ def test_emit_standardization_tickets_with_taskand():
     assert result["schema"] == "planfile.tickets/v1"
     assert result["count"] == 3
     ticket = result["tickets"][2]
-    assert ticket["executor_kind"] == "taskand"
+    assert ticket["requested_executor"] == "taskand"
     assert "taskand-refactor" in ticket["labels"]
     assert "taskand-job" in ticket["labels"]
-    assert "taskand" in ticket
-    assert ticket["taskand"]["operation"] == "git.commit"
+    for request in result["tickets"]:
+        assert request["execution"]["state"] == "blocked"
+        assert "taskand" not in request
+        assert "executor" not in request
+    assert "[skip ci]" not in json.dumps(result)
 
 
 def test_trigger_taskand_execution(tmp_path):
@@ -479,6 +483,61 @@ def test_trigger_taskand_execution(tmp_path):
     assert called["queue_name"] == "runner-queue"
 
 
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_unbound_taskand_never_adopts_or_commits(tmp_path, monkeypatch, dry_run):
+    # Even an imported ticket claiming readiness cannot establish native authority.
+    (tmp_path / "planfile-tickets.json").write_text(json.dumps([
+        {"id": "GOV-untrusted", "execution": {"state": "ready"}}
+    ]))
+
+    def unexpected_effect(*args, **kwargs):
+        pytest.fail(f"Unbound execution attempted a subprocess: {args!r}")
+
+    monkeypatch.setattr(subprocess, "run", unexpected_effect)
+    result = trigger_taskand_execution(tmp_path, dry_run=dry_run)
+
+    assert result["ok"] is dry_run
+    assert result["executed"] is False
+    assert result["status"] == "blocked"
+    assert result["error"] == "native_admission_required"
+    assert result["tickets_found"] == 1
+    assert result["operations_planned"] == []
+
+
+@pytest.mark.parametrize("per_repo", [False, True])
+def test_fleet_import_preserves_admission_context_without_dangling_ids(tmp_path, monkeypatch, per_repo):
+    import shutil
+    from types import SimpleNamespace
+
+    target = tmp_path / "repo with ' quotes $(literal)"
+    target.mkdir()
+    (target / ".planfile").mkdir()
+    document = emit_standardization_tickets({"repositories": [{
+        "path": str(target), "repository": "org/repo",
+        "findings": [{"code": "GOV-MISSING", "severity": "ERROR", "message": "Missing pack"}],
+    }]})
+    before = json.dumps(document)
+    imported = []
+
+    def importer(command, **kwargs):
+        assert command == ["planfile", "ticket", "import", "--source", "wellman"]
+        imported.extend(json.loads(kwargs["input"]))
+        return SimpleNamespace(returncode=0, stdout="created", stderr="")
+
+    monkeypatch.setattr(shutil, "which", lambda _: "/declared/planfile")
+    monkeypatch.setattr(subprocess, "run", importer)
+    result = feed_to_planfile(document, planfile_project=tmp_path, per_repo=per_repo)
+
+    assert result["ok"] and result["count"] == 3
+    assert json.dumps(document) == before
+    for request in imported:
+        assert request["status"] == request["execution"]["state"] == "blocked"
+        assert not {"executor", "inputs", "parent", "children", "blocked_by"} & request.keys()
+        assert request["source"]["context"]["target_path"] == str(target)
+        assert request["source"]["context"]["native_admission_required"] is True
+    assert imported[1]["source"]["context"]["requested_blocked_by"] == [imported[0]["id"]]
+
+
 def test_fleet_check_cli_emit_planfile(tmp_path, capsys):
     make_repository(tmp_path, "subrepo", "https://github.com/acme/subrepo.git")
     out_file = tmp_path / "planfile-tickets.json"
@@ -489,7 +548,8 @@ def test_fleet_check_cli_emit_planfile(tmp_path, capsys):
     data = json.loads(out_file.read_text(encoding="utf-8"))
     assert data["schema"] == "planfile.tickets/v1"
     assert data["count"] >= 1
-    assert data["tickets"][0]["executor_kind"] == "koru"
+    assert data["tickets"][0]["requested_executor"] == "koru"
+    assert data["tickets"][0]["execution"]["state"] == "blocked"
 
 
 def test_fleet_check_cli_taskand_handoff(tmp_path, capsys):
@@ -501,8 +561,8 @@ def test_fleet_check_cli_taskand_handoff(tmp_path, capsys):
     data = json.loads(out_file.read_text(encoding="utf-8"))
     assert data["schema"] == "planfile.tickets/v1"
     assert data["count"] >= 1
-    # Check that tickets use taskand executor
-    assert data["tickets"][0]["executor_kind"] == "taskand"
+    assert data["tickets"][0]["requested_executor"] == "taskand"
+    assert data["tickets"][0]["execution"]["state"] == "blocked"
 
 
 def test_discover_repositories_contextual_auto_recursive(tmp_path):
@@ -742,9 +802,24 @@ def test_selection_export_requires_explicit_context_and_preserves_source(tmp_pat
     } == before
 
 
-def test_selection_export_native_ids_dedupe_and_no_autonomous_execution(tmp_path):
+def test_selection_export_native_ids_dedupe_and_no_autonomous_execution(tmp_path, monkeypatch):
     Store = pytest.importorskip("planfile.core.store").Store
     _, target, plan, context = _selection_export_fixture(tmp_path)
+    batches = []
+    persist = Store._create_tickets_bulk_unlocked
+
+    def batch(self, tickets):
+        ids = {ticket.id for ticket in tickets}
+        assert all(set(ticket.blocked_by) <= ids for ticket in tickets)
+        batches.append(ids)
+        return persist(self, tickets)
+
+    def unexpected_individual_write(*args, **kwargs):
+        pytest.fail("Initial export/replay must not rewrite tickets individually")
+
+    monkeypatch.setattr(Store, "_create_tickets_bulk_unlocked", batch)
+    monkeypatch.setattr(Store, "_create_ticket_unlocked", unexpected_individual_write)
+    monkeypatch.setattr(Store, "_update_ticket_unlocked", unexpected_individual_write)
     first = feed_to_planfile(plan, target, selection_context=context)
     assert first["ok"] and first["created"] == len(plan["decisions"])
     store = Store(target)
@@ -752,6 +827,7 @@ def test_selection_export_native_ids_dedupe_and_no_autonomous_execution(tmp_path
     revisions = {t.id: t.updated_at for t in tickets}
     second = feed_to_planfile(plan, target, selection_context=context)
     assert second["ok"] and second["created"] == 0
+    assert len(batches) == 1 and len(batches[0]) == first["created"]
     assert all(r["state"] == "reused" for r in second["tickets"])
     assert {t.id: t.updated_at for t in store.list_tickets(sprint="all")} == revisions
     for t in tickets:
@@ -786,7 +862,7 @@ def test_selection_export_preserves_terminal_key_without_reopening(tmp_path, ter
     assert store.get_ticket(t.id).model_dump(mode="json") == before
 
 
-def test_selection_export_uses_actual_dependency_ids(tmp_path):
+def test_selection_export_uses_actual_dependency_ids(tmp_path, monkeypatch):
     Store = pytest.importorskip("planfile.core.store").Store
     from wellman.applicability import build_catalog
     from wellman.selection_plan import compose_selection_plan
@@ -811,6 +887,14 @@ def test_selection_export_uses_actual_dependency_ids(tmp_path):
     plan = compose_selection_plan(
         context["observation"], context["catalog"], context["adoptions"]
     )
+    persist = Store._create_tickets_bulk_unlocked
+
+    def batch(self, tickets):
+        by_standard = {t.source.context["proposal"]["standard_id"]: t for t in tickets}
+        assert by_standard[ids[1]].blocked_by == [by_standard[ids[0]].id]
+        return persist(self, tickets)
+
+    monkeypatch.setattr(Store, "_create_tickets_bulk_unlocked", batch)
     result = feed_to_planfile(plan, target, selection_context=context)
     assert result["ok"]
     tickets = Store(target).list_tickets(sprint="all")

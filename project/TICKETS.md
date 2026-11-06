@@ -89,4 +89,6 @@
 | **ticket-088** | [`README.md`](./ticket-088/README.md) | - | - |  [`ai-codex.md`](./ticket-088/ai-codex.md) | - | - |
 | **ticket-089** | [`README.md`](./ticket-089/README.md) | - | - | - | - | - |
 | **ticket-090** | [`README.md`](./ticket-090/README.md) | - | - | - | - | - |
+| **ticket-091** | [`README.md`](./ticket-091/README.md) | - | - | - | - | - |
+| **ticket-092** | [`README.md`](./ticket-092/README.md) | - | - | - | - | - |
 <!-- AUTO:TICKET_INDEX:END -->

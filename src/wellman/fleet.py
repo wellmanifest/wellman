@@ -573,10 +573,11 @@ def emit_standardization_tickets(
     monag_triage: bool = False,
     taskand_ready: bool = False,
 ) -> Dict[str, Any]:
-    """Convert fleet check findings into actionable, Planfile/Koru/Taskand-compatible tickets.
+    """Convert fleet findings into blocked native admission requests.
 
     Produces a 'planfile.tickets/v1' structure where each non-compliant repository
-    receives an actionable ticket with diagnostic findings and remediation steps.
+    receives diagnostic context. Handoff flags select a requested adapter; they
+    do not establish native ownership, a fenced lease or execution authority.
     """
     tickets: List[Dict[str, Any]] = []
 
@@ -614,10 +615,11 @@ def emit_standardization_tickets(
         desc_lines.extend([
             "",
             "### Satisfied When:",
-            f"- `wellman check --root {repo_path}` exits with code 0 (no ERROR findings).",
+            "- The native owner admits a bounded ticket, worktree and fenced lease.",
+            "- Applicable implemented checks and exact-head protected verification pass.",
             "",
             "### Remediation Guidance:",
-            "- Adopt missing standard packs via `wellman adopt` or sync `.governance/` files.",
+            "- Reconcile immutable standard pins through the native adoption process.",
             "- Work inside a designated Wellmanifest worktree v5.",
             "- Validate clean conformance before commit.",
         ])
@@ -640,11 +642,21 @@ def emit_standardization_tickets(
             "findings_count": len(findings),
             "source": {"tool": "wellman"},
             "schema": "planfile.tickets/v1",
-            "children": [remediation_ticket_id, cicd_ticket_id],
+            "children": [],
+            "execution": {
+                "queue": "governance-handoff",
+                "state": "blocked",
+                "last_error": "native_admission_required",
+            },
+            "remediation_request": {
+                "status": "admission_required",
+                "objective": f"Remediate Wellmanifest standard compliance findings for {repo_name}",
+                "findings": findings,
+            },
             "strategy": {
                 "phases": ["remediation", "ci_cd_verification"],
                 "deliverables": [".governance/manifest.json", ".governance/standard-packs.json", ".governance/manifest.lock.json"],
-                "gate_command": f"wellman check --root '{repo_path}'",
+                "gate_argv": ["wellman", "check", "--root", repo_path],
             },
         }
 
@@ -660,40 +672,9 @@ def emit_standardization_tickets(
             ticket["labels"].extend([f"{active_executor}-refactor", "governance-handoff"])
             if taskand_ready:
                 ticket["labels"].append("taskand-job")
-            ticket["executor"] = {"kind": "shell", "mode": "autonomous"}
-            ticket["executor_kind"] = active_executor
-            ticket["executor_mode"] = "autonomous"
-            ticket["inputs"] = {
-                "script": (
-                    f"wellman adopt --root '{repo_path}' wellmanifest/new-project && "
-                    f"wellman check --root '{repo_path}' && "
-                    f"git -C '{repo_path}' add .governance/ && "
-                    f"git -C '{repo_path}' diff --staged --quiet || "
-                    f"git -C '{repo_path}' commit -m 'chore(governance): adopt wellmanifest standards [skip ci]'"
-                ),
-                "expect_files_changed": True,
-            }
-            if taskand_ready:
-                ticket["taskand"] = {
-                    "operation": "git.commit",
-                    "ref": f"artifact://{repo_name}",
-                    "steps": [
-                        {"op": "artifact.update", "args": {"title": f"Standardize {repo_name}"}},
-                        {"op": "git.commit", "args": {"message": "chore(governance): adopt wellmanifest standards [skip ci]"}},
-                    ],
-                }
-            ticket["execution"] = {
-                "queue": "governance-handoff",
-                "state": "ready",
-            }
+            ticket["requested_executor"] = active_executor
+            ticket["children"] = [remediation_ticket_id, cicd_ticket_id]
             ticket["source_tool"] = "wellman-fleet-watcher"
-            ticket["remediation_intent"] = {
-                "schema": "new-project.remediation-intent/v1",
-                "repository": repo_name,
-                "status": "READY",
-                "objective": f"Remediate Wellmanifest standard compliance findings for {repo_name}",
-                "findings": findings,
-            }
 
             # Subtask 1: Concrete remediation task
             remediation_subtask: Dict[str, Any] = {
@@ -707,29 +688,10 @@ def emit_standardization_tickets(
                 "labels": ["wellmanifest", "standardization", "subtask:remediation"],
                 "target_repo": repo_name,
                 "target_path": repo_path,
-                "executor": {"kind": "shell", "mode": "autonomous"},
-                "executor_kind": active_executor,
-                "executor_mode": "autonomous",
-                "inputs": {
-                    "script": (
-                        f"wellman adopt --root '{repo_path}' wellmanifest/new-project && "
-                        f"git -C '{repo_path}' add .governance/ && "
-                        f"git -C '{repo_path}' diff --staged --quiet || "
-                        f"git -C '{repo_path}' commit -m 'chore(governance): adopt wellmanifest standards [skip ci]'"
-                    ),
-                    "expect_files_changed": True,
-                },
-                "execution": {
-                    "queue": "governance-handoff",
-                    "state": "ready",
-                },
+                "requested_executor": active_executor,
+                "execution": dict(ticket["execution"]),
                 "schema": "planfile.tickets/v1",
             }
-            if taskand_ready:
-                remediation_subtask["taskand"] = {
-                    "operation": "git.commit",
-                    "args": {"message": "chore(governance): adopt wellmanifest standards [skip ci]"},
-                }
 
             # Subtask 2: CI/CD validation and verification gate
             cicd_subtask: Dict[str, Any] = {
@@ -744,29 +706,33 @@ def emit_standardization_tickets(
                 "labels": ["wellmanifest", "standardization", "subtask:cicd", "qa"],
                 "target_repo": repo_name,
                 "target_path": repo_path,
-                "executor": {"kind": "shell", "mode": "autonomous"},
-                "executor_kind": active_executor,
-                "executor_mode": "autonomous",
-                "inputs": {
-                    "script": f"wellman check --root '{repo_path}'",
-                    "expect_files_changed": False,
-                },
-                "execution": {
-                    "queue": "governance-handoff",
-                    "state": "blocked",
-                },
+                "requested_executor": active_executor,
+                "execution": dict(ticket["execution"]),
                 "schema": "planfile.tickets/v1",
             }
-            if taskand_ready:
-                cicd_subtask["taskand"] = {
-                    "operation": "ci.status",
-                    "args": {"provider": "github"},
-                }
 
             tickets.append(remediation_subtask)
             tickets.append(cicd_subtask)
 
         tickets.append(ticket)
+
+    for ticket in tickets:
+        # Native Planfile imports allocate fresh IDs. Keep proposal identity and
+        # relationships as advisory context until the native owner admits a DAG.
+        ticket["status"] = "blocked"
+        ticket["source"] = {
+            "tool": "wellman",
+            "context": {
+                "native_admission_required": True,
+                "request_id": ticket["id"],
+                "target_repo": ticket["target_repo"],
+                "target_path": ticket["target_path"],
+                "requested_executor": ticket.get("requested_executor"),
+                "requested_parent": ticket.get("parent"),
+                "requested_children": ticket.get("children", []),
+                "requested_blocked_by": ticket.get("blocked_by", []),
+            },
+        }
 
     return {
         "schema": "planfile.tickets/v1",
@@ -798,6 +764,15 @@ def feed_to_planfile(
     tickets = tickets_doc.get("tickets", [])
     if not tickets:
         return {"ok": True, "count": 0, "output": "no tickets to import", "target_projects": []}
+
+    if tickets_doc.get("source") == "wellman.fleet-check":
+        # Bulk import does not remap our proposal IDs. Never install dangling
+        # runtime dependencies; the source context retains the requested graph.
+        tickets = [
+            {key: value for key, value in ticket.items()
+             if key not in {"parent", "children", "blocked_by"}}
+            for ticket in tickets
+        ]
 
     target_projects: List[str] = []
 
@@ -921,7 +896,11 @@ def trigger_taskand_execution(
     dry_run: bool = False,
     engine_runner: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Execute standardization tasks using taskand typed operations engine."""
+    """Dispatch through an explicitly bound native engine, never a shell fallback.
+
+    The caller-supplied engine owns native admission and effect verification.
+    Imported ticket metadata cannot establish that boundary by itself.
+    """
     planfile_tickets = project_path / ".planfile" / "tickets.json"
     if not planfile_tickets.is_file():
         # Check tickets in repo root
@@ -943,78 +922,19 @@ def trigger_taskand_execution(
             tickets=tickets_data,
         )
 
-    executed_steps: List[Dict[str, Any]] = []
-
-    if dry_run:
-        return {
-            "ok": True,
-            "dry_run": True,
-            "queue": queue_name,
-            "project": str(project_path),
-            "tickets_found": len(tickets_data),
-            "operations_planned": ["artifact.update", "git.commit"],
-        }
-
-    # Execute deterministic standardization adoption
-    res_adopt = subprocess.run(
-        ["wellman", "adopt", "--root", str(project_path), "wellmanifest/new-project"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    executed_steps.append({"op": "wellman.adopt", "code": res_adopt.returncode, "stdout": res_adopt.stdout})
-
-    res_check = subprocess.run(
-        ["wellman", "check", "--root", str(project_path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    executed_steps.append({"op": "wellman.check", "code": res_check.returncode, "stdout": res_check.stdout})
-
-    # Perform Git commit if changes exist
-    subprocess.run(
-        ["git", "add", ".governance/"],
-        cwd=str(project_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    git_diff = subprocess.run(
-        ["git", "diff", "--staged", "--quiet"],
-        cwd=str(project_path),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    commit_sha = None
-    if git_diff.returncode != 0:
-        git_commit = subprocess.run(
-            ["git", "commit", "-m", "chore(governance): adopt wellmanifest standards via taskand [skip ci]"],
-            cwd=str(project_path),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if git_commit.returncode == 0:
-            rev_proc = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                cwd=str(project_path),
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            commit_sha = rev_proc.stdout.strip()
-        executed_steps.append({"op": "git.commit", "code": git_commit.returncode, "commit": commit_sha})
-
-    success = res_check.returncode == 0
     return {
-        "ok": success,
+        "ok": dry_run,
+        "dry_run": dry_run,
+        "executed": False,
+        "status": "blocked",
+        "error": "native_admission_required",
         "executor": "taskand",
         "queue": queue_name,
         "project": str(project_path),
-        "steps": executed_steps,
-        "commit": commit_sha,
+        "tickets_found": len(tickets_data),
+        "operations_planned": [],
+        "steps": [],
+        "commit": None,
     }
 
 
@@ -1063,8 +983,8 @@ def _export_selection_backlog(plan, project, context):
             "mutation_lock",
             "ticket_records",
             "get_ticket",
-            "_next_id_unlocked",
-            "_create_ticket_unlocked",
+            "_reserve_ids_unlocked",
+            "_create_tickets_bulk_unlocked",
             "_update_ticket_unlocked",
         ):
             if not callable(getattr(Store, name, None)):
@@ -1143,39 +1063,59 @@ def _export_selection_backlog(plan, project, context):
                     if t is None:
                         raise ContractError("Proposal disappeared from native store")
                     existing[k] = t
-            # Use native IDs for every dependency, including preserved terminals.
-            for k, d in zip(keys, selected):
-                t = existing.get(k)
-                if t is None:
-                    t = Ticket(
-                        id=store._next_id_unlocked(),
-                        name="Review " + d["action"] + ": " + d["standard_id"],
-                        status="open",
-                        sprint="backlog",
-                        labels=[
-                            "wellman-selection",
-                            "actor:human",
-                            "autonomy-frontier",
-                            "dedupe:wellman-selection:" + k,
-                        ],
-                        executor={"kind": "human", "mode": "interactive"},
-                        execution={
-                            "queue": "wellman-selection-review",
-                            "state": "pending",
+            # Reserve the whole missing set under the native lock, then persist
+            # once with final dependencies. Per-ticket creation repeatedly
+            # rewrites the entire sprint and invokes advisory enrichment.
+            missing = [(k, d) for k, d in zip(keys, selected) if k not in existing]
+            ids = store._reserve_ids_unlocked(len(missing)) if missing else []
+            if len(ids) != len(missing) or len(set(ids)) != len(ids):
+                raise ContractError("Native batch allocation returned invalid identities")
+            for (k, d), ticket_id in zip(missing, ids):
+                t = Ticket(
+                    id=ticket_id,
+                    name="Review " + d["action"] + ": " + d["standard_id"],
+                    status="open",
+                    sprint="backlog",
+                    labels=sorted([
+                        "wellman-selection",
+                        "actor:human",
+                        "autonomy-frontier",
+                        "dedupe:wellman-selection:" + k,
+                    ]),
+                    executor={"kind": "human", "mode": "interactive"},
+                    execution={
+                        "queue": "wellman-selection-review",
+                        "state": "pending",
+                    },
+                    source={
+                        "tool": "wellman.selection-plan",
+                        "version": "v1",
+                        "context": {
+                            "plan_hash": plan["plan_hash"],
+                            "proposal": d,
+                            "grants_authority": False,
                         },
-                        source={
-                            "tool": "wellman.selection-plan",
-                            "version": "v1",
-                            "context": {
-                                "plan_hash": plan["plan_hash"],
-                                "proposal": d,
-                                "grants_authority": False,
-                            },
-                        },
-                    )
-                    store._create_ticket_unlocked(t)
-                    existing[k] = t
-                    allocated.append(k)
+                    },
+                )
+                existing[k] = t
+                allocated.append(k)
+
+            def dependency_ids(decision):
+                return sorted({
+                    existing[key(other)].id
+                    for other in selected
+                    if other["repository_id"] == decision["repository_id"]
+                    and other["standard_id"] in decision["depends_on"]
+                    and (other["scope"] in ("repository", "workspace")
+                         or other["component_id"] == decision["component_id"])
+                })
+
+            created = []
+            for k, d in missing:
+                existing[k].blocked_by = dependency_ids(d)
+                created.append(existing[k])
+            if created:
+                store._create_tickets_bulk_unlocked(created)
             for k, d in zip(keys, selected):
                 t = existing[k]
                 state = str(getattr(t.status, "value", t.status))
@@ -1208,18 +1148,7 @@ def _export_selection_backlog(plan, project, context):
                 ):
                     rows.append({"id": t.id, "state": "preserved_owned", "key": k})
                     continue
-                deps = sorted(
-                    {
-                        existing[key(other)].id
-                        for other in selected
-                        if other["repository_id"] == d["repository_id"]
-                        and other["standard_id"] in d["depends_on"]
-                        and (
-                            other["scope"] in ("repository", "workspace")
-                            or other["component_id"] == d["component_id"]
-                        )
-                    }
-                )
+                deps = dependency_ids(d)
                 source = t.source.model_dump(mode="json")
                 source["context"] = {
                     **source["context"],

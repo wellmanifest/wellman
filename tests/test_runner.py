@@ -8,6 +8,21 @@ import pytest
 from wellman.runner import ConformanceRunner
 
 
+@pytest.mark.parametrize("standard", [
+    "dsl", "code-dsl", "env-dsl", "llm", "nl-dsl-llm", "nl-api-llm",
+    "nl-uri-dsl-llm", "poa", "authority-lifecycle", "python",
+])
+def test_unimplemented_selected_check_cannot_report_conformance(tmp_path, capsys, standard):
+    import json
+    from wellman.cli import main
+
+    result = main(["check", "--standard", f"wellmanifest/{standard}", "--root", str(tmp_path), "--json"])
+
+    assert result == 1
+    report = json.loads(capsys.readouterr().out)
+    assert any(f["code"] == "GOV-STANDARD-NOT-IMPLEMENTED" for f in report["findings"])
+
+
 def test_runner_on_empty_dir(tmp_path):
     runner = ConformanceRunner(tmp_path)
     findings = runner.run_all()

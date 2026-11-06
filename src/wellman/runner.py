@@ -1355,13 +1355,6 @@ class ConformanceRunner:
             "wellmanifest/mcp": self.check_mcp,
             "wellmanifest/dockuri": self.check_dockuri,
             "wellmanifest/report": self.check_report,
-            "wellmanifest/dsl": lambda: [],
-            "wellmanifest/code-dsl": lambda: [],
-            "wellmanifest/env-dsl": lambda: [],
-            "wellmanifest/llm": lambda: [],
-            "wellmanifest/nl-dsl-llm": lambda: [],
-            "wellmanifest/nl-api-llm": lambda: [],
-            "wellmanifest/nl-uri-dsl-llm": lambda: [],
             "wellmanifest/nohardcode": self.check_nohardcode,
             "wellmanifest/ssot": self.check_ssot,
             "wellmanifest/project-ssot": self.check_ssot,
@@ -1371,9 +1364,6 @@ class ConformanceRunner:
             "wellmanifest/semver": self.check_semver,
             "wellmanifest/taskand": self.check_taskand,
             "wellmanifest/data-plane": self.check_data_plane,
-            "wellmanifest/poa": lambda: [],
-            "wellmanifest/authority-lifecycle": lambda: [],
-            "wellmanifest/python": lambda: [],
         }
         check = checks.get(standard_id)
         if check is not None:

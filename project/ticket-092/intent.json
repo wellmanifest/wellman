@@ -1,0 +1,60 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-092",
+  "summary": "Reject unverified conformance and unqualified fleet remediation",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P0",
+    "origin": "regression"
+  },
+  "allowedPaths": [
+    "project/ticket-092/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/fleet.py",
+    "src/wellman/runner.py",
+    "tests/test_fleet.py",
+    "tests/test_runner.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "e85153bfcfc4fc1fd890c10afec5960e5e0980f8",
+    "targetBranch": "main",
+    "outcome": "Publish verified conformance and native fleet admission boundaries through independent validation",
+    "nonGoals": ["Runtime packaging", "Controller implementation", "POA receipt policy", "Idle takeover policy"],
+    "complexity": "M",
+    "estimatedMinutes": 60,
+    "budgets": {
+      "maxImplementationFiles": 4,
+      "maxAffectedComponents": 2,
+      "maxPublicInterfaceChanges": 2,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Require implemented checks and native admission before reporting conformance or dispatching effects",
+      "components": [
+        {"name": "conformance", "paths": ["src/wellman/runner.py", "tests/test_runner.py"]},
+        {"name": "fleet", "paths": ["src/wellman/fleet.py", "tests/test_fleet.py"]}
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": ["Unimplemented checks fail closed", "Fleet requests require native admission"],
+      "dataChanges": [],
+      "ui": {"impact": "none", "states": [], "evidence": []},
+      "rollback": "Revert the material change through a separately validated ticket if required"
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {"criterion": "AC-01", "commands": ["pytest tests/test_runner.py tests/test_fleet.py"], "evidence": "External ticket-092 regression and focused test receipts"},
+      {"criterion": "AC-05", "commands": ["pytest tests/test_fleet.py --durations=8", "testless scan -s wellman tests/test_runner.py tests/test_fleet.py"], "evidence": "External native Planfile batch, replay, dependency and concurrency receipts; protected full suite remains required"},
+      {"criterion": "AC-04", "commands": ["pytest tests", "project/governance-check.sh"], "evidence": "External local test receipts and exact-head protected OneDev/Validator receipts"}
+    ]
+  }
+}

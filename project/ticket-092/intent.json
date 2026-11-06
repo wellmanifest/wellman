@@ -53,6 +53,7 @@
     "runtimeDependencies": [],
     "validation": [
       {"criterion": "AC-01", "commands": ["pytest tests/test_runner.py tests/test_fleet.py"], "evidence": "External ticket-092 regression and focused test receipts"},
+      {"criterion": "AC-05", "commands": ["pytest tests/test_fleet.py --durations=8", "testless scan -s wellman tests/test_runner.py tests/test_fleet.py"], "evidence": "External native Planfile batch, replay, dependency and concurrency receipts; protected full suite remains required"},
       {"criterion": "AC-04", "commands": ["pytest tests", "project/governance-check.sh"], "evidence": "External local test receipts and exact-head protected OneDev/Validator receipts"}
     ]
   }

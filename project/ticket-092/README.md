@@ -29,6 +29,14 @@ continuity checker requires its target branch. The completed contract uses the
 manifest's allowed M class for the two already accepted interface corrections;
 the original four-file scope, two components and zero dependencies are unchanged.
 
+CI reconciliation within the accepted fleet scope: the protected run timed out
+after 600 seconds. Profiling its native Planfile integration found 48 individual
+allocations/creates followed by 48 redundant initial updates (41 seconds in one
+regression). Use the pinned native batch allocator/persistence capabilities under
+the same lock, establishing all dependency IDs before creation and retaining CAS
+for existing proposals. This preserves verification coverage and the four-file
+scope; no CI timeout or protected policy is relaxed.
+
 ## Acceptance criteria
 
 - [x] AC-01: All ten unimplemented selected checks return an error through the CLI.
@@ -38,6 +46,8 @@ the original four-file scope, two components and zero dependencies are unchanged
   dry runs report no execution and explicitly supplied adapters remain usable.
 - [ ] AC-04: Regression tests and governance pass; publication uses exact-head
   independent validation.
+- [x] AC-05: Initial selection export persists one native batch with resolved
+  dependencies; repeat export preserves IDs, ownership and CAS behavior.
 
 Local evidence: full suite 890 passed, 34 skipped; final affected-module suite
 88 passed, 24 skipped (optional native integrations absent from the local venv).
@@ -47,6 +57,12 @@ context. Import transport regressions cover central and per-repository routing,
 including proposal dependencies preserved as context rather than dangling IDs.
 Governance passes. Detailed logs and checkpoints are external under
 `.subactor/receipts/ticket-092/`; protected publication is still pending.
+
+After CI reconciliation: all 112 affected-module tests pass with native
+Planfile 0.1.126 (162.51 seconds, no skips), and 18 bounded Testless coverage
+regressions pass. The same profiled export test fell from 41.22 to 9.67 seconds.
+Dependency, ownership, replay and concurrent retry tests remain enabled.
+Testless proposals are advisory external artifacts; no tests were deleted.
 
 ## Tracking boundary
 

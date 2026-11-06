@@ -983,8 +983,8 @@ def _export_selection_backlog(plan, project, context):
             "mutation_lock",
             "ticket_records",
             "get_ticket",
-            "_next_id_unlocked",
-            "_create_ticket_unlocked",
+            "_reserve_ids_unlocked",
+            "_create_tickets_bulk_unlocked",
             "_update_ticket_unlocked",
         ):
             if not callable(getattr(Store, name, None)):
@@ -1063,39 +1063,59 @@ def _export_selection_backlog(plan, project, context):
                     if t is None:
                         raise ContractError("Proposal disappeared from native store")
                     existing[k] = t
-            # Use native IDs for every dependency, including preserved terminals.
-            for k, d in zip(keys, selected):
-                t = existing.get(k)
-                if t is None:
-                    t = Ticket(
-                        id=store._next_id_unlocked(),
-                        name="Review " + d["action"] + ": " + d["standard_id"],
-                        status="open",
-                        sprint="backlog",
-                        labels=[
-                            "wellman-selection",
-                            "actor:human",
-                            "autonomy-frontier",
-                            "dedupe:wellman-selection:" + k,
-                        ],
-                        executor={"kind": "human", "mode": "interactive"},
-                        execution={
-                            "queue": "wellman-selection-review",
-                            "state": "pending",
+            # Reserve the whole missing set under the native lock, then persist
+            # once with final dependencies. Per-ticket creation repeatedly
+            # rewrites the entire sprint and invokes advisory enrichment.
+            missing = [(k, d) for k, d in zip(keys, selected) if k not in existing]
+            ids = store._reserve_ids_unlocked(len(missing)) if missing else []
+            if len(ids) != len(missing) or len(set(ids)) != len(ids):
+                raise ContractError("Native batch allocation returned invalid identities")
+            for (k, d), ticket_id in zip(missing, ids):
+                t = Ticket(
+                    id=ticket_id,
+                    name="Review " + d["action"] + ": " + d["standard_id"],
+                    status="open",
+                    sprint="backlog",
+                    labels=sorted([
+                        "wellman-selection",
+                        "actor:human",
+                        "autonomy-frontier",
+                        "dedupe:wellman-selection:" + k,
+                    ]),
+                    executor={"kind": "human", "mode": "interactive"},
+                    execution={
+                        "queue": "wellman-selection-review",
+                        "state": "pending",
+                    },
+                    source={
+                        "tool": "wellman.selection-plan",
+                        "version": "v1",
+                        "context": {
+                            "plan_hash": plan["plan_hash"],
+                            "proposal": d,
+                            "grants_authority": False,
                         },
-                        source={
-                            "tool": "wellman.selection-plan",
-                            "version": "v1",
-                            "context": {
-                                "plan_hash": plan["plan_hash"],
-                                "proposal": d,
-                                "grants_authority": False,
-                            },
-                        },
-                    )
-                    store._create_ticket_unlocked(t)
-                    existing[k] = t
-                    allocated.append(k)
+                    },
+                )
+                existing[k] = t
+                allocated.append(k)
+
+            def dependency_ids(decision):
+                return sorted({
+                    existing[key(other)].id
+                    for other in selected
+                    if other["repository_id"] == decision["repository_id"]
+                    and other["standard_id"] in decision["depends_on"]
+                    and (other["scope"] in ("repository", "workspace")
+                         or other["component_id"] == decision["component_id"])
+                })
+
+            created = []
+            for k, d in missing:
+                existing[k].blocked_by = dependency_ids(d)
+                created.append(existing[k])
+            if created:
+                store._create_tickets_bulk_unlocked(created)
             for k, d in zip(keys, selected):
                 t = existing[k]
                 state = str(getattr(t.status, "value", t.status))
@@ -1128,18 +1148,7 @@ def _export_selection_backlog(plan, project, context):
                 ):
                     rows.append({"id": t.id, "state": "preserved_owned", "key": k})
                     continue
-                deps = sorted(
-                    {
-                        existing[key(other)].id
-                        for other in selected
-                        if other["repository_id"] == d["repository_id"]
-                        and other["standard_id"] in d["depends_on"]
-                        and (
-                            other["scope"] in ("repository", "workspace")
-                            or other["component_id"] == d["component_id"]
-                        )
-                    }
-                )
+                deps = dependency_ids(d)
                 source = t.source.model_dump(mode="json")
                 source["context"] = {
                     **source["context"],

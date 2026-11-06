@@ -802,9 +802,24 @@ def test_selection_export_requires_explicit_context_and_preserves_source(tmp_pat
     } == before
 
 
-def test_selection_export_native_ids_dedupe_and_no_autonomous_execution(tmp_path):
+def test_selection_export_native_ids_dedupe_and_no_autonomous_execution(tmp_path, monkeypatch):
     Store = pytest.importorskip("planfile.core.store").Store
     _, target, plan, context = _selection_export_fixture(tmp_path)
+    batches = []
+    persist = Store._create_tickets_bulk_unlocked
+
+    def batch(self, tickets):
+        ids = {ticket.id for ticket in tickets}
+        assert all(set(ticket.blocked_by) <= ids for ticket in tickets)
+        batches.append(ids)
+        return persist(self, tickets)
+
+    def unexpected_individual_write(*args, **kwargs):
+        pytest.fail("Initial export/replay must not rewrite tickets individually")
+
+    monkeypatch.setattr(Store, "_create_tickets_bulk_unlocked", batch)
+    monkeypatch.setattr(Store, "_create_ticket_unlocked", unexpected_individual_write)
+    monkeypatch.setattr(Store, "_update_ticket_unlocked", unexpected_individual_write)
     first = feed_to_planfile(plan, target, selection_context=context)
     assert first["ok"] and first["created"] == len(plan["decisions"])
     store = Store(target)
@@ -812,6 +827,7 @@ def test_selection_export_native_ids_dedupe_and_no_autonomous_execution(tmp_path
     revisions = {t.id: t.updated_at for t in tickets}
     second = feed_to_planfile(plan, target, selection_context=context)
     assert second["ok"] and second["created"] == 0
+    assert len(batches) == 1 and len(batches[0]) == first["created"]
     assert all(r["state"] == "reused" for r in second["tickets"])
     assert {t.id: t.updated_at for t in store.list_tickets(sprint="all")} == revisions
     for t in tickets:
@@ -846,7 +862,7 @@ def test_selection_export_preserves_terminal_key_without_reopening(tmp_path, ter
     assert store.get_ticket(t.id).model_dump(mode="json") == before
 
 
-def test_selection_export_uses_actual_dependency_ids(tmp_path):
+def test_selection_export_uses_actual_dependency_ids(tmp_path, monkeypatch):
     Store = pytest.importorskip("planfile.core.store").Store
     from wellman.applicability import build_catalog
     from wellman.selection_plan import compose_selection_plan
@@ -871,6 +887,14 @@ def test_selection_export_uses_actual_dependency_ids(tmp_path):
     plan = compose_selection_plan(
         context["observation"], context["catalog"], context["adoptions"]
     )
+    persist = Store._create_tickets_bulk_unlocked
+
+    def batch(self, tickets):
+        by_standard = {t.source.context["proposal"]["standard_id"]: t for t in tickets}
+        assert by_standard[ids[1]].blocked_by == [by_standard[ids[0]].id]
+        return persist(self, tickets)
+
+    monkeypatch.setattr(Store, "_create_tickets_bulk_unlocked", batch)
     result = feed_to_planfile(plan, target, selection_context=context)
     assert result["ok"]
     tickets = Store(target).list_tickets(sprint="all")

@@ -106,15 +106,16 @@ def test_uri_and_configuration_standards_are_reference_candidates_only():
                                      'wellmanifest/uriprocess', 'wellmanifest/nl-uri-dsl-llm'})
 
 
-def test_ssot_and_semver_are_reference_only_standards():
+def test_ssot_and_semver_are_local_conformance_standards():
     from wellman.registry import get_standard
 
     for alias in ("ssot", "semver"):
         pack = get_standard(alias)
         assert pack is not None and pack.id == f"wellmanifest/{alias}"
-        assert pack.execution_model == "reference-only"
-        assert pack.minimum_level == "S0"
+        assert pack.execution_model == "local-conformance"
+        assert pack.minimum_level == "S1"
         assert "execution authority" in pack.excludes
+        assert "verified runtime conformance" in pack.excludes
 
 
 def test_conformance_pack_standards_registered_as_local_conformance(tmp_path, capsys):

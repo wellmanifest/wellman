@@ -1,0 +1,28 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-096",
+  "summary": "Implement S1 static conformance checkers for nohardcode, semver, and ssot",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-096/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/domain_pack_checkers.py",
+    "src/wellman/registry.py",
+    "src/wellman/runner.py",
+    "tests/test_domain_pack_checkers.py",
+    "tests/test_registry.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

@@ -489,10 +489,12 @@ class ConformanceRunner:
             findings.extend(self.check_taskand())
         if "wellmanifest/data-plane" in registered_reqs:
             findings.extend(self.check_data_plane())
-        if "wellmanifest/nohardcode" in registered_reqs or (self.root / ".governance" / "nohardcode.json").is_file():
+        if "wellmanifest/nohardcode" in registered_reqs or any(
+            (self.root / p).is_file() for p in ("nohardcode-policy.json", ".governance/nohardcode-policy.json", ".governance/nohardcode.json")
+        ):
             findings.extend(self.check_nohardcode())
         if "wellmanifest/ssot" in registered_reqs or (self.root / ".governance" / "ssot.json").is_file():
-            findings.extend(self.check_ssot())
+            findings.extend(self.check_ssot(require_present="wellmanifest/ssot" in registered_reqs))
         if "wellmanifest/nolimits" in registered_reqs or (self.root / ".governance" / "nolimits.json").is_file():
             findings.extend(self.check_nolimits())
         if "wellmanifest/auth-lifecycle" in registered_reqs or (self.root / ".governance" / "auth-lifecycle.json").is_file():
@@ -1070,17 +1072,9 @@ class ConformanceRunner:
         return findings
 
     def check_semver(self) -> List[Finding]:
-        """Validate wellmanifest/semver version carrier when registered."""
-        version_files = ("VERSION", "pyproject.toml", "package.json", "Cargo.toml")
-        if not any((self.root / vf).is_file() for vf in version_files):
-            return [Finding(
-                code="GOV-SEMVER-MISSING",
-                message="Repository requires wellmanifest/semver but no version carrier (VERSION, pyproject.toml, package.json, Cargo.toml) was found.",
-                severity="WARNING",
-                path="VERSION",
-                remediation="Add a VERSION file or package manifest with a valid SemVer version.",
-            )]
-        return []
+        """Validate wellmanifest/semver version carriers and release/pipeline/matrix contracts."""
+        from wellman.domain_pack_checkers import check_semver_pack
+        return check_semver_pack(self.root)
 
     def check_taskand(self) -> List[Finding]:
         """Validate wellmanifest/taskand capsule contracts and DAG task orchestration."""
@@ -1136,7 +1130,8 @@ class ConformanceRunner:
 
     def check_nohardcode(self) -> List[Finding]:
         """Validate wellmanifest/nohardcode policy compliance and scan for path leaks."""
-        findings: List[Finding] = []
+        from wellman.domain_pack_checkers import validate_nohardcode_policies
+        findings: List[Finding] = list(validate_nohardcode_policies(self.root))
         forbidden_rules = [
             (re.compile(r"/(?:home|Users)/[a-zA-Z0-9_\-\.]+(?!/\.cache|/tests|/fixtures)"), "GOV-NOHARDCODE-HOME-PATH", "Hardcoded user home directory path detected: '{}'."),
             (re.compile(r"~" + r"/\.local/state/"), "GOV-NOHARDCODE-PATH-LEAK", "Forbidden file leak to ~/.local/state/ detected: '{}'. Deliverables and logs must use docs/, errors/, or .subactor/."),
@@ -1190,30 +1185,10 @@ class ConformanceRunner:
                         ))
         return findings
 
-    def check_ssot(self) -> List[Finding]:
+    def check_ssot(self, *, require_present: bool = False) -> List[Finding]:
         """Validate wellmanifest/ssot single source of truth contracts."""
-        findings: List[Finding] = []
-        ssot_file = self.root / ".governance" / "ssot.json"
-        if ssot_file.is_file():
-            try:
-                data = json.loads(ssot_file.read_text(encoding="utf-8"))
-                if not isinstance(data, dict) or "schema" not in data:
-                    findings.append(Finding(
-                        code="GOV-SSOT-SCHEMA-INVALID",
-                        message=".governance/ssot.json is missing valid schema declaration.",
-                        severity="ERROR",
-                        path=".governance/ssot.json",
-                        remediation="Declare a valid wellmanifest.ssot schema in .governance/ssot.json.",
-                    ))
-            except json.JSONDecodeError as exc:
-                findings.append(Finding(
-                    code="GOV-SSOT-SYNTAX-ERROR",
-                    message=f".governance/ssot.json contains invalid JSON: {exc}",
-                    severity="ERROR",
-                    path=".governance/ssot.json",
-                    remediation="Fix JSON syntax in .governance/ssot.json.",
-                ))
-        return findings
+        from wellman.domain_pack_checkers import check_ssot_pack
+        return check_ssot_pack(self.root, require_present=require_present)
 
     def _fallback_storage_health(self, home: Path) -> dict:
         """Fallback lightweight scan for agent storage health when uncrash is uninstalled."""
@@ -1386,8 +1361,8 @@ class ConformanceRunner:
             "wellmanifest/dockuri": self.check_dockuri,
             "wellmanifest/report": self.check_report,
             "wellmanifest/nohardcode": self.check_nohardcode,
-            "wellmanifest/ssot": self.check_ssot,
-            "wellmanifest/project-ssot": self.check_ssot,
+            "wellmanifest/ssot": lambda: self.check_ssot(require_present=True),
+            "wellmanifest/project-ssot": lambda: self.check_ssot(require_present=True),
             "wellmanifest/hostguard": self.check_hostguard,
             "wellmanifest/flowguard": self.check_flowguard,
             "wellmanifest/deployment": self.check_deployment,

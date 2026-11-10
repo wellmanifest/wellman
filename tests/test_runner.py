@@ -353,11 +353,15 @@ def test_check_worktrees_passes_180_second_timeout(tmp_path, monkeypatch):
     import json
     import subprocess as sp
 
+    monkeypatch.setattr("wellman.runner._worktree_admission", lambda _: None)
+    (tmp_path / ".git").mkdir()
     wt_dir = tmp_path / ".worktrees"
     wt_dir.mkdir()
     captured = {}
 
     def fake_run(cmd, **kwargs):
+        if cmd[0] == "git":
+            return sp.CompletedProcess(cmd, 0, stdout=f"worktree {tmp_path}\nbranch refs/heads/main\n\n", stderr="")
         if "--workspace-root" in cmd:
             captured["timeout"] = kwargs.get("timeout")
             payload = {

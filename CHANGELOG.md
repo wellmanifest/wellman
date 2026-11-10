@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-10
+
+### Added
+- Implement S1 static conformance checkers for `wellmanifest/nohardcode`, `wellmanifest/semver`, and `wellmanifest/ssot` in `domain_pack_checkers.py` [ticket-096].
+- Implement S1 static conformance checkers for conformance standard packs (`wellmanifest/conformance-*` and sibling static contracts) [ticket-095].
+- Register `conformance.py` standard packs in `STANDARDS_CATALOG` [ticket-093] and Python capability/schema SSOT pack [ticket-090].
+
+### Fixed
+- Support `wellmanifest/docs` `0.6.0` pin in `SUPPORTED_DOCS_POLICIES` [ticket-094].
+- Reject unverified conformance checks, require native fleet admission, and batch native selection exports without redundant rewrites [ticket-092].
+- Skip virtualenv and dependency trees during `nohardcode` path scanning [ticket-091].
+
 ## [0.21.0] - 2026-10-31
 
 ### Added

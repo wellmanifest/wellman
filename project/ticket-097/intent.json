@@ -1,0 +1,91 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-097",
+  "summary": "Release wellman 0.22.0 with conformance and domain-pack S1 checkers",
+  "workstream": "integration",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-097/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "CHANGELOG.md",
+    "README.md",
+    "VERSION",
+    "pyproject.toml",
+    "src/wellman/__init__.py",
+    "tests/test_cli.py",
+    "uv.lock"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "20af2d4b251ee015b7a68f333665eb049341aa62",
+    "targetBranch": "main",
+    "outcome": "Publish wellman 0.22.0 release projections consolidating conformance and domain-pack S1 static checkers via independent protected merge, followed by exact-head tag and local operator runtime enrollment.",
+    "nonGoals": [
+      "Changing adopted governance policy",
+      "Modifying checker semantics outside release version projections"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 25,
+    "budgets": {
+      "maxImplementationFiles": 6,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Align VERSION, pyproject.toml, src/wellman/__init__.py, uv.lock, README.md, and CHANGELOG.md on 0.22.0 without adding runtime dependencies.",
+      "components": [
+        {
+          "name": "Wellman distribution and release metadata",
+          "paths": [
+            "CHANGELOG.md",
+            "README.md",
+            "VERSION",
+            "pyproject.toml",
+            "src/wellman/__init__.py",
+            "uv.lock"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Reviewed revert or subsequent compatible release; never overwrite a published artifact."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=.:src pytest -q"
+        ],
+        "evidence": "Version projections consistently report 0.22.0 across metadata and tests."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh",
+          "wellman check"
+        ],
+        "evidence": "Governance gate and wellman standards checks pass cleanly."
+      }
+    ]
+  }
+}

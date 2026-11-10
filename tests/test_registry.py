@@ -93,13 +93,15 @@ def test_profiles_catalog():
     assert "wellmanifest/docs" in req_ids
 
 
-def test_uri_and_configuration_standards_are_reference_candidates_only():
+def test_uri_and_configuration_standards_are_local_conformance_candidates():
     for name in ('nohardcode', 'taskand', 'uriprocess', 'nl-uri-dsl-llm'):
         standard = get_standard(name)
         assert standard.id == 'wellmanifest/' + name
-        assert standard.minimum_level == 'S0'
-        assert standard.execution_model == 'reference-only'
+        assert standard.minimum_level == 'S1'
+        assert standard.execution_model == 'local-conformance'
         assert standard.schemas
+        assert 'execution authority' in standard.excludes
+        assert 'verified runtime conformance' in standard.excludes
     # They are component-specific candidates, not mandatory baseline adoption.
     baseline = {item['id'] for item in get_profile('baseline').requirements}
     assert not baseline.intersection({'wellmanifest/nohardcode', 'wellmanifest/taskand',

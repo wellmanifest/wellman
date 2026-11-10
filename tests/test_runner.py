@@ -10,7 +10,7 @@ from wellman.runner import ConformanceRunner
 
 @pytest.mark.parametrize("standard", [
     "dsl", "code-dsl", "env-dsl", "llm", "nl-dsl-llm", "nl-api-llm",
-    "nl-uri-dsl-llm", "poa", "authority-lifecycle", "python",
+    "poa", "authority-lifecycle", "python",
 ])
 def test_unimplemented_selected_check_cannot_report_conformance(tmp_path, capsys, standard):
     import json
@@ -274,7 +274,7 @@ def test_runner_selected_dataplane_and_taskand_conformance(tmp_path):
     # Positive checks with contract files
     (tmp_path / "resources-v1.sqlite3").touch()
     assert len(runner.run_standard("wellmanifest/data-plane")) == 0
-    (tmp_path / "bundle.json").touch()
+    (tmp_path / "bundle.json").write_text('{"schema":"taskand.consumer/v1"}', encoding="utf-8")
     assert len(runner.run_standard("wellmanifest/taskand")) == 0
 
 

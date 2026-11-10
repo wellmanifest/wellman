@@ -1,0 +1,99 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-098",
+  "summary": "Promote nohardcode and URI/task packs to S1 and preserve historical lock levels",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-098/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/adoption.py",
+    "src/wellman/registry.py",
+    "src/wellman/runner.py",
+    "src/wellman/uri_pack_checkers.py",
+    "tests/test_adoption.py",
+    "tests/test_registry.py",
+    "tests/test_runner.py",
+    "tests/test_uri_pack_checkers.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "20af2d4b251ee015b7a68f333665eb049341aa62",
+    "targetBranch": "main",
+    "outcome": "Preserve recorded historical minimumLevel entries during reconcile_lock_from registration repair and promote wellmanifest/nohardcode, wellmanifest/uriprocess, wellmanifest/taskand, and wellmanifest/nl-uri-dsl-llm to S1 local-conformance with deterministic static checkers.",
+    "nonGoals": [
+      "Modifying release version projections owned by ticket-097",
+      "Claiming S3/S4/S5 runtime or CI authority for local-conformance packs"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 8,
+      "maxAffectedComponents": 2,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Keep unrequested historical requirement minimumLevel values intact when reconcile_lock_from is active while still expanding missing requires dependencies, and add dependency-free S1 checkers in src/wellman/uri_pack_checkers.py for uriprocess, taskand, and nl-uri-dsl-llm.",
+      "components": [
+        {
+          "name": "adoption-lock-reconciliation",
+          "paths": [
+            "src/wellman/adoption.py",
+            "tests/test_adoption.py"
+          ]
+        },
+        {
+          "name": "uri-and-config-s1-conformance",
+          "paths": [
+            "src/wellman/registry.py",
+            "src/wellman/runner.py",
+            "src/wellman/uri_pack_checkers.py",
+            "tests/test_registry.py",
+            "tests/test_runner.py",
+            "tests/test_uri_pack_checkers.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Independently reviewed revert of ticket-098."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src pytest -n auto -q"
+        ],
+        "evidence": "Historical lock reconciliation preserves recorded bytes when standards advance to S1, and positive/negative S1 conformance tests pass for nohardcode, uriprocess, taskand, and nl-uri-dsl-llm."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh",
+          "wellman check --root ."
+        ],
+        "evidence": "Governance gate and Wellman standards check pass with zero errors."
+      }
+    ]
+  }
+}

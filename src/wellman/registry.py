@@ -96,7 +96,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
     "wellmanifest/ssot": StandardPack(
         id="wellmanifest/ssot", name="Single source of truth decisions",
         owner="wellmanifest/ssot", description="Interview-first, propose-only SSOT decisions for duplicated code, configuration and vendored copies",
-        minimum_level="S0", execution_model="reference-only",
+        minimum_level="S1", execution_model="local-conformance",
         owns=["SSOT decision documents"], excludes=["execution authority", "code edits or merges", "verified runtime conformance"],
         requires=["wellmanifest/dsl"],
         schemas=['schemas/ssot-interview.schema.json', 'schemas/ssot-decision.schema.json', 'schemas/ssot-standards-lock.schema.json'], docs_url="https://github.com/wellmanifest/ssot",
@@ -112,7 +112,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
     "wellmanifest/semver": StandardPack(
         id="wellmanifest/semver", name="Semantic versioning for heterogeneous releases",
         owner="wellmanifest/semver", description="Separate SemVer for system, host, firmware and packages with binary identity, commit-artifact SHA-256 pairing, safe-state and OTA rollback rules",
-        minimum_level="S0", execution_model="reference-only",
+        minimum_level="S1", execution_model="local-conformance",
         owns=["release version contracts"], excludes=["execution authority", "flashing or deployment", "verified runtime conformance"],
         schemas=['schemas/embedded-release.schema.json', 'schemas/hardware-matrix.schema.json', 'schemas/pipeline-run.schema.json'], docs_url="https://github.com/wellmanifest/semver",
     ),

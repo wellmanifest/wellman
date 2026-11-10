@@ -115,3 +115,36 @@ def test_ssot_and_semver_are_reference_only_standards():
         assert pack.execution_model == "reference-only"
         assert pack.minimum_level == "S0"
         assert "execution authority" in pack.excludes
+
+
+def test_conformance_pack_standards_registered_as_reference_only(tmp_path, capsys):
+    import json
+    from wellman.cli import main
+
+    expected_requires = {
+        "nolimits": ["wellmanifest/hostguard"],
+        "auth-lifecycle": ["wellmanifest/lifecycle"],
+        "secrets": ["wellmanifest/auth-lifecycle"],
+        "clonerd": [],
+        "llm-account-tool": ["wellmanifest/account-runtime"],
+    }
+    baseline = {item["id"] for item in get_profile("baseline").requirements}
+    for alias, requires in expected_requires.items():
+        canonical = f"wellmanifest/{alias}"
+        pack = get_standard(alias)
+        assert pack is not None and get_standard(canonical) is pack
+        assert pack.id == canonical
+        assert pack.minimum_level == "S0"
+        assert pack.execution_model == "reference-only"
+        assert pack.requires == requires
+        assert pack.schemas
+        assert "execution authority" in pack.excludes
+        assert "verified runtime conformance" in pack.excludes
+        assert canonical not in baseline
+
+        assert main(["info", canonical]) == 0
+        capsys.readouterr()
+
+        assert main(["check", "--standard", canonical, "--root", str(tmp_path), "--json"]) == 1
+        report = json.loads(capsys.readouterr().out)
+        assert any(f["code"] == "GOV-STANDARD-NOT-IMPLEMENTED" for f in report["findings"])

@@ -1,0 +1,28 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-093",
+  "summary": "Register standards shipping conformance.py in catalog",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-093/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/applicability.py",
+    "src/wellman/registry.py",
+    "src/wellman/runner.py",
+    "src/wellman/schemas/standard-packs.json",
+    "tests/test_registry.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

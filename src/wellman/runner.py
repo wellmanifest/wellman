@@ -505,6 +505,8 @@ class ConformanceRunner:
             findings.extend(self.check_clonerd())
         if "wellmanifest/llm-account-tool" in registered_reqs or (self.root / ".governance" / "llm-account-tool.json").is_file():
             findings.extend(self.check_llm_account_tool())
+        if "wellmanifest/nl-uri-dsl-llm" in registered_reqs or (self.root / ".governance" / "nl-uri-profile.json").is_file():
+            findings.extend(self.check_nl_uri_dsl_llm())
         return findings
 
     def check_local_ci_publication(self) -> List[Finding]:
@@ -775,47 +777,9 @@ class ConformanceRunner:
         return findings
 
     def check_uriprocess(self) -> List[Finding]:
-        """Validate wellmanifest/uriprocess package metadata and polyglot uri('') invocation links."""
-        from wellman.uri import uri, validate_process_uri
-
-        findings: List[Finding] = []
-        pkg_manifest = self.root / "uriprocess.json"
-        if pkg_manifest.is_file():
-            try:
-                data = json.loads(pkg_manifest.read_text(encoding="utf-8"))
-                uris = list(data.get("public_uris", []))
-                if "process_ref" in data:
-                    uris.append(data["process_ref"])
-                if not uris:
-                    findings.append(Finding(
-                        code="URP-SCHEMA-001",
-                        message="uriprocess.json must declare 'public_uris' or 'process_ref'.",
-                        severity="ERROR",
-                        path="uriprocess.json",
-                        remediation="Declare canonical process URIs in uriprocess.json.",
-                    ))
-                for u in uris:
-                    validate_process_uri(str(u))
-            except Exception as exc:
-                findings.append(Finding(
-                    code="URP-IDENTITY-001",
-                    message=f"Invalid uriprocess.json: {exc}",
-                    severity="ERROR",
-                    path="uriprocess.json",
-                    remediation="Ensure uriprocess.json conforms to wellmanifest/uriprocess.",
-                ))
-
-        scan_env = uri("proc://uriprocess/invocation/scan", {"root": str(self.root)})
-        scan_res = scan_env.get("result", {})
-        for item in scan_res.get("invalid_links", []):
-            findings.append(Finding(
-                code=item.get("code", "URP-IDENTITY-001"),
-                message=f"{item.get('message')} at line {item.get('line')}",
-                severity="ERROR",
-                path=item.get("path", ""),
-                remediation="Use canonical 'scheme://authority/path' process URI in uri('...') invocations.",
-            ))
-        return findings
+        """Validate wellmanifest/uriprocess package metadata, provenance, bundles, and polyglot uri('') invocation links."""
+        from wellman.uri_pack_checkers import check_uriprocess_pack
+        return check_uriprocess_pack(self.root)
 
     def check_logs(self) -> List[Finding]:
         """Validate wellmanifest/logs error catalog contract."""
@@ -1077,29 +1041,9 @@ class ConformanceRunner:
         return check_semver_pack(self.root)
 
     def check_taskand(self) -> List[Finding]:
-        """Validate wellmanifest/taskand capsule contracts and DAG task orchestration."""
-        has_taskand = (
-            (self.root / "bundle.json").is_file()
-            or (self.root / "schemas" / "capsule.v1.json").is_file()
-            or (self.root / "schemas" / "proc.v1.json").is_file()
-            or (any(
-                "depends_on" in p.read_text(encoding="utf-8", errors="ignore")
-                or "CyclicDependencyError" in p.read_text(encoding="utf-8", errors="ignore")
-                for p in (self.root / "src").glob("**/*.py")
-                if p.is_file()
-                and ".worktrees" not in p.relative_to(self.root).parts
-                and ".venv" not in p.relative_to(self.root).parts
-            ) if (self.root / "src").is_dir() else False)
-        )
-        if not has_taskand:
-            return [Finding(
-                code="GOV-TASKAND-MISSING",
-                message="Repository requires wellmanifest/taskand but no capsule contracts, task DAG definitions or task orchestration modules were found.",
-                severity="ERROR",
-                path=str(self.root),
-                remediation="Define task capsules, schemas, or DAG dependency execution per wellmanifest/taskand.",
-            )]
-        return []
+        """Validate wellmanifest/taskand capsule contracts, grants, bundles, and DAG task orchestration."""
+        from wellman.uri_pack_checkers import check_taskand_pack
+        return check_taskand_pack(self.root)
 
     def check_data_plane(self) -> List[Finding]:
         """Validate wellmanifest/data-plane event store and CQRS read model indicators."""
@@ -1328,6 +1272,10 @@ class ConformanceRunner:
         from wellman.conformance_pack_checkers import check_llm_account_tool
         return check_llm_account_tool(self.root)
 
+    def check_nl_uri_dsl_llm(self) -> List[Finding]:
+        from wellman.uri_pack_checkers import check_nl_uri_dsl_llm_pack
+        return check_nl_uri_dsl_llm_pack(self.root)
+
     def run_standard(self, standard_id: str) -> List[Finding]:
         """Run the concrete conformance check implemented for one standard.
 
@@ -1374,6 +1322,7 @@ class ConformanceRunner:
             "wellmanifest/secrets": self.check_secrets,
             "wellmanifest/clonerd": self.check_clonerd,
             "wellmanifest/llm-account-tool": self.check_llm_account_tool,
+            "wellmanifest/nl-uri-dsl-llm": self.check_nl_uri_dsl_llm,
         }
         check = checks.get(standard_id)
         if check is not None:

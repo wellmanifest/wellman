@@ -651,6 +651,8 @@ def register(root, profiles=(), *, standards=(), dry_run=False,
         item = items.setdefault(standard, {'id': standard, 'minimumLevel': level})
         item['minimumLevel'] = max(item['minimumLevel'], level)
     for dep_id, dep_level in expand_standard_dependencies([k for k in items if get_standard(k) is not None]).items():
+        if reconcile_lock_from is not None and dep_id in items and dep_id not in required:
+            continue
         item = items.setdefault(dep_id, {'id': dep_id, 'minimumLevel': dep_level})
         item['minimumLevel'] = max(item['minimumLevel'], dep_level)
     result = {**existing, 'schema': SCHEMA, 'profiles': sorted(selected),

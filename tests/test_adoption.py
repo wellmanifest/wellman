@@ -628,3 +628,25 @@ def test_generated_module_evidence_stdlib_ast_fallback_without_code2llm(tmp_path
     assert 'wellmanifest/hostguard' in rec_ids
 
 
+def test_historical_reconciliation_adds_missing_requires_while_keeping_unrequested_level(tmp_path):
+    lock_path = _legacy_registration_lock(tmp_path)
+    for args in (['init', '-q'], ['add', '.governance'],
+                 ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'baseline']):
+        subprocess.run(['git', '-C', str(tmp_path), *args], check=True, capture_output=True)
+    revision = subprocess.check_output(['git', '-C', str(tmp_path), 'rev-parse', 'HEAD'], text=True).strip()
+    req_path = tmp_path / '.governance/standard-requirements.json'
+    data = json.loads(req_path.read_text())
+    data['requirements'].append({'id': 'wellmanifest/taskand', 'minimumLevel': 'S0'})
+    data['requirements'].sort(key=lambda item: item['id'])
+    req_path.write_text(json.dumps(data, indent=2) + '\n')
+    result = register(
+        tmp_path,
+        reconcile_lock_from=revision,
+        expected_lock_sha256=hashlib.sha256(lock_path.read_bytes()).hexdigest(),
+    )
+    reqs = {item['id']: item['minimumLevel'] for item in result['registration']['requirements']}
+    assert reqs['wellmanifest/taskand'] == 'S0'
+    assert reqs['wellmanifest/uriprocess'] == 'S1'
+
+
+

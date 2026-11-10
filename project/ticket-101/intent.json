@@ -1,0 +1,86 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-101",
+  "summary": "Sync bundled activity and overlap checkers and raise worktree check timeout",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-101/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/_bundled/ticket_activity.py",
+    "src/wellman/_bundled/worktree_overlap_check.py",
+    "src/wellman/runner.py",
+    "tests/test_runner.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "fdf88fef8ff3c88afe4f2a107f9c3a74bb44fb97",
+    "targetBranch": "main",
+    "outcome": "Sync bundled ticket_activity.py and worktree_overlap_check.py with upstream new-project, deduplicate per-checkout git status calls and skip disjoint shared-default merge-tree invocations, and raise ConformanceRunner.check_worktrees timeout from 60s to 180s.",
+    "nonGoals": [
+      "Changing worktree overlap or ticket activity policy semantics",
+      "Modifying release version metadata outside an integration ticket"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 20,
+    "budgets": {
+      "maxImplementationFiles": 4,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Update src/wellman/_bundled/ticket_activity.py and src/wellman/_bundled/worktree_overlap_check.py from upstream wellmanifest/new-project, compute unignored_dirty_paths once per checkout, short-circuit contested_paths merge-tree calls when shared_default is true and first_changes & second_changes is empty, and set timeout=180 in ConformanceRunner.check_worktrees.",
+      "components": [
+        {
+          "name": "bundled-worktree-and-activity-checkers",
+          "paths": [
+            "src/wellman/_bundled/ticket_activity.py",
+            "src/wellman/_bundled/worktree_overlap_check.py",
+            "src/wellman/runner.py",
+            "tests/test_runner.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Independently reviewed revert of ticket-101."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src pytest -q tests/test_runner.py"
+        ],
+        "evidence": "Bundled overlap checker skips disjoint shared-default merge-tree probes, fences checkout-local registration in ActivityReadBatch, and check_worktrees enforces timeout=180."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh",
+          "PYTHONPATH=src python3 -m wellman.cli check --root ."
+        ],
+        "evidence": "Governance gate and Wellman standards check pass with zero errors and clean git diff --check."
+      }
+    ]
+  }
+}

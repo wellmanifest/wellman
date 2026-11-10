@@ -347,3 +347,77 @@ def test_nohardcode_scan_skips_virtualenv_and_dependency_trees(tmp_path):
     findings = ConformanceRunner(tmp_path).check_nohardcode()
     paths = {f.path for f in findings if f.code == "GOV-NOHARDCODE-TMP-LEAK"}
     assert paths == {"packages/app/real.py"}
+
+
+def test_check_worktrees_passes_180_second_timeout(tmp_path, monkeypatch):
+    import json
+    import subprocess as sp
+
+    monkeypatch.setattr("wellman.runner._worktree_admission", lambda _: None)
+    (tmp_path / ".git").mkdir()
+    wt_dir = tmp_path / ".worktrees"
+    wt_dir.mkdir()
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        if cmd[0] == "git":
+            return sp.CompletedProcess(cmd, 0, stdout=f"worktree {tmp_path}\nbranch refs/heads/main\n\n", stderr="")
+        if "--workspace-root" in cmd:
+            captured["timeout"] = kwargs.get("timeout")
+            payload = {
+                "schema": "new-project.worktree-overlap-report/v1",
+                "status": "passed",
+                "findings": [],
+                "summary": {"errors": 0, "warnings": 0, "findings": 0, "checkouts": 1},
+            }
+            return sp.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+        return sp.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(sp, "run", fake_run)
+    findings = ConformanceRunner(tmp_path).check_worktrees()
+    assert captured.get("timeout") == 180
+    assert not any(f.code.startswith("GOV-WORKTREE-") for f in findings)
+
+
+def test_bundled_worktree_overlap_skips_merge_tree_for_disjoint_shared_default_pairs(tmp_path, monkeypatch):
+    from wellman._bundled import ticket_activity, worktree_overlap_check as woc
+
+    assert hasattr(ticket_activity.ActivityReadBatch, "_worktree_registration")
+
+    first = woc.Checkout(
+        path=tmp_path / "wt1",
+        common_git_dir=tmp_path / ".git",
+        identity="remote:github.com/example/repo",
+        head="a" * 40,
+        branch="ticket/001-a",
+        dirty=False,
+        pending=True,
+        dirty_paths=(),
+        changed_paths=("src/a.py",),
+        tickets=(),
+        activity_errors=(),
+    )
+    second = woc.Checkout(
+        path=tmp_path / "wt2",
+        common_git_dir=tmp_path / ".git",
+        identity="remote:github.com/example/repo",
+        head="b" * 40,
+        branch="ticket/002-b",
+        dirty=False,
+        pending=True,
+        dirty_paths=(),
+        changed_paths=("src/b.py",),
+        tickets=(),
+        activity_errors=(),
+    )
+    monkeypatch.setattr(
+        woc,
+        "changes_against_shared_default",
+        lambda *_args: ({"src/a.py"}, {"src/b.py"}, True),
+    )
+
+    def forbid_merge_tree(*_args, **_kwargs):
+        raise AssertionError("disjoint shared-default checkouts must not invoke git merge-tree")
+
+    monkeypatch.setattr(woc, "merge_tree_conflicts", forbid_merge_tree)
+    assert woc.contested_paths(first, second, ()) == ()

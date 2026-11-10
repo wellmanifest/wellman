@@ -655,6 +655,63 @@
         "execution authority",
         "verified runtime conformance"
       ]
+    },
+    {
+      "id": "wellmanifest/nolimits",
+      "owns": [
+        "host execution limit taxonomy",
+        "limit remediation tool bindings",
+        "planfile stall recovery protocol"
+      ],
+      "excludes": [
+        "execution authority",
+        "verified runtime conformance"
+      ]
+    },
+    {
+      "id": "wellmanifest/auth-lifecycle",
+      "owns": [
+        "authentication binding profiles",
+        "identity federation contracts"
+      ],
+      "excludes": [
+        "execution authority",
+        "verified runtime conformance"
+      ]
+    },
+    {
+      "id": "wellmanifest/secrets",
+      "owns": [
+        "encrypted credential envelopes",
+        "vault manifest contracts",
+        "bounded secret leases"
+      ],
+      "excludes": [
+        "execution authority",
+        "verified runtime conformance"
+      ]
+    },
+    {
+      "id": "wellmanifest/clonerd",
+      "owns": [
+        "clonerd environment profiles",
+        "clonerd source lock contracts"
+      ],
+      "excludes": [
+        "execution authority",
+        "verified runtime conformance"
+      ]
+    },
+    {
+      "id": "wellmanifest/llm-account-tool",
+      "owns": [
+        "LLM account profile synthesis",
+        "isolated provider session bindings"
+      ],
+      "excludes": [
+        "execution authority",
+        "verified runtime conformance"
+      ]
     }
   ]
 }

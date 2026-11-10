@@ -8,19 +8,22 @@ import pytest
 from wellman.runner import ConformanceRunner
 
 
-@pytest.mark.parametrize("standard", [
-    "dsl", "code-dsl", "env-dsl", "llm", "nl-dsl-llm", "nl-api-llm",
-    "poa", "authority-lifecycle",
-])
-def test_unimplemented_selected_check_cannot_report_conformance(tmp_path, capsys, standard):
-    import json
-    from wellman.cli import main
+def test_unimplemented_selected_check_cannot_report_conformance(tmp_path):
+    runner = ConformanceRunner(tmp_path)
+    findings = runner.run_standard("wellmanifest/unimplemented-future-standard")
+    assert [f.code for f in findings] == ["GOV-STANDARD-NOT-IMPLEMENTED"]
 
-    result = main(["check", "--standard", f"wellmanifest/{standard}", "--root", str(tmp_path), "--json"])
 
-    assert result == 1
-    report = json.loads(capsys.readouterr().out)
-    assert any(f["code"] == "GOV-STANDARD-NOT-IMPLEMENTED" for f in report["findings"])
+def test_every_catalog_standard_has_implemented_s1_checker(tmp_path):
+    from wellman.registry import STANDARDS_CATALOG
+
+    runner = ConformanceRunner(tmp_path)
+    unimplemented = [
+        sid
+        for sid in sorted(STANDARDS_CATALOG)
+        if any(f.code == "GOV-STANDARD-NOT-IMPLEMENTED" for f in runner.run_standard(sid))
+    ]
+    assert unimplemented == []
 
 
 def test_runner_on_empty_dir(tmp_path):

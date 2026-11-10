@@ -509,6 +509,24 @@ class ConformanceRunner:
             findings.extend(self.check_nl_uri_dsl_llm())
         if "wellmanifest/python" in registered_reqs or (self.root / ".governance" / "python-dist.json").is_file():
             findings.extend(self.check_python())
+        for req_id, fn in (
+            ("wellmanifest/authority-lifecycle", self.check_authority_lifecycle),
+            ("wellmanifest/repair-lifecycle", self.check_repair_lifecycle),
+            ("wellmanifest/account-runtime", self.check_account_runtime),
+            ("wellmanifest/skills", self.check_skills),
+            ("wellmanifest/status", self.check_status),
+            ("wellmanifest/performance", self.check_performance),
+            ("wellmanifest/llm", self.check_llm),
+            ("wellmanifest/dsl", self.check_dsl),
+            ("wellmanifest/env-dsl", self.check_env_dsl),
+            ("wellmanifest/code-dsl", self.check_code_dsl),
+            ("wellmanifest/nl-dsl-llm", self.check_nl_dsl_llm),
+            ("wellmanifest/nl-api-llm", self.check_nl_api_llm),
+            ("wellmanifest/poa", self.check_poa),
+            ("wellmanifest/anonym", self.check_anonym),
+        ):
+            if req_id in registered_reqs:
+                findings.extend(fn())
         return findings
 
     def check_local_ci_publication(self) -> List[Finding]:
@@ -1282,6 +1300,62 @@ class ConformanceRunner:
         from wellman.python_pack_checker import check_python_pack
         return check_python_pack(self.root)
 
+    def check_authority_lifecycle(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_authority_lifecycle
+        return check_authority_lifecycle(self.root)
+
+    def check_repair_lifecycle(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_repair_lifecycle
+        return check_repair_lifecycle(self.root)
+
+    def check_account_runtime(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_account_runtime
+        return check_account_runtime(self.root)
+
+    def check_skills(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_skills
+        return check_skills(self.root)
+
+    def check_status(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_status
+        return check_status(self.root)
+
+    def check_performance(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_performance
+        return check_performance(self.root)
+
+    def check_llm(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_llm
+        return check_llm(self.root)
+
+    def check_dsl(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_dsl
+        return check_dsl(self.root)
+
+    def check_env_dsl(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_env_dsl
+        return check_env_dsl(self.root)
+
+    def check_code_dsl(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_code_dsl
+        return check_code_dsl(self.root)
+
+    def check_nl_dsl_llm(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_nl_dsl_llm
+        return check_nl_dsl_llm(self.root)
+
+    def check_nl_api_llm(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_nl_api_llm
+        return check_nl_api_llm(self.root)
+
+    def check_poa(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_poa
+        return check_poa(self.root)
+
+    def check_anonym(self) -> List[Finding]:
+        from wellman.catalog_pack_checkers import check_anonym
+        return check_anonym(self.root)
+
     def run_standard(self, standard_id: str) -> List[Finding]:
         """Run the concrete conformance check implemented for one standard.
 
@@ -1330,6 +1404,20 @@ class ConformanceRunner:
             "wellmanifest/llm-account-tool": self.check_llm_account_tool,
             "wellmanifest/nl-uri-dsl-llm": self.check_nl_uri_dsl_llm,
             "wellmanifest/python": self.check_python,
+            "wellmanifest/authority-lifecycle": self.check_authority_lifecycle,
+            "wellmanifest/repair-lifecycle": self.check_repair_lifecycle,
+            "wellmanifest/account-runtime": self.check_account_runtime,
+            "wellmanifest/skills": self.check_skills,
+            "wellmanifest/status": self.check_status,
+            "wellmanifest/performance": self.check_performance,
+            "wellmanifest/llm": self.check_llm,
+            "wellmanifest/dsl": self.check_dsl,
+            "wellmanifest/env-dsl": self.check_env_dsl,
+            "wellmanifest/code-dsl": self.check_code_dsl,
+            "wellmanifest/nl-dsl-llm": self.check_nl_dsl_llm,
+            "wellmanifest/nl-api-llm": self.check_nl_api_llm,
+            "wellmanifest/poa": self.check_poa,
+            "wellmanifest/anonym": self.check_anonym,
         }
         check = checks.get(standard_id)
         if check is not None:

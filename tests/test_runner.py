@@ -10,7 +10,7 @@ from wellman.runner import ConformanceRunner
 
 @pytest.mark.parametrize("standard", [
     "dsl", "code-dsl", "env-dsl", "llm", "nl-dsl-llm", "nl-api-llm",
-    "poa", "authority-lifecycle", "python",
+    "poa", "authority-lifecycle",
 ])
 def test_unimplemented_selected_check_cannot_report_conformance(tmp_path, capsys, standard):
     import json

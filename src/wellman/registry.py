@@ -119,7 +119,7 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
     "wellmanifest/python": StandardPack(
         id="wellmanifest/python", name="Python runtime, distribution lifecycle and build parity",
         owner="wellmanifest/python", description="Normative rules for commit-artifact parity (PYTHON-DIST-001), three-fact version introspection (PYTHON-DIST-002), and startup byte-for-byte verification (PYTHON-DIST-003)",
-        minimum_level="S0", execution_model="reference-only",
+        minimum_level="S1", execution_model="local-conformance",
         owns=["Python distribution integrity", "wheel byte parity", "version probe contract"], excludes=["execution authority", "verified runtime conformance"],
         requires=["wellmanifest/semver"],
         schemas=['schemas/python-dist.schema.json'], docs_url="https://github.com/wellmanifest/python",

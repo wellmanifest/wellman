@@ -29,8 +29,13 @@ def test_python_standard():
     py = get_standard("wellmanifest/python")
     assert py is not None
     assert py.id == "wellmanifest/python"
+    assert py.minimum_level == "S1"
+    assert py.execution_model == "local-conformance"
+    assert "execution authority" in py.excludes
+    assert "verified runtime conformance" in py.excludes
     assert "wellmanifest/semver" in py.requires
     assert "PYTHON-DIST-001" in py.description
+    assert [k for k, v in STANDARDS_CATALOG.items() if v.minimum_level == "S0"] == []
 
     standards = list_standards()
     assert len(standards) >= 20

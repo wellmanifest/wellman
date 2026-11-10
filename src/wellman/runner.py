@@ -507,6 +507,8 @@ class ConformanceRunner:
             findings.extend(self.check_llm_account_tool())
         if "wellmanifest/nl-uri-dsl-llm" in registered_reqs or (self.root / ".governance" / "nl-uri-profile.json").is_file():
             findings.extend(self.check_nl_uri_dsl_llm())
+        if "wellmanifest/python" in registered_reqs or (self.root / ".governance" / "python-dist.json").is_file():
+            findings.extend(self.check_python())
         return findings
 
     def check_local_ci_publication(self) -> List[Finding]:
@@ -1276,6 +1278,10 @@ class ConformanceRunner:
         from wellman.uri_pack_checkers import check_nl_uri_dsl_llm_pack
         return check_nl_uri_dsl_llm_pack(self.root)
 
+    def check_python(self) -> List[Finding]:
+        from wellman.python_pack_checker import check_python_pack
+        return check_python_pack(self.root)
+
     def run_standard(self, standard_id: str) -> List[Finding]:
         """Run the concrete conformance check implemented for one standard.
 
@@ -1323,6 +1329,7 @@ class ConformanceRunner:
             "wellmanifest/clonerd": self.check_clonerd,
             "wellmanifest/llm-account-tool": self.check_llm_account_tool,
             "wellmanifest/nl-uri-dsl-llm": self.check_nl_uri_dsl_llm,
+            "wellmanifest/python": self.check_python,
         }
         check = checks.get(standard_id)
         if check is not None:

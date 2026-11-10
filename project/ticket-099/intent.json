@@ -1,0 +1,90 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-099",
+  "summary": "Implement S1 static checker for wellmanifest/python distribution parity",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-099/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/python_pack_checker.py",
+    "src/wellman/registry.py",
+    "src/wellman/runner.py",
+    "tests/test_python_pack_checker.py",
+    "tests/test_registry.py",
+    "tests/test_runner.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "6850a6a36874630b0eddd34392ce643f93da550a",
+    "targetBranch": "main",
+    "outcome": "Promote wellmanifest/python from S0 reference-only to S1 local-conformance with a dependency-free static checker enforcing PYTHON-DIST-001 (version and wheel content byte parity), PYTHON-DIST-002 (CLI entry-point and --version contract), and PYTHON-DIST-003 (wheel archive safety and source module completeness).",
+    "nonGoals": [
+      "Executing repository Python code or building wheels during conformance checks",
+      "Claiming S3/S4/S5 runtime authority for local-conformance packs"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 8,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Implement a read-only, bounded static checker in src/wellman/python_pack_checker.py using stdlib tomllib/ast/zipfile and wire wellmanifest/python into ConformanceRunner and STANDARDS_CATALOG at S1 local-conformance.",
+      "components": [
+        {
+          "name": "python-pack-s1-conformance",
+          "paths": [
+            "src/wellman/python_pack_checker.py",
+            "src/wellman/registry.py",
+            "src/wellman/runner.py",
+            "tests/test_python_pack_checker.py",
+            "tests/test_registry.py",
+            "tests/test_runner.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Independently reviewed revert of ticket-099."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src pytest -n auto -q"
+        ],
+        "evidence": "Positive and negative tests verify PYTHON-DIST-001, PYTHON-DIST-002, and PYTHON-DIST-003 findings, symlink/zip-bomb safety bounds, and zero remaining S0 standards in STANDARDS_CATALOG."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh",
+          "PYTHONPATH=src python3 -m wellman.cli check --root ."
+        ],
+        "evidence": "Governance gate and Wellman standards check pass with zero errors."
+      }
+    ]
+  }
+}

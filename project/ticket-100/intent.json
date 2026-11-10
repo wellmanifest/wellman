@@ -1,0 +1,86 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-100",
+  "summary": "Implement S1 static checkers for remaining 14 catalog standards",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-100/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/catalog_pack_checkers.py",
+    "src/wellman/runner.py",
+    "tests/test_catalog_pack_checkers.py",
+    "tests/test_runner.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "eeb4fcf325872684564d000ae8b7ee716b4f13c7",
+    "targetBranch": "main",
+    "outcome": "Implement deterministic, dependency-free S1 static conformance checkers for all 14 remaining STANDARDS_CATALOG packs (authority-lifecycle, repair-lifecycle, account-runtime, skills, status, performance, llm, dsl, env-dsl, code-dsl, nl-dsl-llm, nl-api-llm, poa, anonym) so 53/53 registered Wellmanifest standards execute concrete static checks without returning GOV-STANDARD-NOT-IMPLEMENTED.",
+    "nonGoals": [
+      "Executing untrusted repository code or runtime daemons during static checks",
+      "Claiming S3/S4/S5 runtime conformance from S1 static validation"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 6,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Add bounded, symlink-refusing, duplicate-key-rejecting S1 checkers in src/wellman/catalog_pack_checkers.py and wire all 14 standards into ConformanceRunner.run_standard and ConformanceRunner.run_all.",
+      "components": [
+        {
+          "name": "catalog-pack-s1-conformance",
+          "paths": [
+            "src/wellman/catalog_pack_checkers.py",
+            "src/wellman/runner.py",
+            "tests/test_catalog_pack_checkers.py",
+            "tests/test_runner.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Independently reviewed revert of ticket-100."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=src pytest -n auto -q"
+        ],
+        "evidence": "All 53/53 STANDARDS_CATALOG packs execute deterministic S1 checkers with positive, negative, and symlink-refusal coverage, while unknown/unimplemented future IDs remain fail-closed."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh",
+          "PYTHONPATH=src python3 -m wellman.cli check --root ."
+        ],
+        "evidence": "Governance gate and Wellman standards check pass with zero errors and clean git diff --check."
+      }
+    ]
+  }
+}

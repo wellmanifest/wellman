@@ -194,10 +194,14 @@ def test_aggregate_check_cannot_pass_missing_declared_document(docs_delivery, ca
 
 
 def test_cli_version(capsys):
+    expected_version = (
+        Path(__file__).resolve().parents[1] / "VERSION"
+    ).read_text(encoding="utf-8").strip()
+    assert __version__ == expected_version == "0.23.0"
     ret = main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()
-    assert "wellman" in captured.out
+    assert f"wellman {expected_version}" in captured.out
 
 
 def test_cli_standards(capsys):

@@ -93,4 +93,5 @@
 | **ticket-092** | [`README.md`](./ticket-092/README.md) | - | - | - | - | - |
 | **ticket-093** | [`README.md`](./ticket-093/README.md) | - | - | - | - | - |
 | **ticket-094** | [`README.md`](./ticket-094/README.md) | - | - | - | - | - |
+| **ticket-095** | [`README.md`](./ticket-095/README.md) | - | - | - | - | - |
 <!-- AUTO:TICKET_INDEX:END -->

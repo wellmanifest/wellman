@@ -117,25 +117,25 @@ def test_ssot_and_semver_are_reference_only_standards():
         assert "execution authority" in pack.excludes
 
 
-def test_conformance_pack_standards_registered_as_reference_only(tmp_path, capsys):
+def test_conformance_pack_standards_registered_as_local_conformance(tmp_path, capsys):
     import json
     from wellman.cli import main
 
-    expected_requires = {
-        "nolimits": ["wellmanifest/hostguard"],
-        "auth-lifecycle": ["wellmanifest/lifecycle"],
-        "secrets": ["wellmanifest/auth-lifecycle"],
-        "clonerd": [],
-        "llm-account-tool": ["wellmanifest/account-runtime"],
+    expected = {
+        "nolimits": (["wellmanifest/hostguard"], "GOV-NOLIMITS-MISSING"),
+        "auth-lifecycle": (["wellmanifest/lifecycle"], "GOV-AUTH-LIFECYCLE-MISSING"),
+        "secrets": (["wellmanifest/auth-lifecycle"], "GOV-SECRETS-MISSING"),
+        "clonerd": ([], "GOV-CLONERD-MISSING"),
+        "llm-account-tool": (["wellmanifest/account-runtime"], "GOV-LLM-ACCOUNT-MISSING"),
     }
     baseline = {item["id"] for item in get_profile("baseline").requirements}
-    for alias, requires in expected_requires.items():
+    for alias, (requires, missing_code) in expected.items():
         canonical = f"wellmanifest/{alias}"
         pack = get_standard(alias)
         assert pack is not None and get_standard(canonical) is pack
         assert pack.id == canonical
-        assert pack.minimum_level == "S0"
-        assert pack.execution_model == "reference-only"
+        assert pack.minimum_level == "S1"
+        assert pack.execution_model == "local-conformance"
         assert pack.requires == requires
         assert pack.schemas
         assert "execution authority" in pack.excludes
@@ -147,4 +147,5 @@ def test_conformance_pack_standards_registered_as_reference_only(tmp_path, capsy
 
         assert main(["check", "--standard", canonical, "--root", str(tmp_path), "--json"]) == 1
         report = json.loads(capsys.readouterr().out)
-        assert any(f["code"] == "GOV-STANDARD-NOT-IMPLEMENTED" for f in report["findings"])
+        assert all(f["code"] != "GOV-STANDARD-NOT-IMPLEMENTED" for f in report["findings"])
+        assert any(f["code"] == missing_code for f in report["findings"])

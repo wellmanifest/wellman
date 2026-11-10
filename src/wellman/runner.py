@@ -305,7 +305,7 @@ class ConformanceRunner:
                     cwd=str(self.root),
                     capture_output=True,
                     text=True,
-                    timeout=60,
+                    timeout=180,
                     env=_git_environment(),
                 )
                 if res.returncode != 0:

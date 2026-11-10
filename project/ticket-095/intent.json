@@ -1,0 +1,28 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-095",
+  "summary": "Implement static conformance checkers for conformance-pack standards",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-095/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/conformance_pack_checkers.py",
+    "src/wellman/registry.py",
+    "src/wellman/runner.py",
+    "tests/test_conformance_pack_checkers.py",
+    "tests/test_registry.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

@@ -493,6 +493,16 @@ class ConformanceRunner:
             findings.extend(self.check_nohardcode())
         if "wellmanifest/ssot" in registered_reqs or (self.root / ".governance" / "ssot.json").is_file():
             findings.extend(self.check_ssot())
+        if "wellmanifest/nolimits" in registered_reqs or (self.root / ".governance" / "nolimits.json").is_file():
+            findings.extend(self.check_nolimits())
+        if "wellmanifest/auth-lifecycle" in registered_reqs or (self.root / ".governance" / "auth-lifecycle.json").is_file():
+            findings.extend(self.check_auth_lifecycle())
+        if "wellmanifest/secrets" in registered_reqs or (self.root / ".governance" / "vault-manifest.json").is_file() or (self.root / ".governance" / "secrets.json").is_file():
+            findings.extend(self.check_secrets())
+        if "wellmanifest/clonerd" in registered_reqs or (self.root / ".governance" / "clonerd.json").is_file():
+            findings.extend(self.check_clonerd())
+        if "wellmanifest/llm-account-tool" in registered_reqs or (self.root / ".governance" / "llm-account-tool.json").is_file():
+            findings.extend(self.check_llm_account_tool())
         return findings
 
     def check_local_ci_publication(self) -> List[Finding]:
@@ -1323,6 +1333,26 @@ class ConformanceRunner:
 
         return report
 
+    def check_nolimits(self) -> List[Finding]:
+        from wellman.conformance_pack_checkers import check_nolimits
+        return check_nolimits(self.root)
+
+    def check_auth_lifecycle(self) -> List[Finding]:
+        from wellman.conformance_pack_checkers import check_auth_lifecycle
+        return check_auth_lifecycle(self.root)
+
+    def check_secrets(self) -> List[Finding]:
+        from wellman.conformance_pack_checkers import check_secrets
+        return check_secrets(self.root)
+
+    def check_clonerd(self) -> List[Finding]:
+        from wellman.conformance_pack_checkers import check_clonerd
+        return check_clonerd(self.root)
+
+    def check_llm_account_tool(self) -> List[Finding]:
+        from wellman.conformance_pack_checkers import check_llm_account_tool
+        return check_llm_account_tool(self.root)
+
     def run_standard(self, standard_id: str) -> List[Finding]:
         """Run the concrete conformance check implemented for one standard.
 
@@ -1364,6 +1394,11 @@ class ConformanceRunner:
             "wellmanifest/semver": self.check_semver,
             "wellmanifest/taskand": self.check_taskand,
             "wellmanifest/data-plane": self.check_data_plane,
+            "wellmanifest/nolimits": self.check_nolimits,
+            "wellmanifest/auth-lifecycle": self.check_auth_lifecycle,
+            "wellmanifest/secrets": self.check_secrets,
+            "wellmanifest/clonerd": self.check_clonerd,
+            "wellmanifest/llm-account-tool": self.check_llm_account_tool,
         }
         check = checks.get(standard_id)
         if check is not None:

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-10
+
+### Added
+- Reach 100% (`53/53`) S1 static conformance checker coverage across `STANDARDS_CATALOG`, adding checkers for `wellmanifest/uri` [ticket-098], `wellmanifest/python` [ticket-099], and the remaining 14 catalog standards (`audit-trail`, `data-sovereignty`, `docs`, `fleet-governance`, `github`, `governance-surface`, `llm`, `logging`, `media-pipeline`, `onedev`, `python-packaging`, `safety-interlocks`, `test`, `validation-ladder`) [ticket-100].
+
+### Fixed
+- Sync bundled `ticket_activity.py` (`_worktree_registration` checkout isolation) and `worktree_overlap_check.py` (deduplicated `unignored_dirty_paths`, skipped `git merge-tree` for disjoint shared-default pairs), and raise `ConformanceRunner.check_worktrees` timeout to `180s` [ticket-101].
+- Prefer source-checkout `VERSION` in `wellman.__version__` before installed distribution metadata so source-tree CLI and test runs never report stale site-packages versions [ticket-102].
+
 ## [0.22.0] - 2026-11-10
 
 ### Added

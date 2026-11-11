@@ -1,0 +1,92 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-102",
+  "summary": "Release wellman 0.23.0 with full catalog S1 checkers and bundled overlap optimizations",
+  "workstream": "integration",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-102/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "CHANGELOG.md",
+    "README.md",
+    "VERSION",
+    "pyproject.toml",
+    "src/wellman/__init__.py",
+    "tests/test_cli.py",
+    "uv.lock"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "ab711df038982ea9e32f6a6c8a9b25a34e2062bd",
+    "targetBranch": "main",
+    "outcome": "Publish wellman 0.23.0 release projections consolidating 100% S1 static conformance checker coverage across STANDARDS_CATALOG, bundled worktree/activity checker optimizations, and source-checkout VERSION precedence in wellman.__version__, followed by independent protected merge, exact-head tag, GitHub Release, and local operator runtime enrollment.",
+    "nonGoals": [
+      "Changing adopted governance policy",
+      "Modifying checker semantics outside release version projections"
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 25,
+    "budgets": {
+      "maxImplementationFiles": 7,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Align VERSION, pyproject.toml, src/wellman/__init__.py, uv.lock, README.md, tests/test_cli.py, and CHANGELOG.md on 0.23.0, reading VERSION first when imported from a source checkout.",
+      "components": [
+        {
+          "name": "Wellman distribution and release metadata",
+          "paths": [
+            "CHANGELOG.md",
+            "README.md",
+            "VERSION",
+            "pyproject.toml",
+            "src/wellman/__init__.py",
+            "tests/test_cli.py",
+            "uv.lock"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Reviewed revert or subsequent compatible release; never overwrite a published artifact."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=.:src pytest -q tests/test_cli.py"
+        ],
+        "evidence": "Version projections consistently report 0.23.0 across metadata, source-checkout imports, CLI --version output, and tests."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh",
+          "wellman check"
+        ],
+        "evidence": "Governance gate and wellman standards checks pass cleanly."
+      }
+    ]
+  }
+}

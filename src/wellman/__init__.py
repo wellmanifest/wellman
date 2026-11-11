@@ -7,11 +7,23 @@ for all Wellmanifest standards.
 from __future__ import annotations
 
 from importlib.metadata import version as _get_version
+from pathlib import Path as _Path
 
-try:
-    __version__ = _get_version("wellman")
-except Exception:
-    __version__ = "0.22.0"
+
+def _resolve_version() -> str:
+    checkout_root = _Path(__file__).resolve().parents[2]
+    version_file = checkout_root / "VERSION"
+    if (checkout_root / "pyproject.toml").is_file() and version_file.is_file():
+        version_text = version_file.read_text(encoding="utf-8").strip()
+        if version_text:
+            return version_text
+    try:
+        return _get_version("wellman")
+    except Exception:
+        return "0.23.0"
+
+
+__version__ = _resolve_version()
 
 from wellman.registry import (
     CONFORMANCE_LEVELS,

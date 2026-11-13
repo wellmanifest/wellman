@@ -1309,12 +1309,28 @@ def integration_policy_valid(integration: Any, workstreams: dict[str, Any]) -> b
     )
 
 
+def idle_takeover_policy_valid(policy: Any) -> bool:
+    def bounded(value: Any, low: int, high: int) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+    return (
+        isinstance(policy, dict)
+        and set(policy) == {"enabled", "idleMinutes", "leaseMinutes"}
+        and isinstance(policy["enabled"], bool)
+        and bounded(policy["idleMinutes"], 5, 240)
+        and bounded(policy["leaseMinutes"], 15, 480)
+        and policy["leaseMinutes"] > policy["idleMinutes"]
+    )
+
+
 def coordination_policy_valid(coordination: Any) -> bool:
     fields = {
         "mode", "maxActiveTicketsPerWorkstream", "rejectActiveScopeOverlap",
         "workstreams", "integration",
     }
-    if not isinstance(coordination, dict) or set(coordination) != fields:
+    if not isinstance(coordination, dict) or set(coordination) - {"idleTakeover"} != fields:
+        return False
+    if "idleTakeover" in coordination and not idle_takeover_policy_valid(coordination["idleTakeover"]):
         return False
     limit = coordination.get("maxActiveTicketsPerWorkstream")
     settings_valid = (

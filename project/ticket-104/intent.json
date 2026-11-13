@@ -1,0 +1,83 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-104",
+  "summary": "fix wellman bundled governance idleTakeover compatibility",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-104/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/_bundled/governance_check.py",
+    "tests/test_governance_check.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "e1517371ec33e315892abc4494954f08ac3f6cf3",
+    "targetBranch": "main",
+    "outcome": "Make the Wellman bundled governance checker accept and validate the optional closed coordination.idleTakeover policy already defined by the canonical new-project checker and manifest schema, so wellman check succeeds on schema-valid adopted repositories.",
+    "nonGoals": [
+      "No changes to canonical wellmanifest/new-project sources or manifest policy.",
+      "No changes to installed runtimes outside this repository.",
+      "No changes to idleTakeover semantics."
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Backport only the canonical bounded idleTakeover validator into the stale Wellman bundle and add a focused regression to the existing checker test module.",
+      "components": [
+        {
+          "name": "bundled governance checker",
+          "paths": [
+            "src/wellman/_bundled/governance_check.py",
+            "tests/test_governance_check.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the bundled validator and regression test through protected publication."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest -q tests/test_governance_check.py",
+          "wellman check --root <schema-valid-repository>"
+        ],
+        "evidence": "Valid closed idleTakeover passes; invalid values are rejected and Wellman accepts a schema-valid manifest."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh"
+        ],
+        "evidence": "Repository governance passes on the exact changed-file set."
+      }
+    ]
+  }
+}

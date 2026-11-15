@@ -349,7 +349,7 @@ def test_nohardcode_scan_skips_virtualenv_and_dependency_trees(tmp_path):
     assert paths == {"packages/app/real.py"}
 
 
-def test_check_worktrees_passes_180_second_timeout(tmp_path, monkeypatch):
+def test_check_worktrees_budget_covers_observed_complete_scan(tmp_path, monkeypatch):
     import json
     import subprocess as sp
 
@@ -364,6 +364,8 @@ def test_check_worktrees_passes_180_second_timeout(tmp_path, monkeypatch):
             return sp.CompletedProcess(cmd, 0, stdout=f"worktree {tmp_path}\nbranch refs/heads/main\n\n", stderr="")
         if "--workspace-root" in cmd:
             captured["timeout"] = kwargs.get("timeout")
+            if kwargs["timeout"] < 395:
+                raise sp.TimeoutExpired(cmd, kwargs["timeout"])
             payload = {
                 "schema": "new-project.worktree-overlap-report/v1",
                 "status": "passed",
@@ -375,7 +377,7 @@ def test_check_worktrees_passes_180_second_timeout(tmp_path, monkeypatch):
 
     monkeypatch.setattr(sp, "run", fake_run)
     findings = ConformanceRunner(tmp_path).check_worktrees()
-    assert captured.get("timeout") == 180
+    assert captured.get("timeout") == 480
     assert not any(f.code.startswith("GOV-WORKTREE-") for f in findings)
 
 

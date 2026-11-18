@@ -197,7 +197,7 @@ def test_cli_version(capsys):
     expected_version = (
         Path(__file__).resolve().parents[1] / "VERSION"
     ).read_text(encoding="utf-8").strip()
-    assert __version__ == expected_version == "0.23.0"
+    assert __version__ == expected_version == "0.23.1"
     ret = main(["--version"])
     assert ret == 0
     captured = capsys.readouterr()

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-11-18
+
+### Fixed
+- Accept the optional `coordination.idleTakeover` policy in the bundled governance checker. Released 0.23.0 rejected every manifest adopted from wellmanifest/new-project 0.20.15x with `GOV-MANIFEST-001` [ticket-104].
+- Allow complete bounded worktree conformance scans in the runner [ticket-106].
+- Publish both fixes as 0.23.1 so a released `wellman check` no longer fails current adopters [ticket-108].
+
 ## [0.23.0] - 2026-11-10
 
 ### Added

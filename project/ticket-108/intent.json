@@ -1,0 +1,92 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-108",
+  "summary": "Release wellman 0.23.1 with the idleTakeover-compatible checker",
+  "workstream": "integration",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "regression"
+  },
+  "allowedPaths": [
+    "project/ticket-108/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "CHANGELOG.md",
+    "README.md",
+    "VERSION",
+    "pyproject.toml",
+    "src/wellman/__init__.py",
+    "tests/test_cli.py",
+    "uv.lock"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "05d2b48d57cd4b754e0efd1435ed81dc4fec854f",
+    "targetBranch": "main",
+    "outcome": "Release wellman 0.23.1 so the released `wellman check` accepts manifests adopted from wellmanifest/new-project 0.20.15x (idleTakeover) instead of failing them with GOV-MANIFEST-001.",
+    "nonGoals": [
+      "No checker or runtime code change beyond the already merged ticket-104 and ticket-106 fixes.",
+      "No tag, registry upload or GitHub Release in this change."
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 25,
+    "budgets": {
+      "maxImplementationFiles": 7,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Bump the coupled release metadata to 0.23.1 and record the merged ticket-104 and ticket-106 fixes in the changelog.",
+      "components": [
+        {
+          "name": "Wellman distribution and release metadata",
+          "paths": [
+            "CHANGELOG.md",
+            "README.md",
+            "VERSION",
+            "pyproject.toml",
+            "src/wellman/__init__.py",
+            "tests/test_cli.py",
+            "uv.lock"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert to accepted base 05d2b48d57cd4b754e0efd1435ed81dc4fec854f; 0.23.0 remains published."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "PYTHONPATH=.:src pytest -q tests/test_cli.py"
+        ],
+        "evidence": "Version projections consistently report 0.23.0 across metadata, source-checkout imports, CLI --version output, and tests."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh",
+          "wellman check"
+        ],
+        "evidence": "Governance gate and wellman standards checks pass cleanly."
+      }
+    ]
+  }
+}

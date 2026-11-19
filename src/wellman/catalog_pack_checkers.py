@@ -52,16 +52,35 @@ _LLM_CANONICAL_OPS = frozenset({
     "validation.run",
     "receipt.write",
 })
+# Union of the historical phases and the wellmanifest/new-project change-lease
+# state machine (scripts/change_lease_check.py PHASES), so a lease written by the
+# canonical allocator is never reported as invalid.
 _CHANGE_LEASE_PHASES = frozenset({
     "allocated",
     "claimed",
     "active",
+    "editing",
+    "validating",
     "publication_frozen",
+    "dispatching",
+    "approved",
+    "merged",
     "released",
     "closed",
     "cancelled",
     "expired",
 })
+# Worktree layout records owned by wellmanifest/worktrees. They live beside
+# change leases in .subactor/leases/ but are not authority documents.
+_WORKTREE_LEASE_SCHEMAS = frozenset({"wellmanifest.worktrees/v5", "wellmanifest.worktrees/lease/v1"})
+
+
+def _is_worktree_lease_record(doc: dict) -> bool:
+    schema = doc.get("schema")
+    if schema in _WORKTREE_LEASE_SCHEMAS:
+        return True
+    layout = doc.get("layout")
+    return schema is None and isinstance(layout, dict) and layout.get("schema") == "wellmanifest.worktrees/v5"
 _API_PROTOCOLS = frozenset({"rest", "graphql", "grpc", "mcp", "cli", "websocket", "http", "https"})
 
 
@@ -176,7 +195,7 @@ def check_authority_lifecycle(root: Path) -> List[Finding]:
             continue
 
         schema = doc.get("schema")
-        if schema == "wellmanifest.worktrees/v5" and path.parent == lease_dir:
+        if path.parent == lease_dir and _is_worktree_lease_record(doc):
             skipped += 1
             continue
 

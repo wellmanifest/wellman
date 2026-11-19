@@ -162,14 +162,8 @@ def check_authority_lifecycle(root: Path) -> List[Finding]:
         "profiles/*authority*.json",
         ".subactor/leases/*.json",
     ))
-    if not candidates:
-        return [_err(
-            "GOV-AUTHORITY-LIFECYCLE-MISSING",
-            "Repository requires wellmanifest/authority-lifecycle but no lease or authority-lifecycle profile was found.",
-            ".governance/authority-lifecycle.json",
-            "Provide .governance/authority-lifecycle.json or canonical .subactor/leases/*.json change-lease records.",
-        )]
-
+    lease_dir = root / ".subactor/leases"
+    skipped = 0
     findings: List[Finding] = []
     for path in candidates:
         rel = _rel(root, path)
@@ -182,6 +176,10 @@ def check_authority_lifecycle(root: Path) -> List[Finding]:
             continue
 
         schema = doc.get("schema")
+        if schema == "wellmanifest.worktrees/v5" and path.parent == lease_dir:
+            skipped += 1
+            continue
+
         if schema == "wellmanifest.change-lease/v1":
             for field in ("leaseId", "ticketId", "ownerActor", "ownerSession", "phase"):
                 if not isinstance(doc.get(field), str) or not doc[field].strip():
@@ -232,6 +230,13 @@ def check_authority_lifecycle(root: Path) -> List[Finding]:
                 f"Unrecognized schema '{schema}' in {rel}.",
                 rel, "Use wellmanifest.change-lease/v1 or wellmanifest.authority-lifecycle/grant/v1.",
             ))
+    if skipped == len(candidates):
+        return [_err(
+            "GOV-AUTHORITY-LIFECYCLE-MISSING",
+            "Repository requires wellmanifest/authority-lifecycle but no lease or authority-lifecycle profile was found.",
+            ".governance/authority-lifecycle.json",
+            "Provide .governance/authority-lifecycle.json or canonical .subactor/leases/*.json change-lease records.",
+        )]
     return findings
 
 

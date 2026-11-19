@@ -362,3 +362,46 @@ def test_llm_dsl_poa_anonym_and_symlink_refusal(tmp_path: Path) -> None:
     anonym_path.unlink()
     anonym_path.symlink_to(outside)
     assert [f.code for f in ConformanceRunner(tmp_path).run_standard("wellmanifest/anonym")] == ["GOV-ANONYM-INVALID"]
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"schema": "wellmanifest.worktrees/lease/v1", "owner": "codex-demo", "status": "released",
+         "layout": {"schema": "wellmanifest.worktrees/v5"}},
+        {"owner": "codex-demo", "status": "released", "layout": {"schema": "wellmanifest.worktrees/v5"}},
+    ],
+)
+def test_authority_lifecycle_skips_legacy_worktree_lease_records(tmp_path: Path, record: dict) -> None:
+    _write_json(tmp_path / ".subactor/leases/ticket-001--demo.json", record)
+    _write_json(
+        tmp_path / ".governance" / "authority-lifecycle.json",
+        {"schema": "wellmanifest.authority-lifecycle/profile/v1", "principal": {"uri": "authority://principal/demo"}},
+    )
+    assert ConformanceRunner(tmp_path).run_standard("wellmanifest/authority-lifecycle") == []
+
+
+def test_authority_lifecycle_keeps_schemaless_non_worktree_records_invalid(tmp_path: Path) -> None:
+    _write_json(tmp_path / ".subactor/leases/ticket-001--demo.json", {"owner": "x", "layout": {"schema": "other/v1"}})
+    findings = ConformanceRunner(tmp_path).run_standard("wellmanifest/authority-lifecycle")
+    assert [f.code for f in findings] == ["GOV-AUTHORITY-LIFECYCLE-INVALID"]
+
+
+@pytest.mark.parametrize("phase", ["editing", "validating", "dispatching", "approved", "merged"])
+def test_authority_lifecycle_accepts_new_project_change_lease_phases(tmp_path: Path, phase: str) -> None:
+    _write_json(
+        tmp_path / ".subactor/leases/ticket-001--demo.json",
+        {
+            "schema": "wellmanifest.change-lease/v1",
+            "leaseId": "allocation-ticket-001-demo",
+            "ticketId": "ticket-001",
+            "ownerActor": "agent:claude",
+            "ownerSession": "session-1",
+            "phase": phase,
+            "leaseRevision": 2,
+            "fencingToken": 2,
+            "issuedAt": "2026-11-19T20:00:00Z",
+            "expiresAt": "2026-11-19T22:00:00Z",
+        },
+    )
+    assert ConformanceRunner(tmp_path).run_standard("wellmanifest/authority-lifecycle") == []

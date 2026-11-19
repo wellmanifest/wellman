@@ -40,8 +40,48 @@ def test_selected_standard_fails_closed_when_artifact_missing(tmp_path: Path, st
     assert [f.code for f in findings] == [missing_code]
 
 
+def test_authority_lifecycle_requires_a_document_besides_worktree_leases(tmp_path: Path) -> None:
+    leases = tmp_path / ".subactor" / "leases"
+    for name in ("ticket-001--demo.json", "ticket-002--demo.json"):
+        _write_json(leases / name, {"schema": "wellmanifest.worktrees/v5"})
+
+    runner = ConformanceRunner(tmp_path)
+    findings = runner.run_standard("wellmanifest/authority-lifecycle")
+    assert [f.code for f in findings] == ["GOV-AUTHORITY-LIFECYCLE-MISSING"]
+
+    _write_json(
+        tmp_path / ".governance" / "authority-lifecycle.json",
+        {
+            "schema": "wellmanifest.authority-lifecycle/profile/v1",
+            "principal": {"uri": "authority://principal/demo"},
+        },
+    )
+    assert runner.run_standard("wellmanifest/authority-lifecycle") == []
+
+
+@pytest.mark.parametrize(
+    ("path", "contents"),
+    [
+        (".subactor/leases/malformed.json", '{"schema": "wellmanifest.worktrees/v5",}'),
+        (".subactor/leases/unknown.json", '{"schema": "wellmanifest.worktrees/v6"}'),
+        ("profiles/demo-authority.json", '{"schema": "wellmanifest.worktrees/v5"}'),
+    ],
+)
+def test_authority_lifecycle_reports_invalid_candidates_alongside_worktree_leases(
+    tmp_path: Path, path: str, contents: str,
+) -> None:
+    _write_json(tmp_path / ".subactor/leases/ticket-001--demo.json", {"schema": "wellmanifest.worktrees/v5"})
+    candidate = tmp_path / path
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_text(contents, encoding="utf-8")
+
+    findings = ConformanceRunner(tmp_path).run_standard("wellmanifest/authority-lifecycle")
+    assert [(f.code, f.path) for f in findings] == [("GOV-AUTHORITY-LIFECYCLE-INVALID", path)]
+
+
 def test_authority_and_repair_lifecycle_valid_and_invalid(tmp_path: Path) -> None:
     lease_path = tmp_path / ".subactor" / "leases" / "ticket-001--demo.json"
+    _write_json(lease_path.with_name("ticket-002--demo.json"), {"schema": "wellmanifest.worktrees/v5"})
     _write_json(
         lease_path,
         {
@@ -74,9 +114,11 @@ def test_authority_and_repair_lifecycle_valid_and_invalid(tmp_path: Path) -> Non
             "expiresAt": "2026-11-10T22:00:00Z",
         },
     )
-    codes = {f.code for f in ConformanceRunner(tmp_path).run_standard("wellmanifest/authority-lifecycle")}
-    assert "GOV-AUTHORITY-LIFECYCLE-FENCING" in codes
-    assert "GOV-AUTHORITY-LIFECYCLE-EXPIRY" in codes
+    findings = ConformanceRunner(tmp_path).run_standard("wellmanifest/authority-lifecycle")
+    assert [(f.code, f.path) for f in findings] == [
+        ("GOV-AUTHORITY-LIFECYCLE-FENCING", lease_path.relative_to(tmp_path).as_posix()),
+        ("GOV-AUTHORITY-LIFECYCLE-EXPIRY", lease_path.relative_to(tmp_path).as_posix()),
+    ]
 
     repair_path = tmp_path / ".governance" / "repair-lifecycle.json"
     _write_json(
@@ -121,7 +163,7 @@ def test_account_runtime_skills_status_and_performance(tmp_path: Path) -> None:
         acct_path,
         {
             "schema": "wellmanifest.account-runtime/v1",
-            "accounts": [{"id": "acct-1", "token": "ghp_1234567890abcdefghijklmnopqrstuv"}],
+            "accounts": [{"id": "acct-1", "token": "test fixture: -----BEGIN TEST PRIVATE KEY-----"}],
         },
     )
     assert "GOV-ACCOUNT-RUNTIME-SECRET" in {

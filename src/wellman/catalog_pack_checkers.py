@@ -75,9 +75,17 @@ _CHANGE_LEASE_PHASES = frozenset({
 _WORKTREE_LEASE_SCHEMAS = frozenset({"wellmanifest.worktrees/v5", "wellmanifest.worktrees/lease/v1"})
 
 
+# Other tools' local worktree leases (e.g. subactor.worktree-lease/v1,
+# maskauth.native-ticket-worktree-lease/v1) share .subactor/leases but are not
+# authority-lifecycle documents; unknown wellmanifest.* schemas stay invalid.
+_FOREIGN_WORKTREE_LEASE_RE = re.compile(r"^(?!wellmanifest\.)[a-z0-9][a-z0-9.-]*\.(?:[a-z0-9-]+-)?worktree-lease/v[1-9][0-9]*$")
+
+
 def _is_worktree_lease_record(doc: dict) -> bool:
     schema = doc.get("schema")
     if schema in _WORKTREE_LEASE_SCHEMAS:
+        return True
+    if isinstance(schema, str) and _FOREIGN_WORKTREE_LEASE_RE.match(schema) and "worktree" in doc:
         return True
     layout = doc.get("layout")
     return schema is None and isinstance(layout, dict) and layout.get("schema") == "wellmanifest.worktrees/v5"

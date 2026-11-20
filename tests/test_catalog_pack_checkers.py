@@ -381,6 +381,41 @@ def test_authority_lifecycle_skips_legacy_worktree_lease_records(tmp_path: Path,
     assert ConformanceRunner(tmp_path).run_standard("wellmanifest/authority-lifecycle") == []
 
 
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"schema": "subactor.worktree-lease/v1", "ticket": "ticket-007", "worktree": ".worktrees/ticket-007--x"},
+        {"schema": "maskauth.native-ticket-worktree-lease/v1", "ticketId": "ticket-007",
+         "worktree": ".worktrees/ticket-007--y", "status": "released"},
+    ],
+)
+def test_authority_lifecycle_skips_foreign_worktree_lease_records(tmp_path: Path, record: dict) -> None:
+    _write_json(tmp_path / ".subactor/leases/ticket-007--demo.json", record)
+    _write_json(
+        tmp_path / ".governance" / "authority-lifecycle.json",
+        {"schema": "wellmanifest.authority-lifecycle/profile/v1", "principal": {"uri": "authority://principal/demo"}},
+    )
+    assert ConformanceRunner(tmp_path).run_standard("wellmanifest/authority-lifecycle") == []
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"schema": "wellmanifest.worktree-lease/v1", "worktree": ".worktrees/x"},
+        {"schema": "subactor.worktree-lease/v1"},
+        {"schema": "subactor.change-grant/v1", "worktree": ".worktrees/x"},
+    ],
+)
+def test_authority_lifecycle_keeps_unrecognized_lease_schemas_invalid(tmp_path: Path, record: dict) -> None:
+    _write_json(tmp_path / ".subactor/leases/ticket-007--demo.json", record)
+    _write_json(
+        tmp_path / ".governance" / "authority-lifecycle.json",
+        {"schema": "wellmanifest.authority-lifecycle/profile/v1", "principal": {"uri": "authority://principal/demo"}},
+    )
+    findings = ConformanceRunner(tmp_path).run_standard("wellmanifest/authority-lifecycle")
+    assert [f.code for f in findings] == ["GOV-AUTHORITY-LIFECYCLE-INVALID"]
+
+
 def test_authority_lifecycle_keeps_schemaless_non_worktree_records_invalid(tmp_path: Path) -> None:
     _write_json(tmp_path / ".subactor/leases/ticket-001--demo.json", {"owner": "x", "layout": {"schema": "other/v1"}})
     findings = ConformanceRunner(tmp_path).run_standard("wellmanifest/authority-lifecycle")

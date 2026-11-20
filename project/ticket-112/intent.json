@@ -1,0 +1,25 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-112",
+  "summary": "authority-lifecycle: skip foreign worktree-lease records",
+  "workstream": "application",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-112/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/catalog_pack_checkers.py",
+    "tests/test_catalog_pack_checkers.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

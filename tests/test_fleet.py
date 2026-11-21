@@ -1038,3 +1038,88 @@ def test_selection_export_preserves_missing_or_claimed_metadata(tmp_path, change
         == "preserved_owned"
     )
     assert store.get_ticket(ticket.id).model_dump(mode="json") == before
+
+
+def _commit_all(repo, message="init"):
+    subprocess.run(["git", "-C", str(repo), "add", "-f", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            message,
+        ],
+        check=True,
+    )
+
+
+def test_fleet_plan_and_apply_block_governed_primary_main_checkout(tmp_path):
+    repo = make_repository(tmp_path, "governed", "https://github.com/acme/governed.git")
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "-B", "main"], check=True)
+    (repo / "project").mkdir()
+    (repo / "project" / "new-ticket.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    _commit_all(repo)
+
+    plan = build_plan(repo, "baseline")
+    assert plan["blocked"] == 1
+    item = plan["repositories"][0]
+    assert item["ready"] is False
+    assert any("./project/new-ticket.sh" in b for b in item["blockers"])
+
+    tampered = json.loads(json.dumps(plan))
+    tampered["repositories"][0]["ready"] = True
+    tampered["repositories"][0]["blockers"] = []
+    applied = apply_plan(tampered, "baseline")
+    result = applied["repositories"][0]
+    assert result["status"] == "skipped"
+    assert result["ready"] is False
+    assert any("./project/new-ticket.sh" in b for b in result["blockers"])
+    assert not (repo / ".governance" / "manifest.json").exists()
+
+
+def test_fleet_plan_allows_up_to_date_governed_primary_checkout(tmp_path):
+    repo = make_repository(tmp_path, "uptodate", "https://github.com/acme/uptodate.git")
+    subprocess.run(["git", "-C", str(repo), "checkout", "-q", "-B", "main"], check=True)
+    (repo / "README.md").write_text("# demo\n", encoding="utf-8")
+    _commit_all(repo)
+
+    first = apply_plan(build_plan(repo, "baseline"), "baseline")
+    assert first["repositories"][0]["status"] == "updated"
+
+    (repo / "project").mkdir()
+    (repo / "project" / "new-ticket.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    _commit_all(repo, "add new-ticket.sh")
+
+    plan = build_plan(repo, "baseline")
+    assert plan["ready"] == 1
+    assert plan["repositories"][0]["actions"] == []
+    applied = apply_plan(plan, "baseline")
+    assert applied["repositories"][0]["status"] == "up-to-date"
+
+
+def test_fleet_apply_permits_linked_ticket_worktree_checkout(tmp_path):
+    primary = make_repository(tmp_path, "primary", "https://github.com/acme/linked.git")
+    subprocess.run(["git", "-C", str(primary), "checkout", "-q", "-B", "main"], check=True)
+    (primary / "project").mkdir()
+    (primary / "project" / "new-ticket.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    _commit_all(primary)
+
+    wt_path = tmp_path / "wt-ticket-001"
+    subprocess.run(
+        ["git", "-C", str(primary), "worktree", "add", "-q", "-b", "ticket/001-adopt", str(wt_path), "main"],
+        check=True,
+    )
+
+    plan = build_plan(wt_path, "baseline")
+    assert plan["ready"] == 1
+    assert plan["repositories"][0]["ready"] is True
+    applied = apply_plan(plan, "baseline")
+    assert applied["repositories"][0]["status"] == "updated"
+    assert (wt_path / ".governance" / "manifest.json").is_file()
+    assert not (primary / ".governance" / "manifest.json").exists()

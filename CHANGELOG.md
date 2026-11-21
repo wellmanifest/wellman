@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.23.2] - 2026-11-21
+
+### Fixed
+- Accept `new-project` lease phases and legacy worktree records in catalog checkers [ticket-111].
+- Skip foreign `*worktree-lease/vN` records in `wellmanifest/authority-lifecycle` conformance checking [ticket-112].
+
+### Changed
+- Adopted `wellmanifest/new-project` `0.20.162` governance baseline [ticket-109] and bumped release metadata to `0.23.2` [ticket-113].
+
 ## [0.23.1] - 2026-11-18
 
 ### Fixed

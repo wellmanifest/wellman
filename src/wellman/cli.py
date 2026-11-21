@@ -201,6 +201,17 @@ runpy.run_module("wellmanifest_governance_runtime", run_name="__main__")
         return 2
 
 
+def cmd_advise(args: argparse.Namespace) -> int:
+    from wellman.advise import advise, render
+    root = Path(args.root).resolve()
+    if not (root / ".git").exists():
+        print(f"Not a repository checkout: {root}", file=sys.stderr)
+        return 2
+    result = advise(root, ConformanceRunner(root).run_all(), llm=args.llm, timeout=max(1.0, min(args.timeout, 120.0)))
+    print(json.dumps(result, indent=2, default=str) if args.json else render(result))
+    return 0
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     actor, base, head = (getattr(args, name, None) for name in ("actor", "base", "head"))
     has_range = base is not None or head is not None
@@ -854,6 +865,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_recommend.add_argument('--scope-policy', help='Classification and exclusion policy JSON')
     p_recommend.add_argument('--export-planfile', help='Explicit local review backlog project outside observed source')
     p_recommend.set_defaults(func=cmd_recommend)
+
+    p_advise = subparsers.add_parser('advise', help='Standard-grounded next steps; optional oqllm/SubLLM advice for undecided items')
+    p_advise.add_argument('--root', '-r', default='.')
+    p_advise.add_argument('--llm', choices=('auto', 'off'), default='auto',
+                          help='Ask oqllm (loopback) or SubLLM only for items no adopted rule decides')
+    p_advise.add_argument('--timeout', type=float, default=30, help='LLM timeout in seconds (max 120)')
+    p_advise.add_argument('--json', action='store_true')
+    p_advise.set_defaults(func=cmd_advise)
 
     p_ssot = subparsers.add_parser('ssot', help='Analyze declared domain ownership; optionally export a local review backlog')
     p_ssot.add_argument('--observation', required=True, help='Source-bound wellman.observation/v1 JSON snapshot')

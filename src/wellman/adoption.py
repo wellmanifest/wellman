@@ -119,6 +119,63 @@ def _selection_json(path):
     return data, hashlib.sha256(raw).hexdigest()
 
 
+_REUSE_MIN_LINES = 10
+_REUSE_MIN_SIMILARITY = 0.80
+
+
+def _positive_int(value):
+    return value if type(value) is int and value > 0 else 0
+
+
+def _fragment_lines(fragment):
+    direct = _positive_int(fragment.get('line_count')) or _positive_int(fragment.get('lines'))
+    if direct:
+        return direct
+    start = fragment.get('line_start') if type(fragment.get('line_start')) is int else fragment.get('start_line')
+    end = fragment.get('line_end') if type(fragment.get('line_end')) is int else fragment.get('end_line')
+    if type(start) is int and type(end) is int and start >= 1 and end >= start:
+        return end - start + 1
+    return 0
+
+
+def _redup_reuse_signal(data):
+    """Count clone groups in a redup report meeting REUSE-002 thresholds."""
+    import math
+    groups = data.get('groups') if isinstance(data, dict) else None
+    if not isinstance(groups, list) or len(groups) > 50000:
+        return 0, 0
+    qualifying_groups = 0
+    qualifying_saved_lines = 0
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        raw_sim = group.get('similarity')
+        if not isinstance(raw_sim, bool) and isinstance(raw_sim, (int, float)) and math.isfinite(raw_sim):
+            similarity = float(raw_sim)
+        elif str(group.get('type', '')).lower() == 'exact':
+            similarity = 1.0
+        else:
+            similarity = 0.0
+        fragments = group.get('fragments')
+        block_lines = 0
+        if isinstance(fragments, list) and len(fragments) >= 2:
+            frag_sizes = [_fragment_lines(frag) for frag in fragments if isinstance(frag, dict)]
+            valid_sizes = [size for size in frag_sizes if size > 0]
+            if len(valid_sizes) >= 2:
+                block_lines = min(valid_sizes)
+        if not block_lines:
+            block_lines = (
+                _positive_int(group.get('line_count'))
+                or _positive_int(group.get('lines'))
+                or _positive_int(group.get('saved_lines_potential'))
+            )
+        if similarity >= _REUSE_MIN_SIMILARITY and block_lines >= _REUSE_MIN_LINES:
+            qualifying_groups += 1
+            saved = _positive_int(group.get('saved_lines_potential'))
+            qualifying_saved_lines += saved or block_lines
+    return qualifying_groups, qualifying_saved_lines
+
+
 def _structure(root, data):
     """Normalize the actual code2llm AnalysisResult JSON contract."""
     import ast
@@ -306,8 +363,16 @@ def recommend(root, *, ast_report=None, analyze=False, evidence=(), hints=(), ll
     for name, path in evidence:
         if name not in SELECTION_TOOLS or name == 'code2llm':
             raise ValueError('Unknown supporting tool; use --ast for code2llm')
-        _, digest = _selection_json(path)
+        data, digest = _selection_json(path)
         report['evidence'].append({'tool': name, 'sha256': digest, 'freshness': 'imported-unverified'})
+        if name == 'redup':
+            qualifying_groups, saved_lines = _redup_reuse_signal(data)
+            if qualifying_groups > 0:
+                add(
+                    'wellmanifest/reuse',
+                    f'Redup evidence reports {qualifying_groups} clone group(s) ({saved_lines} saved lines) '
+                    'exceeding REUSE-002 thresholds (>=10 lines, >=0.80 similarity)',
+                )
     report['recommendations'] = [{'id': identifier, 'minimumLevel': levels[identifier], 'reasons': reasons[identifier]}
                                  for identifier in sorted(levels)]
     if llm:

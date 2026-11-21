@@ -679,3 +679,62 @@ def test_recommend_analysis_failure_guides_wellman_analysis_extra(monkeypatch, t
     assert '--with code2llm' in message
 
 
+def test_recommend_derives_reuse_from_redup_evidence_exceeding_thresholds(tmp_path):
+    from wellman.adoption import recommend
+
+    subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
+    exact_report = tmp_path / 'redup-exact.json'
+    exact_report.write_text(json.dumps({
+        'stats': {},
+        'summary': {'total_groups': 1, 'total_saved_lines': 12},
+        'groups': [{
+            'id': 'E0001',
+            'type': 'exact',
+            'fragments': [
+                {'file': 'a.py', 'line_start': 1, 'line_end': 12},
+                {'file': 'b.py', 'line_start': 10, 'line_end': 21},
+            ],
+            'saved_lines_potential': 12,
+        }],
+    }), encoding='utf-8')
+    exact_rec = recommend(tmp_path, evidence=[('redup', exact_report)])
+    exact_ids = {item['id']: item for item in exact_rec['recommendations']}
+    assert 'wellmanifest/reuse' in exact_ids
+    assert any('REUSE-002' in r and '12 saved lines' in r for r in exact_ids['wellmanifest/reuse']['reasons'])
+
+    fuzzy_report = tmp_path / 'redup-fuzzy.json'
+    fuzzy_report.write_text(json.dumps({
+        'stats': {},
+        'summary': {'total_groups': 1},
+        'groups': [{
+            'id': 'F0001',
+            'type': 'fuzzy',
+            'similarity': 0.85,
+            'fragments': [
+                {'file': 'a.py', 'line_count': 15},
+                {'file': 'b.py', 'line_count': 15},
+            ],
+            'saved_lines_potential': 15,
+        }],
+    }), encoding='utf-8')
+    fuzzy_rec = recommend(tmp_path, evidence=[('redup', fuzzy_report)])
+    fuzzy_ids = {item['id']: item for item in fuzzy_rec['recommendations']}
+    assert 'wellmanifest/reuse' in fuzzy_ids
+
+
+@pytest.mark.parametrize('group', [
+    {'id': 'E0001', 'type': 'exact', 'fragments': [{'file': 'a.py', 'line_start': 1, 'line_end': 9}, {'file': 'b.py', 'line_start': 1, 'line_end': 9}], 'saved_lines_potential': 9},
+    {'id': 'F0001', 'type': 'fuzzy', 'similarity': 0.79, 'fragments': [{'file': 'a.py', 'line_count': 20}, {'file': 'b.py', 'line_count': 20}], 'saved_lines_potential': 20},
+    {'id': 'U0001', 'type': 'semantic', 'fragments': [{'file': 'a.py', 'line_count': 25}, {'file': 'b.py', 'line_count': 25}], 'saved_lines_potential': 25},
+])
+def test_recommend_ignores_redup_evidence_below_reuse_thresholds(tmp_path, group):
+    from wellman.adoption import recommend
+
+    subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
+    report_path = tmp_path / 'redup-small.json'
+    report_path.write_text(json.dumps({'stats': {}, 'summary': {'total_groups': 1}, 'groups': [group]}), encoding='utf-8')
+    result = recommend(tmp_path, evidence=[('redup', report_path)])
+    rec_ids = {item['id'] for item in result['recommendations']}
+    assert 'wellmanifest/reuse' not in rec_ids
+
+

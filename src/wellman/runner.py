@@ -615,7 +615,10 @@ class ConformanceRunner:
                 message="Missing .reuse/redup-receipt.json clone scan receipt.",
                 severity="WARNING",
                 path=".reuse/redup-receipt.json",
-                remediation="Run `python3 scripts/record_scan_receipt.py` to record verified clone scan evidence.",
+                remediation=(
+                    "Run `python3 <wellmanifest/reuse>/scripts/record_scan_receipt.py --project .` "
+                    "(from the wellmanifest-reuse package) to record verified clone scan evidence."
+                ),
             ))
         else:
             try:

@@ -417,3 +417,178 @@ def check_ssot_pack(root: Path, *, require_present: bool = False) -> List[Findin
             continue
         findings.extend(_validate_ssot_document(doc, rel))
     return findings
+
+
+_GUI_IGNORED_DIRS = frozenset({".git", ".venv", ".worktrees", "node_modules", "__pycache__"})
+_GUI_ALLOWED_KINDS = frozenset({"landing", "marketplace", "article", "form", "auth", "panel", "public"})
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+_BRAND_COLOR_TOKEN_HINTS = ("color", "bg", "background", "fg", "foreground", "text", "accent", "primary", "secondary", "surface", "border")
+
+
+def check_gui_pack(root: Path) -> List[Finding]:
+    """Validate wellmanifest/gui declarative view schemas and TUI/GUI parity."""
+    candidates: List[Path] = _existing_files(root, (".governance/gui.json", ".governance/gui-dsl.json"))
+    for path in sorted(root.rglob("*.gui.json")):
+        if not (set(path.relative_to(root).parts) & _GUI_IGNORED_DIRS) and path not in candidates:
+            candidates.append(path)
+    if not candidates:
+        return [_err(
+            "GOV-GUI-MISSING",
+            "Repository requires wellmanifest/gui but no GUI DSL declaration (.governance/gui.json or *.gui.json) was found.",
+            ".governance/gui.json",
+            "Add a declarative wellmanifest.gui/dsl/v1 view descriptor (see wellmanifest/gui).",
+        )]
+
+    findings: List[Finding] = []
+    for path in candidates:
+        rel = _rel(root, path)
+        try:
+            doc = _unique_json_load(path)
+        except Exception as exc:
+            findings.append(_err("GOV-GUI-INVALID", f"{rel} contains invalid JSON: {exc}", rel, f"Fix JSON syntax in {rel}."))
+            continue
+
+        doc_id = doc.get("id")
+        has_view_shape = any(k in doc for k in ("section", "title", "kind", "page", "views", "toolbar", "surfaces"))
+        if not isinstance(doc_id, str) or not doc_id.strip() or not has_view_shape:
+            findings.append(_err(
+                "GOV-GUI-INVALID",
+                f"{rel} is missing a non-empty 'id' or GUI view declaration fields.",
+                rel,
+                "Declare non-empty 'id' and GUI view metadata ('section', 'title', 'kind'/'page'/'views'/'toolbar'/'surfaces').",
+            ))
+
+        if "url_state" in doc and not isinstance(doc["url_state"], dict):
+            findings.append(_err("GOV-GUI-INVALID", f"{rel} 'url_state' must be a JSON object.", rel, "Replace 'url_state' with an object."))
+
+        page = doc.get("page") if isinstance(doc.get("page"), dict) else {}
+        kind = doc.get("kind") or page.get("kind")
+        if isinstance(kind, str):
+            if kind not in _GUI_ALLOWED_KINDS:
+                findings.append(_err("GOV-GUI-INVALID", f"{rel} declares unknown GUI page kind '{kind}'.", rel,
+                                     f"Use one of: {', '.join(sorted(_GUI_ALLOWED_KINDS))}."))
+            elif kind in {"landing", "public"} and ("item_section_toolbar" in doc or "item_section_toolbar" in page):
+                findings.append(_err(
+                    "GOV-GUI-LAYOUT-VIOLATION",
+                    f"{rel} uses 'item_section_toolbar' on kind='{kind}' (allowed only on 'panel').",
+                    rel,
+                    "Move '.item-section-toolbar' / 'item_section_toolbar' out of public/landing views.",
+                ))
+
+        parity = doc.get("tui_parity") if "tui_parity" in doc else doc.get("parity")
+        if parity is not None:
+            if not isinstance(parity, dict):
+                findings.append(_err("GOV-GUI-INVALID", f"{rel} parity section must be a JSON object.", rel, "Declare parity as an object."))
+            else:
+                missing = parity.get("missing")
+                if isinstance(missing, list) and missing:
+                    findings.append(_err(
+                        "GOV-GUI-PARITY-GAP",
+                        f"{rel} reports unclosed TUI/GUI parity gap(s): {', '.join(str(x) for x in missing)}.",
+                        rel,
+                        "Implement matching TUI/GUI views and clear parity.missing.",
+                    ))
+    return findings
+
+
+def _parse_hex_rgb(value: str) -> Tuple[float, float, float]:
+    """Parse #RGB or #RRGGBB into normalized [0, 1] sRGB components."""
+    raw = value.strip()[1:]
+    if len(raw) == 3:
+        raw = "".join(ch * 2 for ch in raw)
+    return tuple(int(raw[i : i + 2], 16) / 255.0 for i in (0, 2, 4))  # type: ignore[return-value]
+
+
+def _relative_luminance(rgb: Tuple[float, float, float]) -> float:
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _wcag_contrast_ratio(fg: str, bg: str) -> float:
+    l1 = _relative_luminance(_parse_hex_rgb(fg))
+    l2 = _relative_luminance(_parse_hex_rgb(bg))
+    bright, dark = max(l1, l2), min(l1, l2)
+    return (bright + 0.05) / (dark + 0.05)
+
+
+def check_brand_pack(root: Path) -> List[Finding]:
+    """Validate wellmanifest/brand token facades, profile binding, and WCAG AA contrast."""
+    candidates = _existing_files(root, (
+        ".governance/brand.json", "brand.json",
+        "brand/tokens.json", "design/brand.json", "tokens/brand.json",
+    ))
+    if not candidates:
+        return [_err(
+            "GOV-BRAND-MISSING",
+            "Repository requires wellmanifest/brand but no brand descriptor (.governance/brand.json or brand/tokens.json) was found.",
+            ".governance/brand.json",
+            "Adopt a product brand profile (e.g. subactor/brand) and declare facade color tokens in .governance/brand.json.",
+        )]
+
+    findings: List[Finding] = []
+    for path in candidates:
+        rel = _rel(root, path)
+        try:
+            doc = _unique_json_load(path)
+        except Exception as exc:
+            findings.append(_err("GOV-BRAND-INVALID", f"{rel} contains invalid JSON: {exc}", rel, f"Fix JSON syntax in {rel}."))
+            continue
+
+        profile_ref = doc.get("profile") or doc.get("home") or doc.get("brand_profile")
+        if not isinstance(profile_ref, str) or not profile_ref.strip():
+            findings.append(Finding(
+                code="GOV-BRAND-PROFILE-MISSING",
+                message=f"{rel} does not declare a canonical brand 'profile'/'home' reference.",
+                severity="WARNING",
+                path=rel,
+                remediation="Bind 'profile' or 'home' to the adopted brand pack (e.g. subactor/brand).",
+            ))
+
+        color_map: Dict[str, str] = {}
+        raw_colors = doc.get("colors")
+        if raw_colors is not None and not isinstance(raw_colors, dict):
+            findings.append(_err("GOV-BRAND-INVALID", f"{rel} 'colors' must be an object.", rel, "Declare 'colors' as a map of token -> #RGB/#RRGGBB."))
+        elif isinstance(raw_colors, dict):
+            for key, val in raw_colors.items():
+                if not isinstance(val, str) or not _HEX_COLOR_RE.fullmatch(val.strip()):
+                    findings.append(_err("GOV-BRAND-TOKEN-INVALID", f"{rel} color token '{key}' has invalid hex color {val!r}.", rel,
+                                         "Use valid sRGB hex colors (#RGB or #RRGGBB)."))
+                else:
+                    color_map[str(key)] = val.strip()
+
+        raw_tokens = doc.get("tokens")
+        if isinstance(raw_tokens, dict):
+            for key, val in raw_tokens.items():
+                if isinstance(val, str) and (val.strip().startswith("#") or any(h in str(key).lower() for h in _BRAND_COLOR_TOKEN_HINTS)):
+                    if not _HEX_COLOR_RE.fullmatch(val.strip()):
+                        findings.append(_err("GOV-BRAND-TOKEN-INVALID", f"{rel} token '{key}' has invalid hex color {val!r}.", rel,
+                                             "Use valid sRGB hex colors (#RGB or #RRGGBB)."))
+                    else:
+                        color_map[str(key)] = val.strip()
+
+        pairs: List[Dict[str, Any]] = []
+        raw_pairs = doc.get("contrast_pairs")
+        if isinstance(raw_pairs, list):
+            pairs.extend(p for p in raw_pairs if isinstance(p, dict))
+        if "foreground" in color_map and "background" in color_map and not raw_pairs:
+            pairs.append({"name": "default", "foreground": color_map["foreground"], "background": color_map["background"]})
+
+        for pair in pairs:
+            fg_raw = pair.get("foreground")
+            bg_raw = pair.get("background")
+            fg = color_map.get(fg_raw, fg_raw) if isinstance(fg_raw, str) else None
+            bg = color_map.get(bg_raw, bg_raw) if isinstance(bg_raw, str) else None
+            if not isinstance(fg, str) or not _HEX_COLOR_RE.fullmatch(fg.strip()) or not isinstance(bg, str) or not _HEX_COLOR_RE.fullmatch(bg.strip()):
+                findings.append(_err("GOV-BRAND-TOKEN-INVALID", f"{rel} contrast pair '{pair.get('name', '?')}' references an unresolved or invalid hex color.", rel,
+                                     "Resolve foreground and background to #RGB/#RRGGBB colors."))
+                continue
+            ratio = _wcag_contrast_ratio(fg, bg)
+            min_ratio = 3.0 if pair.get("large_text") is True else 4.5
+            if ratio < min_ratio:
+                findings.append(_err(
+                    "GOV-BRAND-CONTRAST-FAIL",
+                    f"{rel} contrast pair '{pair.get('name', 'pair')}' ({fg} on {bg}) ratio {ratio:.2f}:1 is below WCAG AA {min_ratio:.1f}:1.",
+                    rel,
+                    f"Adjust foreground/background colors to achieve at least {min_ratio:.1f}:1 contrast.",
+                ))
+    return findings

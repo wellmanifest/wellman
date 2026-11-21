@@ -712,6 +712,29 @@
         "execution authority",
         "verified runtime conformance"
       ]
+    },
+    {
+      "id": "wellmanifest/gui",
+      "owns": [
+        "declarative GUI view schemas",
+        "TUI/GUI parity contracts",
+        "panel layout and URL state rules"
+      ],
+      "excludes": [
+        "execution authority",
+        "verified runtime conformance"
+      ]
+    },
+    {
+      "id": "wellmanifest/brand",
+      "owns": [
+        "adopted brand token facades",
+        "WCAG AA contrast validation"
+      ],
+      "excludes": [
+        "execution authority",
+        "verified runtime conformance"
+      ]
     }
   ]
 }

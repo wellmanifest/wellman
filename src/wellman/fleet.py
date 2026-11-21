@@ -206,6 +206,22 @@ def _manifest_write_blocker(path: Path, manifest: Optional[Dict[str, Any]], upda
     return None
 
 
+def _primary_checkout_write_blocker(path: Path) -> Optional[str]:
+    """Block fleet write operations on governed primary/main checkouts (PLF-006)."""
+    allocator = path / "project" / "new-ticket.sh"
+    if not allocator.exists() and not allocator.is_symlink():
+        return None
+    is_primary = (path / ".git").is_dir()
+    proc = _git(path, "symbolic-ref", "--quiet", "--short", "HEAD")
+    branch = proc.stdout.strip() if proc.returncode == 0 else ""
+    if is_primary or branch in {"main", "master"}:
+        return (
+            "governed primary checkout requires ticket allocation via ./project/new-ticket.sh "
+            "(never write directly on main); run inside a ticket worktree or emit remediation tickets"
+        )
+    return None
+
+
 def _json_bytes(value: Any) -> bytes:
     return (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
@@ -288,6 +304,10 @@ def _plan_record(record: RepositoryRecord, target: str, allow_dirty: bool, updat
     missing_agents = [f for f in AGENT_INSTRUCTION_PATHS if not (record.path / f).exists()]
     if missing_agents:
         actions.append(f"project agent host instruction contracts ({', '.join(missing_agents)})")
+    if actions:
+        checkout_blocker = _primary_checkout_write_blocker(record.path)
+        if checkout_blocker:
+            blockers.append(checkout_blocker)
     return {
         "path": str(record.path),
         "repository": record.repository,
@@ -351,6 +371,13 @@ def apply_plan(plan: Dict[str, Any], target: str, update_manifests: bool = False
         manifest_blocker = _manifest_write_blocker(path, manifest, update_manifests)
         if manifest_blocker:
             result["blockers"] = [*item["blockers"], manifest_blocker]
+            result["ready"] = False
+            result["status"] = "skipped"
+            results.append(result)
+            continue
+        checkout_blocker = _primary_checkout_write_blocker(path)
+        if checkout_blocker:
+            result["blockers"] = [*item["blockers"], checkout_blocker]
             result["ready"] = False
             result["status"] = "skipped"
             results.append(result)

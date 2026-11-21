@@ -1,0 +1,84 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-115",
+  "summary": "Add optional analysis extra for code2llm (PLF-003)",
+  "workstream": "integration",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-115/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "pyproject.toml",
+    "src/wellman/adoption.py",
+    "tests/test_adoption.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "3c71ce8afd2feb0d4809428af2b2b7c288c8b03d",
+    "targetBranch": "main",
+    "outcome": "Declare optional extra `analysis` (`code2llm>=0.5.180`) in `pyproject.toml`, guide callers to `wellman[analysis]` / `--with code2llm` when `code2llm` module analysis fails in `src/wellman/adoption.py`, and cover both in `tests/test_adoption.py` (PLF-003).",
+    "nonGoals": [
+      "Do not make code2llm a mandatory runtime dependency of wellman.",
+      "Do not modify unrelated dependency pins or lockfile revision headers in uv.lock."
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 15,
+    "budgets": {
+      "maxImplementationFiles": 3,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Add `analysis = [\"code2llm>=0.5.180; python_version >= '3.10'\"]` under `[project.optional-dependencies]` in `pyproject.toml`, preserve fallback AST behavior, and update the `recommend(..., analyze=True)` failure diagnostic to reference `wellman[analysis]` and `--with code2llm`.",
+      "components": [
+        {
+          "name": "Wellman packaging & adoption AST analysis",
+          "paths": [
+            "pyproject.toml",
+            "src/wellman/adoption.py",
+            "tests/test_adoption.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the commit on ticket-115; wellman continues using stdlib AST fallback when code2llm is absent."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          ".venv/bin/pytest -q"
+        ],
+        "evidence": "Full wellman test suite passes including new tests for optional extra `analysis` and diagnostic guidance."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh --base origin/main",
+          "wellman check --root . --json"
+        ],
+        "evidence": "Governance gate and wellman standards checks pass cleanly."
+      }
+    ]
+  }
+}

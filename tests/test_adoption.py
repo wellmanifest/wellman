@@ -649,4 +649,33 @@ def test_historical_reconciliation_adds_missing_requires_while_keeping_unrequest
     assert reqs['wellmanifest/uriprocess'] == 'S1'
 
 
+def test_pyproject_declares_optional_analysis_extra_for_code2llm():
+    import tomllib
+
+    pyproject_path = Path(__file__).resolve().parents[1] / 'pyproject.toml'
+    data = tomllib.loads(pyproject_path.read_text(encoding='utf-8'))
+    extras = data['project']['optional-dependencies']
+    assert 'analysis' in extras
+    assert any(dep.startswith('code2llm>=0.5.180') for dep in extras['analysis'])
+
+
+def test_recommend_analysis_failure_guides_wellman_analysis_extra(monkeypatch, tmp_path):
+    from wellman.adoption import recommend
+
+    subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
+    real_run = subprocess.run
+
+    def fake_run(cmd, *args, **kwargs):
+        if isinstance(cmd, (list, tuple)) and len(cmd) >= 3 and cmd[1] == '-I' and cmd[2] == '-c':
+            return subprocess.CompletedProcess(cmd, 1)
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, 'run', fake_run)
+    with pytest.raises(ValueError) as exc_info:
+        recommend(tmp_path, analyze=True)
+    message = str(exc_info.value)
+    assert 'code2llm module analysis failed' in message
+    assert 'wellman[analysis]' in message
+    assert '--with code2llm' in message
+
 

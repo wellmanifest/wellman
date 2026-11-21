@@ -293,7 +293,11 @@ def recommend(root, *, ast_report=None, analyze=False, evidence=(), hints=(), ll
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                     cwd=output, timeout=timeout, check=False)
             if result.returncode:
-                raise ValueError('code2llm module analysis failed; install code2llm in the Wellman Python environment or provide --ast; no selection was applied')
+                raise ValueError(
+                    "code2llm module analysis failed; install wellman[analysis] "
+                    "(or 'uv tool install wellman --with code2llm') or provide --ast; "
+                    "no selection was applied"
+                )
             consume(Path(output) / 'analysis.json', 'generated-this-run')
     elif ast_report is not None:
         consume(ast_report, 'imported-unverified')

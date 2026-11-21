@@ -513,6 +513,7 @@ class StandardsValidator:
                 "wellmanifest/status",
                 "wellmanifest/performance",
                 "wellmanifest/anonym",
+                "wellmanifest/gui",
                 "wellmanifest/brand",
                 "wellmanifest/offer",
                 "wellmanifest/wellman",

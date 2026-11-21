@@ -509,6 +509,10 @@ class ConformanceRunner:
             findings.extend(self.check_nl_uri_dsl_llm())
         if "wellmanifest/python" in registered_reqs or (self.root / ".governance" / "python-dist.json").is_file():
             findings.extend(self.check_python())
+        if "wellmanifest/gui" in registered_reqs or (self.root / ".governance" / "gui.json").is_file():
+            findings.extend(self.check_gui())
+        if "wellmanifest/brand" in registered_reqs or (self.root / ".governance" / "brand.json").is_file():
+            findings.extend(self.check_brand())
         for req_id, fn in (
             ("wellmanifest/authority-lifecycle", self.check_authority_lifecycle),
             ("wellmanifest/repair-lifecycle", self.check_repair_lifecycle),
@@ -1063,6 +1067,16 @@ class ConformanceRunner:
         from wellman.domain_pack_checkers import check_semver_pack
         return check_semver_pack(self.root)
 
+    def check_gui(self) -> List[Finding]:
+        """Validate wellmanifest/gui view schemas and TUI/GUI parity."""
+        from wellman.domain_pack_checkers import check_gui_pack
+        return check_gui_pack(self.root)
+
+    def check_brand(self) -> List[Finding]:
+        """Validate wellmanifest/brand token facades and WCAG AA contrast."""
+        from wellman.domain_pack_checkers import check_brand_pack
+        return check_brand_pack(self.root)
+
     def check_taskand(self) -> List[Finding]:
         """Validate wellmanifest/taskand capsule contracts, grants, bundles, and DAG task orchestration."""
         from wellman.uri_pack_checkers import check_taskand_pack
@@ -1421,6 +1435,8 @@ class ConformanceRunner:
             "wellmanifest/nl-api-llm": self.check_nl_api_llm,
             "wellmanifest/poa": self.check_poa,
             "wellmanifest/anonym": self.check_anonym,
+            "wellmanifest/gui": self.check_gui,
+            "wellmanifest/brand": self.check_brand,
         }
         check = checks.get(standard_id)
         if check is not None:

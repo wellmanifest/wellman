@@ -20,7 +20,7 @@ def _resolve_version() -> str:
     try:
         return _get_version("wellman")
     except Exception:
-        return "0.23.2"
+        return "0.23.3"
 
 
 __version__ = _resolve_version()

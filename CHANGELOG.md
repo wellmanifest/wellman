@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.23.3] - 2026-11-21
+
+### Added
+- Register and implement `wellmanifest/gui` and `wellmanifest/brand` checkers so all 55 catalog standards have S1 coverage [ticket-118, PLF-010].
+
+### Fixed
+- Block `main`/primary-checkout write guidance in `wellman fleet` dispatch output (`_primary_checkout_write_blocker`) [ticket-116, PLF-006].
+- Surface `redup` reuse evidence discovery hints in `wellman adopt` and `GOV-REUSE-NO-RECEIPT` remediation in `wellman check` [ticket-117, PLF-004, PLF-005].
+
+### Changed
+- Declare optional `analysis` extra (`code2llm`) in `pyproject.toml` and emit install guidance when absent [ticket-115, PLF-003].
+- Bump release metadata to `0.23.3` [ticket-119].
+
 ## [0.23.2] - 2026-11-21
 
 ### Fixed

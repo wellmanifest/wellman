@@ -1,0 +1,92 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-119",
+  "summary": "Release wellman 0.23.3 with PLF-003/004/005/006/010 fixes",
+  "workstream": "integration",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-119/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "CHANGELOG.md",
+    "README.md",
+    "VERSION",
+    "pyproject.toml",
+    "src/wellman/__init__.py",
+    "tests/test_cli.py",
+    "uv.lock"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "3235e835ad3e5c405b0d3e24c089f8b03183b52d",
+    "targetBranch": "main",
+    "outcome": "Release wellman 0.23.3 with Validator-merged ticket-115, ticket-116, ticket-117, and ticket-118 fixes (PLF-003, PLF-004, PLF-005, PLF-006, PLF-010).",
+    "nonGoals": [
+      "No checker or runtime logic changes beyond the already merged ticket-115 through ticket-118 commits.",
+      "No tag, registry upload, or GitHub Release in this change."
+    ],
+    "complexity": "M",
+    "estimatedMinutes": 25,
+    "budgets": {
+      "maxImplementationFiles": 7,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Bump coupled release metadata to 0.23.3 across VERSION, pyproject.toml, src/wellman/__init__.py, README.md, CHANGELOG.md, tests/test_cli.py, and uv.lock.",
+      "components": [
+        {
+          "name": "Wellman distribution and release metadata",
+          "paths": [
+            "CHANGELOG.md",
+            "README.md",
+            "VERSION",
+            "pyproject.toml",
+            "src/wellman/__init__.py",
+            "tests/test_cli.py",
+            "uv.lock"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert to accepted base 3235e835ad3e5c405b0d3e24c089f8b03183b52d; 0.23.2 remains published."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          ".venv/bin/pytest -q"
+        ],
+        "evidence": "Full wellman test suite passes with version 0.23.3 across VERSION, package metadata, and CLI output."
+      },
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "./project/governance-check.sh --base origin/main",
+          "wellman check --root . --json"
+        ],
+        "evidence": "Governance check returns GOV-PASS and wellman check passes cleanly."
+      }
+    ]
+  }
+}

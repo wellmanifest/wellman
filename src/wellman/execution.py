@@ -228,5 +228,12 @@ def run(args):
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         # Avoid echoing command/provider stderr, which may contain credentials.
         detail = str(error) if isinstance(error, ValueError) else type(error).__name__
+        if isinstance(error, ValueError) and detail.startswith("Refusing symlink:"):
+            try:
+                resolved = Path(args.root).resolve(strict=True)
+                if resolved.is_dir() and resolved != Path(args.root):
+                    detail = f"{detail} (retry with canonical path: --root {resolved})"
+            except OSError:
+                pass
         print(f"GOV-EXECUTION-001: {detail}", file=sys.stderr)
         return 2

@@ -271,3 +271,17 @@ def test_local_source_is_selected_without_importing_primary_source(project):
                    allow_primary=True) == 0
     report, = receipts(linked)
     assert report["source_binding"] == "dirty_worktree_not_attested"
+
+
+def test_symlinked_root_fails_closed_with_canonical_path_remediation(project, tmp_path, capsys):
+    environment(project)
+    alias = tmp_path / "org-alias"
+    alias.symlink_to(project, target_is_directory=True)
+    args = argparse.Namespace(root=alias, argv=["--", "pytest", "-q"],
+                              allow_primary_venv=False, dry_run=True)
+    assert run(args) == 2
+    err = capsys.readouterr().err
+    assert "GOV-EXECUTION-001" in err
+    assert "Refusing symlink:" in err
+    assert f"--root {project.resolve()}" in err
+    assert not (project / ".subactor").exists()

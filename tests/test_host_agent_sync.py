@@ -6,6 +6,7 @@ from pathlib import Path
 
 from wellman.host_agent_sync import (
     main as sync_hosts_main,
+    maybe_auto_sync_host_agents,
     read_synced_version,
     sync_host_agents,
 )
@@ -157,3 +158,27 @@ def test_check_only_reports_drift_without_mutating_files(tmp_path: Path) -> None
         "--check",
     ])
     assert rc_clean == 0
+
+
+def test_maybe_auto_sync_respects_ci_guards_and_triggers_on_version_bump(tmp_path: Path) -> None:
+    home, ws, wm = _setup_fake_host(tmp_path)
+
+    # Skips in CI / pytest / opt-out env
+    assert maybe_auto_sync_host_agents(home=home, workspace_root=ws, wellmanifest_root=wm, version="0.23.3", env={"CI": "true"}) is None
+    assert maybe_auto_sync_host_agents(home=home, workspace_root=ws, wellmanifest_root=wm, version="0.23.3", env={"WELLMAN_NO_AUTO_HOST_SYNC": "1"}) is None
+    assert not (wm / "STANDARDS.md").exists()
+
+    # Clean host env -> auto-syncs on first run
+    first = maybe_auto_sync_host_agents(home=home, workspace_root=ws, wellmanifest_root=wm, version="0.23.3", env={})
+    assert first is not None and first["status"] == "synced"
+    assert read_synced_version(ws / "AGENTS.md") == "0.23.3"
+
+    # Same version -> fast skipped no-op
+    second = maybe_auto_sync_host_agents(home=home, workspace_root=ws, wellmanifest_root=wm, version="0.23.3", env={})
+    assert second is not None and second["skipped"] is True
+
+    # New wellman version -> automatically updates all host configs
+    third = maybe_auto_sync_host_agents(home=home, workspace_root=ws, wellmanifest_root=wm, version="0.24.0", env={})
+    assert third is not None and third["status"] == "synced" and third["skipped"] is False
+    assert read_synced_version(ws / "AGENTS.md") == "0.24.0"
+    assert read_synced_version(home / ".config" / "opencode" / "AGENTS.md") == "0.24.0"

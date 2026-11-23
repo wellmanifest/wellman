@@ -1,0 +1,26 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-121",
+  "summary": "Add version-stamped host_agent_sync module for LLM host standards SSOT",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-121/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/__main__.py",
+    "src/wellman/host_agent_sync.py",
+    "tests/test_host_agent_sync.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

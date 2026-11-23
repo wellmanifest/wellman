@@ -214,6 +214,21 @@ def _is_in_git_repo(path: Path) -> bool:
     return res.returncode == 0
 
 
+def _place_block_at_top(text: str, block: str) -> str:
+    """Remove any existing SSOT block and insert the new block right after a leading H1 (or at top)."""
+    cleaned = _BLOCK_RE.sub("", text)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip("\n")
+    if not cleaned:
+        return block
+    lines = cleaned.splitlines()
+    if lines and lines[0].startswith("# "):
+        rest = "\n".join(lines[1:]).lstrip("\n")
+        if rest:
+            return f"{lines[0]}\n\n{block}\n{rest}\n"
+        return f"{lines[0]}\n\n{block}"
+    return f"{block}\n{cleaned}\n"
+
+
 def _upsert_block(
     path: Path,
     block: str,
@@ -229,13 +244,9 @@ def _upsert_block(
         if not check_only:
             path.parent.mkdir(parents=True, exist_ok=True)
     text = path.read_text(encoding="utf-8") if path.exists() else ""
-    if _BLOCK_RE.search(text):
-        new_text = _BLOCK_RE.sub(block, text)
-        action = "UPDATED"
-    else:
-        sep = "\n\n" if text and not text.endswith("\n\n") else ("\n" if text and not text.endswith("\n") else "")
-        new_text = text + sep + block
-        action = "APPENDED" if text else "CREATED"
+    had_block = bool(_BLOCK_RE.search(text))
+    new_text = _place_block_at_top(text, block)
+    action = "UPDATED" if had_block else ("PREPEND" if text else "CREATED")
     if new_text == text:
         return "UNCHANGED"
     if check_only:
@@ -396,7 +407,7 @@ def sync_host_agents(
         )
 
     changed = any(
-        v in {"WRITTEN", "UPDATED", "APPENDED", "CREATED"} or v.startswith("WOULD_")
+        v in {"WRITTEN", "UPDATED", "APPENDED", "PREPEND", "CREATED"} or v.startswith("WOULD_")
         for v in targets.values()
     )
     return {

@@ -1,0 +1,26 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-126",
+  "summary": "Verify deployment descriptor and exact binding evidence offline (PLF-012)",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-126/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/deployment_check.py",
+    "src/wellman/schemas/deployment.schema.json",
+    "tests/test_deployment_check.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

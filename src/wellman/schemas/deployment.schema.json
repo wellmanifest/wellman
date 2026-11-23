@@ -1,0 +1,549 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.dev/schemas/deployment/v1",
+  "title": "Wellmanifest deployment definition v1",
+  "description": "Executor-neutral, exact-bound deployment policy. The document describes desired behavior and never carries authority or secret values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema",
+    "id",
+    "version",
+    "environment",
+    "source",
+    "target",
+    "strategy",
+    "preflight",
+    "authority",
+    "apply",
+    "verify",
+    "rollback",
+    "secrets",
+    "receipt"
+  ],
+  "properties": {
+    "$schema": {"const": "https://wellmanifest.dev/schemas/deployment/v1"},
+    "schema": {"const": "wellmanifest.deployment/v1"},
+    "id": {"$ref": "#/$defs/stableId"},
+    "version": {"$ref": "#/$defs/semver"},
+    "description": {"type": "string", "minLength": 1, "maxLength": 500},
+    "environment": {"enum": ["development", "staging", "production"]},
+    "source": {"$ref": "#/$defs/source"},
+    "target": {"$ref": "#/$defs/target"},
+    "strategy": {"$ref": "#/$defs/strategy"},
+    "preflight": {"$ref": "#/$defs/preflight"},
+    "authority": {"$ref": "#/$defs/authority"},
+    "apply": {"$ref": "#/$defs/apply"},
+    "verify": {"$ref": "#/$defs/verify"},
+    "rollback": {"$ref": "#/$defs/rollback"},
+    "secrets": {"$ref": "#/$defs/secrets"},
+    "receipt": {"$ref": "#/$defs/receipt"}
+  },
+  "$defs": {
+    "stableId": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9._:-]*[a-z0-9])?$",
+      "maxLength": 160
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "relativePath": {
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:[\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$))[A-Za-z0-9._/-]+$",
+      "minLength": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "repository", "revision", "artifactDigest", "entrypoint"],
+      "properties": {
+        "ref": {"$ref": "#/$defs/stableId"},
+        "repository": {"type": "string", "format": "uri", "pattern": "^https://"},
+        "revision": {"$ref": "#/$defs/revision"},
+        "artifactDigest": {"$ref": "#/$defs/digest"},
+        "entrypoint": {"$ref": "#/$defs/relativePath"}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bindingRef", "bindingDigest"],
+      "properties": {
+        "bindingRef": {"$ref": "#/$defs/stableId"},
+        "bindingDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "releaseMode",
+        "minimumHealthySeconds",
+        "maxUnavailablePercent",
+        "onFailure"
+      ],
+      "properties": {
+        "type": {"enum": ["atomic", "blue-green", "canary", "rolling"]},
+        "releaseMode": {"const": "immutable-release"},
+        "minimumHealthySeconds": {"type": "integer", "minimum": 0, "maximum": 86400},
+        "maxUnavailablePercent": {"type": "integer", "minimum": 0, "maximum": 100},
+        "stages": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1, "maximum": 100}
+        },
+        "onFailure": {"enum": ["rollback", "halt"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"type": {"const": "canary"}}, "required": ["type"]},
+          "then": {"required": ["stages"]},
+          "else": {"not": {"required": ["stages"]}}
+        },
+        {
+          "if": {"properties": {"type": {"const": "atomic"}}, "required": ["type"]},
+          "then": {"properties": {"maxUnavailablePercent": {"const": 0}}}
+        }
+      ]
+    },
+    "digitalTwin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "networkAccess", "productionCredentials", "writableScope"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "networkAccess": {"const": "none"},
+        "productionCredentials": {"const": "forbidden"},
+        "writableScope": {"const": "isolated-runtime-only"}
+      }
+    },
+    "preflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requiredChecks",
+        "digitalTwin",
+        "dryRunRequired",
+        "planHashAlgorithm",
+        "failClosed"
+      ],
+      "properties": {
+        "requiredChecks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/stableId"}
+        },
+        "digitalTwin": {"$ref": "#/$defs/digitalTwin"},
+        "dryRunRequired": {"const": true},
+        "planHashAlgorithm": {"const": "sha256"},
+        "failClosed": {"const": true}
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "issuerRef",
+        "bindExactPlanHash",
+        "invalidateOnInputChange",
+        "singleUse"
+      ],
+      "properties": {
+        "mode": {"const": "external-grant"},
+        "issuerRef": {"$ref": "#/$defs/stableId"},
+        "bindExactPlanHash": {"const": true},
+        "invalidateOnInputChange": {"const": true},
+        "singleUse": {"const": true}
+      }
+    },
+    "executor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter", "capabilities"],
+      "properties": {
+        "adapter": {"$ref": "#/$defs/stableId"},
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/stableId"}
+        }
+      }
+    },
+    "apply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executor", "idempotencyRequired", "timeoutSeconds", "maxAttempts"],
+      "properties": {
+        "executor": {"$ref": "#/$defs/executor"},
+        "idempotencyRequired": {"const": true},
+        "timeoutSeconds": {"type": "integer", "minimum": 1, "maximum": 86400},
+        "maxAttempts": {"type": "integer", "minimum": 1, "maximum": 5}
+      }
+    },
+    "verificationProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "endpointRef", "assertion"],
+      "properties": {
+        "id": {"$ref": "#/$defs/stableId"},
+        "endpointRef": {"$ref": "#/$defs/stableId"},
+        "assertion": {
+          "enum": ["healthy", "source-digest-match", "version-match", "active-source-revision-match", "active-entrypoint-match", "contract-smoke", "tls-valid", "custom-contract"]
+        }
+      }
+    },
+    "contentVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "entrypointFromSource", "requireSourceDigestMatch"],
+      "properties": {
+        "mode": {"const": "sha256"},
+        "entrypointFromSource": {"const": true},
+        "requireSourceDigestMatch": {"const": true}
+      }
+    },
+    "verify": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "public",
+        "activation",
+        "content",
+        "httpStatusOnlySufficient",
+        "timeoutSeconds",
+        "onFailure"
+      ],
+      "properties": {
+        "origin": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/verificationProbe"}
+        },
+        "public": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/verificationProbe"}
+        },
+        "activation": {
+          "type": "array",
+          "minItems": 3,
+          "allOf": [
+            {"contains": {"type": "object", "properties": {"assertion": {"const": "active-source-revision-match"}}, "required": ["assertion"]}},
+            {"contains": {"type": "object", "properties": {"assertion": {"const": "active-entrypoint-match"}}, "required": ["assertion"]}},
+            {"contains": {"type": "object", "properties": {"assertion": {"const": "contract-smoke"}}, "required": ["assertion"]}}
+          ],
+          "items": {"$ref": "#/$defs/verificationProbe"}
+        },
+        "content": {"$ref": "#/$defs/contentVerification"},
+        "httpStatusOnlySufficient": {"const": false},
+        "timeoutSeconds": {"type": "integer", "minimum": 1, "maximum": 86400},
+        "onFailure": {"const": "applied_unverified"}
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contentMode",
+        "automatic",
+        "triggers",
+        "verifyAfter",
+        "maxAttempts",
+        "onFailure",
+        "dnsBoundary"
+      ],
+      "properties": {
+        "contentMode": {"const": "activate-previous-release"},
+        "automatic": {"type": "boolean"},
+        "triggers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["apply_failed", "origin_verify_failed", "public_verify_failed", "stale_fingerprint"]
+          }
+        },
+        "verifyAfter": {"const": true},
+        "maxAttempts": {"type": "integer", "minimum": 1, "maximum": 3},
+        "onFailure": {"const": "needs_human"},
+        "dnsBoundary": {"const": "human-only"}
+      }
+    },
+    "secretReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "ref", "scope"],
+      "properties": {
+        "name": {"$ref": "#/$defs/stableId"},
+        "ref": {"$ref": "#/$defs/stableId"},
+        "scope": {"$ref": "#/$defs/stableId"}
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolution", "valuesForbidden", "references"],
+      "properties": {
+        "resolution": {"const": "executor-vault"},
+        "valuesForbidden": {"const": true},
+        "references": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/secretReference"}
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "required", "inputHashRequired", "secretsRedacted", "allowedOutcomes"],
+      "properties": {
+        "schema": {"const": "wellmanifest.deployment-receipt/v1"},
+        "required": {"const": true},
+        "inputHashRequired": {"const": true},
+        "secretsRedacted": {"const": true},
+        "allowedOutcomes": {
+          "const": [
+            "verified",
+            "denied",
+            "preflight_failed",
+            "applied_unverified",
+            "rolled_back",
+            "rollback_failed",
+            "needs_human"
+          ]
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "$schema": "https://wellmanifest.dev/schemas/deployment/v1",
+      "schema": "wellmanifest.deployment/v1",
+      "id": "docs.production",
+      "version": "1.0.0",
+      "description": "Atomic release of a documentation site",
+      "environment": "production",
+      "source": {
+        "ref": "workspace:docs",
+        "repository": "https://github.com/example/docs",
+        "revision": "1111111111111111111111111111111111111111",
+        "artifactDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "entrypoint": "public/index.html"
+      },
+      "target": {
+        "bindingRef": "docs-production",
+        "bindingDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "strategy": {
+        "type": "atomic",
+        "releaseMode": "immutable-release",
+        "minimumHealthySeconds": 30,
+        "maxUnavailablePercent": 0,
+        "onFailure": "rollback"
+      },
+      "preflight": {
+        "requiredChecks": ["binding-current", "source-exact", "capabilities-ready"],
+        "digitalTwin": {
+          "required": true,
+          "networkAccess": "none",
+          "productionCredentials": "forbidden",
+          "writableScope": "isolated-runtime-only"
+        },
+        "dryRunRequired": true,
+        "planHashAlgorithm": "sha256",
+        "failClosed": true
+      },
+      "authority": {
+        "mode": "external-grant",
+        "issuerRef": "founder-deployment-gate",
+        "bindExactPlanHash": true,
+        "invalidateOnInputChange": true,
+        "singleUse": true
+      },
+      "apply": {
+        "executor": {
+          "adapter": "redeploy",
+          "capabilities": ["release-upload", "release-activate", "release-rollback"]
+        },
+        "idempotencyRequired": true,
+        "timeoutSeconds": 600,
+        "maxAttempts": 2
+      },
+      "verify": {
+        "activation": [
+          {"id": "active-revision", "endpointRef": "binding:active-runtime", "assertion": "active-source-revision-match"},
+          {"id": "active-entrypoint", "endpointRef": "binding:active-runtime", "assertion": "active-entrypoint-match"},
+          {"id": "operator-contract", "endpointRef": "binding:operator-entrypoint", "assertion": "contract-smoke"}
+        ],
+        "origin": [
+          {"id": "origin-content", "endpointRef": "binding:origin", "assertion": "source-digest-match"}
+        ],
+        "public": [
+          {"id": "public-health", "endpointRef": "binding:public", "assertion": "healthy"},
+          {"id": "public-content", "endpointRef": "binding:public", "assertion": "source-digest-match"}
+        ],
+        "content": {
+          "mode": "sha256",
+          "entrypointFromSource": true,
+          "requireSourceDigestMatch": true
+        },
+        "httpStatusOnlySufficient": false,
+        "timeoutSeconds": 180,
+        "onFailure": "applied_unverified"
+      },
+      "rollback": {
+        "contentMode": "activate-previous-release",
+        "automatic": true,
+        "triggers": ["apply_failed", "origin_verify_failed", "public_verify_failed", "stale_fingerprint"],
+        "verifyAfter": true,
+        "maxAttempts": 2,
+        "onFailure": "needs_human",
+        "dnsBoundary": "human-only"
+      },
+      "secrets": {
+        "resolution": "executor-vault",
+        "valuesForbidden": true,
+        "references": [
+          {"name": "deployment-transport", "ref": "vault:docs-production", "scope": "site-sync:docs-production"}
+        ]
+      },
+      "receipt": {
+        "schema": "wellmanifest.deployment-receipt/v1",
+        "required": true,
+        "inputHashRequired": true,
+        "secretsRedacted": true,
+        "allowedOutcomes": [
+          "verified",
+          "denied",
+          "preflight_failed",
+          "applied_unverified",
+          "rolled_back",
+          "rollback_failed",
+          "needs_human"
+        ]
+      }
+    },
+    {
+      "$schema": "https://wellmanifest.dev/schemas/deployment/v1",
+      "schema": "wellmanifest.deployment/v1",
+      "id": "api.canary",
+      "version": "2.4.0",
+      "environment": "staging",
+      "source": {
+        "ref": "workspace:api",
+        "repository": "https://github.com/example/api",
+        "revision": "2222222222222222222222222222222222222222",
+        "artifactDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "entrypoint": "build/version.json"
+      },
+      "target": {
+        "bindingRef": "api-staging",
+        "bindingDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "strategy": {
+        "type": "canary",
+        "releaseMode": "immutable-release",
+        "minimumHealthySeconds": 60,
+        "maxUnavailablePercent": 10,
+        "stages": [10, 25, 50, 100],
+        "onFailure": "rollback"
+      },
+      "preflight": {
+        "requiredChecks": ["binding-current", "source-exact", "canary-capable"],
+        "digitalTwin": {
+          "required": true,
+          "networkAccess": "none",
+          "productionCredentials": "forbidden",
+          "writableScope": "isolated-runtime-only"
+        },
+        "dryRunRequired": true,
+        "planHashAlgorithm": "sha256",
+        "failClosed": true
+      },
+      "authority": {
+        "mode": "external-grant",
+        "issuerRef": "staging-deployment-gate",
+        "bindExactPlanHash": true,
+        "invalidateOnInputChange": true,
+        "singleUse": true
+      },
+      "apply": {
+        "executor": {
+          "adapter": "redeploy",
+          "capabilities": ["canary", "health-stage", "release-rollback"]
+        },
+        "idempotencyRequired": true,
+        "timeoutSeconds": 1200,
+        "maxAttempts": 1
+      },
+      "verify": {
+        "activation": [
+          {"id": "active-revision", "endpointRef": "binding:active-runtime", "assertion": "active-source-revision-match"},
+          {"id": "active-entrypoint", "endpointRef": "binding:active-runtime", "assertion": "active-entrypoint-match"},
+          {"id": "operator-contract", "endpointRef": "binding:operator-entrypoint", "assertion": "contract-smoke"}
+        ],
+        "origin": [
+          {"id": "origin-version", "endpointRef": "binding:origin", "assertion": "version-match"}
+        ],
+        "public": [
+          {"id": "public-health", "endpointRef": "binding:public", "assertion": "healthy"}
+        ],
+        "content": {
+          "mode": "sha256",
+          "entrypointFromSource": true,
+          "requireSourceDigestMatch": true
+        },
+        "httpStatusOnlySufficient": false,
+        "timeoutSeconds": 300,
+        "onFailure": "applied_unverified"
+      },
+      "rollback": {
+        "contentMode": "activate-previous-release",
+        "automatic": true,
+        "triggers": ["apply_failed", "origin_verify_failed", "public_verify_failed"],
+        "verifyAfter": true,
+        "maxAttempts": 2,
+        "onFailure": "needs_human",
+        "dnsBoundary": "human-only"
+      },
+      "secrets": {
+        "resolution": "executor-vault",
+        "valuesForbidden": true,
+        "references": []
+      },
+      "receipt": {
+        "schema": "wellmanifest.deployment-receipt/v1",
+        "required": true,
+        "inputHashRequired": true,
+        "secretsRedacted": true,
+        "allowedOutcomes": [
+          "verified",
+          "denied",
+          "preflight_failed",
+          "applied_unverified",
+          "rolled_back",
+          "rollback_failed",
+          "needs_human"
+        ]
+      }
+    }
+  ]
+}

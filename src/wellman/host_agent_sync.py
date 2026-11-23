@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -398,6 +399,43 @@ def sync_host_agents(
         "skipped": False,
         "targets": targets,
     }
+
+
+def maybe_auto_sync_host_agents(
+    *,
+    home: Path | None = None,
+    workspace_root: Path | None = None,
+    wellmanifest_root: Path | None = None,
+    version: str | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
+    """Automatically sync host LLM configs when wellman's version changes.
+
+    Fail-safe no-op in CI, pytest, opt-out environments, or hosts without a
+    local ``wellmanifest`` workspace directory.
+    """
+    active_env = os.environ if env is None else env
+    for guard in ("CI", "GITHUB_ACTIONS", "PYTEST_CURRENT_TEST", "WELLMAN_NO_AUTO_HOST_SYNC"):
+        val = str(active_env.get(guard, "")).strip().lower()
+        if val and val not in {"0", "false", "no"}:
+            return None
+
+    resolved_home = (home or Path.home()).resolve()
+    resolved_ws = (workspace_root or (resolved_home / "github")).resolve()
+    resolved_wm = (wellmanifest_root or (resolved_ws / "wellmanifest")).resolve()
+    if not resolved_wm.is_dir():
+        return None
+
+    try:
+        return sync_host_agents(
+            home=resolved_home,
+            workspace_root=resolved_ws,
+            wellmanifest_root=resolved_wm,
+            version=version,
+            if_version_changed=True,
+        )
+    except OSError:
+        return None
 
 
 def main(argv: list[str] | None = None) -> int:

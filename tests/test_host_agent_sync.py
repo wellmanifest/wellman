@@ -78,6 +78,8 @@ def test_sync_host_agents_writes_index_invariants_and_all_hosts(tmp_path: Path) 
 
     standards_text = (wm / "STANDARDS.md").read_text(encoding="utf-8")
     assert "**worktrees**" in standards_text
+    assert "**wellmanifest/worktrees**" not in standards_text
+    assert "wellmanifest/wellmanifest/" not in standards_text
     assert "**custom-std**" in standards_text
     assert "NEVER" in standards_text and ".worktrees/ticket-NNN--description" in standards_text
 

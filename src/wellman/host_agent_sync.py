@@ -51,13 +51,21 @@ def _first_readme_summary(repo_dir: Path) -> str:
     return ""
 
 
+def _normalize_standard_name(raw: str) -> str:
+    name = raw.strip().strip("/")
+    while name.startswith("wellmanifest/"):
+        name = name[len("wellmanifest/"):].strip("/")
+    return name
+
+
 def collect_standards(wellmanifest_root: Path) -> list[dict[str, str]]:
     """Collect standards from wellman.registry and optional repos.manifest."""
     by_name: dict[str, dict[str, str]] = {}
 
     for pack in list_standards():
-        name = getattr(pack, "id", None) or getattr(pack, "name", "")
-        if not name:
+        raw_name = getattr(pack, "id", None) or getattr(pack, "name", "")
+        name = _normalize_standard_name(str(raw_name))
+        if not name or "/" in name:
             continue
         repo_dir = wellmanifest_root / name
         desc = getattr(pack, "description", "") or getattr(pack, "summary", "") or ""
@@ -76,8 +84,8 @@ def collect_standards(wellmanifest_root: Path) -> list[dict[str, str]]:
             if not line or line.startswith("#"):
                 continue
             parts = raw.split("\t")
-            name = parts[0].strip()
-            if not name or name == ".github":
+            name = _normalize_standard_name(parts[0])
+            if not name or name == ".github" or "/" in name:
                 continue
             notes = parts[5].strip() if len(parts) > 5 else ""
             repo_dir = wellmanifest_root / name

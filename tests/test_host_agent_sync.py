@@ -184,3 +184,20 @@ def test_maybe_auto_sync_respects_ci_guards_and_triggers_on_version_bump(tmp_pat
     assert third is not None and third["status"] == "synced" and third["skipped"] is False
     assert read_synced_version(ws / "AGENTS.md") == "0.24.0"
     assert read_synced_version(home / ".config" / "opencode" / "AGENTS.md") == "0.24.0"
+
+
+def test_ssot_block_placed_at_top_right_after_h1_even_in_large_agents_md(tmp_path: Path) -> None:
+    home, ws, wm = _setup_fake_host(tmp_path)
+    long_prose = "# Workspace Root\n\n" + ("Legacy policy paragraph.\n" * 300)
+    (ws / "AGENTS.md").write_text(
+        long_prose + "\n<!-- wellmanifest:standards-ssot:start -->\nold\n<!-- wellmanifest:standards-ssot:end -->\n",
+        encoding="utf-8",
+    )
+
+    res = sync_host_agents(home=home, workspace_root=ws, wellmanifest_root=wm, version="0.23.3")
+    assert res["status"] == "synced"
+    updated = (ws / "AGENTS.md").read_text(encoding="utf-8")
+    assert updated.startswith("# Workspace Root\n\n<!-- wellmanifest:standards-ssot:start wellman-version=0.23.3 -->")
+    assert updated.find("wellmanifest:standards-ssot:start") < 100
+    assert updated.count("wellmanifest:standards-ssot:start") == 1
+    assert "Legacy policy paragraph." in updated

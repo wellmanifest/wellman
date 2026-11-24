@@ -23,10 +23,10 @@ from datetime import datetime
 import hashlib
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from wellman.validator import Finding
+from wellman.validator import Finding, calculate_sha256
 
 _MAX_FILE_BYTES = 2 * 1024 * 1024
 _SEMVER_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
@@ -677,11 +677,65 @@ def check_llm(root: Path) -> List[Finding]:
     return findings
 
 
+def _check_dsl_artifacts(root: Path, manifest: str, artifacts: Any) -> List[Finding]:
+    remediation = "Update the manifest from the intended repository artifact."
+    if not isinstance(artifacts, list) or not artifacts:
+        return [_err("GOV-DSL-INVALID", f"{manifest} must declare a non-empty artifact array.", manifest, remediation)]
+
+    findings: List[Finding] = []
+    for index, artifact in enumerate(artifacts):
+        location = f"{manifest} artifacts[{index}]"
+        relative = artifact.get("path") if isinstance(artifact, dict) else None
+        if (
+            not isinstance(relative, str)
+            or re.search(r"[\x00-\x1f\x7f\ud800-\udfff]", relative)
+            or "\\" in relative
+            or PureWindowsPath(relative).drive
+            or any(part in {"", ".", ".."} for part in relative.split("/"))
+        ):
+            findings.append(_err(
+                "GOV-DSL-ARTIFACT-PATH",
+                f"{location} must use a repository-relative POSIX file path.",
+                manifest, remediation,
+            ))
+            continue
+        expected = artifact.get("digest")
+        if not isinstance(expected, str) or not _SHA256_URI_RE.fullmatch(expected):
+            findings.append(_err(
+                "GOV-DSL-ARTIFACT-DIGEST",
+                f"{location} declares an invalid SHA-256 for {relative}.",
+                manifest, remediation,
+            ))
+            continue
+        candidate = root / relative
+        observed = None
+        try:
+            if not _has_symlink_component(root, candidate) and candidate.is_file():
+                observed = f"sha256:{calculate_sha256(candidate)}"
+        except OSError:
+            pass
+        if observed is None:
+            findings.append(_err(
+                "GOV-DSL-ARTIFACT-PATH",
+                f"{location} cannot read regular, non-symlink artifact {relative}.",
+                manifest, remediation,
+            ))
+            continue
+        if observed != expected:
+            findings.append(_err(
+                "GOV-DSL-ARTIFACT-DIGEST",
+                f"{location} has a stale SHA-256 for {relative}: expected {expected}, found {observed}.",
+                manifest, remediation,
+            ))
+    return findings
+
+
 def check_dsl(root: Path) -> List[Finding]:
     """Validate wellmanifest/dsl interoperability manifests."""
     candidates = _discover_candidates(root, (
         "dsl-manifest.json",
         ".governance/dsl-manifest.json",
+        "config/**/dsl-manifest.json",
         "profiles/*dsl*.json",
     ))
     if not candidates:
@@ -711,6 +765,8 @@ def check_dsl(root: Path) -> List[Finding]:
         for req_key in ("name", "domain"):
             if not isinstance(doc.get(req_key), str) or not doc[req_key].strip():
                 findings.append(_err("GOV-DSL-INVALID", f"{rel} is missing non-empty '{req_key}'.", rel, f"Declare '{req_key}' in {rel}."))
+        if "artifacts" in doc:
+            findings.extend(_check_dsl_artifacts(root, rel, doc["artifacts"]))
     return findings
 
 

@@ -1,0 +1,25 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-127",
+  "summary": "Verify declared DSL artifact digests in Wellman",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-127/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/catalog_pack_checkers.py",
+    "tests/test_catalog_pack_checkers.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

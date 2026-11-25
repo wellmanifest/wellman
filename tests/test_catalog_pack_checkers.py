@@ -236,6 +236,62 @@ def test_account_runtime_skills_status_and_performance(tmp_path: Path) -> None:
     ]
 
 
+def _write_nested_dsl(root: Path, artifact: dict) -> None:
+    _write_json(
+        root / "config" / "processes" / "dsl-manifest.json",
+        {
+            "schema": "wellmanifest.dsl/manifest/v1",
+            "id": "wellmanifest.demo-dsl",
+            "name": "Demo DSL",
+            "version": "0.1.0",
+            "domain": "governance",
+            "artifacts": [artifact],
+        },
+    )
+
+
+def test_dsl_checker_finds_nested_manifests_and_checks_actual_bytes(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "transport.py"
+    source.parent.mkdir()
+    source.write_bytes(b"# route\r\n")
+    _write_nested_dsl(tmp_path, {
+        "path": "src/transport.py",
+        "role": "parser-contract",
+        "digest": f"sha256:{hashlib.sha256(source.read_bytes()).hexdigest()}",
+    })
+    _write_json(tmp_path / ".governance" / "standard-requirements.json", {
+        "schema": "wellman.standard-requirements/v1",
+        "requirements": [{"id": "wellmanifest/dsl"}],
+    })
+    runner = ConformanceRunner(tmp_path)
+    assert runner.run_standard("wellmanifest/dsl") == []
+
+    source.write_bytes(b"# route\n")
+    findings = runner.run_standard("wellmanifest/dsl")
+    assert [finding.code for finding in findings] == ["GOV-DSL-ARTIFACT-DIGEST"]
+    assert findings[0].path == "config/processes/dsl-manifest.json"
+    assert "src/transport.py" in findings[0].message
+    assert any(finding.code == "GOV-DSL-ARTIFACT-DIGEST" for finding in runner.run_all())
+
+    source.unlink()
+    assert [finding.code for finding in runner.run_standard("wellmanifest/dsl")] == ["GOV-DSL-ARTIFACT-PATH"]
+
+
+@pytest.mark.parametrize("relative", ["../outside", "/absolute", "C:drive", "folder//file", "link"])
+def test_dsl_checker_refuses_unsafe_artifact_paths(tmp_path: Path, relative: str) -> None:
+    source = tmp_path / "source"
+    source.write_text("example", encoding="utf-8")
+    if relative == "link":
+        (tmp_path / relative).symlink_to(source)
+    _write_nested_dsl(tmp_path, {
+        "path": relative,
+        "role": "example",
+        "digest": f"sha256:{hashlib.sha256(source.read_bytes()).hexdigest()}",
+    })
+    findings = ConformanceRunner(tmp_path).run_standard("wellmanifest/dsl")
+    assert [finding.code for finding in findings] == ["GOV-DSL-ARTIFACT-PATH"]
+
+
 def test_llm_dsl_poa_anonym_and_symlink_refusal(tmp_path: Path) -> None:
     _write_json(
         tmp_path / ".wellmanifest" / "llm.json",

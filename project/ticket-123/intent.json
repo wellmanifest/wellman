@@ -1,0 +1,25 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-123",
+  "summary": "Normalize wellmanifest/ prefix in host_agent_sync collect_standards to eliminate duplicate and broken URLs",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    "project/ticket-123/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/host_agent_sync.py",
+    "tests/test_host_agent_sync.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

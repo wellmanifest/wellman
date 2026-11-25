@@ -1,0 +1,25 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-116",
+  "summary": "Block fleet adopt writes on governed primary main checkouts (PLF-006)",
+  "workstream": "application",
+  "classification": {
+    "kind": "BUG",
+    "priority": "P1",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-116/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/fleet.py",
+    "tests/test_fleet.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null
+}

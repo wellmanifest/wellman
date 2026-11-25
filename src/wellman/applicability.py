@@ -47,6 +47,8 @@ CAPABILITIES = {
     'secrets':'security:secret-leases',
     'clonerd':'runtime:clonerd-environment',
     'llm-account-tool':'runtime:llm-account-profiles',
+    'gui':'ui:graphical-interface',
+    'brand':'ui:brand-tokens',
 }
 RULES = {identifier:{'scope':'repository' if identifier in BASELINE else 'component',
     'applies_when':{'all':[{'feature':'repository:git' if identifier in BASELINE else CAPABILITIES[identifier.split('/')[1]],'is':'present'}],'any':[]},

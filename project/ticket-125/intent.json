@@ -1,0 +1,74 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-125",
+  "summary": "Sync bundled ticket_activity with new-project owner-decision resolver",
+  "workstream": "application",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-125/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    "src/wellman/_bundled/ticket_activity.py",
+    "tests/test_bundled_ticket_activity.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "3d82a90884ba695c6ba1794351a81952c48f5744",
+    "targetBranch": "main",
+    "outcome": "The bundled ticket_activity resolver equals wellmanifest/new-project main (owner-decision verification, ticket-471), so wellman check no longer fails on checkouts whose policy lists the cancelled outcome.",
+    "nonGoals": [
+      "Syncing the other bundled checkers (worktree_overlap_check, governance_check); they work unchanged with the new resolver.",
+      "The 22 pre-existing test_fleet/test_selection failures, identical on main."
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 30,
+    "budgets": {
+      "maxImplementationFiles": 2,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Copy scripts/ticket_activity.py from new-project main (0043e90) byte for byte, and pin the accepted policy shape in a test.",
+      "components": [
+        {
+          "name": "bundled-standard-checkers",
+          "paths": [
+            "src/wellman/_bundled/ticket_activity.py",
+            "tests/test_bundled_ticket_activity.py"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the ticket commit through the protected publication process."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "python -m pytest -q tests/test_bundled_ticket_activity.py"
+        ],
+        "evidence": "A policy listing cancelled/owner-decision loads; a closed-unmerged receipt releases, resumed work re-activates, a receipt without decision is refused."
+      }
+    ]
+  }
+}

@@ -73,10 +73,15 @@ def test_runner_git_lifecycle_accepts_plf_ticket_branch(tmp_path, monkeypatch):
 def test_runner_selected_reuse_on_empty_dir(tmp_path):
     runner = ConformanceRunner(tmp_path)
     findings = runner.run_standard("wellmanifest/reuse")
-    codes = [f.code for f in findings]
-    assert "GOV-REUSE-NO-RECEIPT" in codes
-    assert "GOV-REUSE-NO-PLANFILE" in codes
-    assert "GOV-REUSE-NO-DOCS" in codes
+    by_code = {f.code: f for f in findings}
+    assert "GOV-REUSE-NO-RECEIPT" in by_code
+    assert "wellmanifest/reuse" in (by_code["GOV-REUSE-NO-RECEIPT"].remediation or "")
+    assert "--project ." in (by_code["GOV-REUSE-NO-RECEIPT"].remediation or "")
+    assert "python3 scripts/record_scan_receipt.py" not in (
+        by_code["GOV-REUSE-NO-RECEIPT"].remediation or ""
+    )
+    assert "GOV-REUSE-NO-PLANFILE" in by_code
+    assert "GOV-REUSE-NO-DOCS" in by_code
 
 
 def test_runner_selected_reuse_with_valid_setup(tmp_path):

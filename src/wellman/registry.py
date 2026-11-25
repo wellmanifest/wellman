@@ -669,6 +669,30 @@ STANDARDS_CATALOG: Dict[str, StandardPack] = {
         schemas=["standard/llm-account-tool.schema.json"],
         docs_url="https://github.com/wellmanifest/llm-account-tool",
     ),
+    "wellmanifest/gui": StandardPack(
+        id="wellmanifest/gui",
+        name="Universal GUI DSL & View Parity Standard",
+        owner="wellmanifest/gui",
+        description="Declarative GUI/page DSL schemas, panel toolbar/layout rules, URL state synchronization, and TUI/GUI parity contracts",
+        minimum_level="S1",
+        execution_model="local-conformance",
+        owns=["declarative GUI view schemas", "TUI/GUI parity contracts", "panel layout and URL state rules"],
+        excludes=["execution authority", "verified runtime conformance"],
+        schemas=["schemas/gui-dsl.schema.v1.json"],
+        docs_url="https://github.com/wellmanifest/gui",
+    ),
+    "wellmanifest/brand": StandardPack(
+        id="wellmanifest/brand",
+        name="Brand Token, Vocabulary & WCAG AA Contrast Standard",
+        owner="wellmanifest/brand",
+        description="Adopted product brand token facades, closed brand vocabulary references, and deterministic WCAG AA contrast compliance",
+        minimum_level="S1",
+        execution_model="local-conformance",
+        owns=["adopted brand token facades", "WCAG AA contrast validation"],
+        excludes=["execution authority", "verified runtime conformance"],
+        requires=["wellmanifest/ssot"],
+        docs_url="https://github.com/wellmanifest/brand",
+    ),
 }
 
 # Standard profiles grouping multiple standard packs
@@ -797,6 +821,8 @@ def get_standard(standard_id: str) -> Optional[StandardPack]:
         "secrets": "wellmanifest/secrets",
         "clonerd": "wellmanifest/clonerd",
         "llm-account-tool": "wellmanifest/llm-account-tool",
+        "gui": "wellmanifest/gui",
+        "brand": "wellmanifest/brand",
     }
     normalized = aliases.get(standard_id, standard_id)
     return STANDARDS_CATALOG.get(normalized)

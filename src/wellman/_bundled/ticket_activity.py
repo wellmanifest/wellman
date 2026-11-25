@@ -23,6 +23,14 @@ OCCURRED_AT_RE = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$"
 )
 REWRITE_VERIFICATION = "git-ancestry-or-rewritten-patch-series"
+# A ticket whose pull request the owner closed without merging (work-registration
+# step 6). The decision binds the exact PR head; new commits on any ticket branch
+# after that head re-activate the reservation. The branch itself is preserved.
+OWNER_DECISION_VERIFICATION = "owner-decision"
+RECEIPT_FIELDS = frozenset({"receiptRef", "ticket", "outcome", "headSha", "terminalSha", "targetBranch", "occurredAt"})
+DECISION_FIELDS = frozenset({"pullRequest", "pullRequestState", "decidedBy", "decisionRef"})
+DECIDED_BY_RE = re.compile(r"^[A-Za-z0-9._:\[\]-]{1,100}$")
+DECISION_REF_RE = re.compile(r"^\S{1,500}$")
 DEFAULT_TARGET_BRANCH = "main"
 # status-projection stays the conservative default: an absent registry must not
 # be guessed away. git-ancestry is opt-in, for an adopter whose hand-edited
@@ -65,6 +73,8 @@ class ActivityReadBatch:
         self.files = {}
         self.ancestors = {}
         self.derived = {}
+        self.graphs = {}
+        self.ancestor_probes = {}
         self.branch_heads = None
         self.consulted_ticket_numbers = set()
         self.worktree_registration = ""
@@ -77,6 +87,8 @@ class ActivityReadBatch:
         self.files.clear()
         self.ancestors.clear()
         self.derived.clear()
+        self.graphs.clear()
+        self.ancestor_probes.clear()
         self.branch_heads = None
         self.consulted_ticket_numbers.clear()
         self.context_reset = _READ_BATCH.set(self)
@@ -140,9 +152,8 @@ class ActivityReadBatch:
                     for number in self.consulted_ticket_numbers:
                         if latest_heads.get(number, ()) != self.branch_heads.get(number, ()):
                             raise ActivityError("Git state changed during activity inspection; retry")
-                for (older, newer), expected in self.ancestors.items():
-                    if _run_ancestor(self.root, older, newer) != expected:
-                        raise ActivityError("Git state changed during activity inspection; retry")
+                if _revalidated_ancestors(self.root, self.ancestors, tuple(self.graphs)) != self.ancestors:
+                    raise ActivityError("Git state changed during activity inspection; retry")
                 for (path, operation), expected in self.files.items():
                     if _file_observation(path, operation) != expected:
                         raise ActivityError("activity document changed during inspection; retry")
@@ -153,6 +164,8 @@ class ActivityReadBatch:
             self.files.clear()
             self.ancestors.clear()
             self.derived.clear()
+            self.graphs.clear()
+            self.ancestor_probes.clear()
             self.branch_heads = None
             self.consulted_ticket_numbers.clear()
 
@@ -272,7 +285,7 @@ def _validate_terminal_outcomes(value):
     outcomes = value.get("terminalOutcomes")
     if not isinstance(outcomes, dict) or not outcomes:
         raise ActivityError("managed terminal outcomes are missing")
-    supported_verification = {"git-ancestry", REWRITE_VERIFICATION}
+    supported_verification = {"git-ancestry", REWRITE_VERIFICATION, OWNER_DECISION_VERIFICATION}
     for name, rule in outcomes.items():
         if (
             not isinstance(name, str)
@@ -361,10 +374,25 @@ def projection_status(ticket_dir: Path) -> str | None:
     return next(iter(statuses), None)
 
 
+def _validate_decision(decision):
+    if not isinstance(decision, dict) or set(decision) != DECISION_FIELDS:
+        raise ActivityError("terminal receipt decision fields are invalid")
+    number = decision.get("pullRequest")
+    if not isinstance(number, int) or isinstance(number, bool) or number < 1:
+        raise ActivityError("terminal receipt decision pull request is invalid")
+    if decision.get("pullRequestState") != "closed-unmerged":
+        raise ActivityError("terminal receipt decision requires a pull request closed without merge")
+    if not isinstance(decision.get("decidedBy"), str) or DECIDED_BY_RE.fullmatch(decision["decidedBy"]) is None:
+        raise ActivityError("terminal receipt decision actor is invalid")
+    if not isinstance(decision.get("decisionRef"), str) or DECISION_REF_RE.fullmatch(decision["decisionRef"]) is None:
+        raise ActivityError("terminal receipt decision reference is invalid")
+
+
 def _validate_terminal_receipt(receipt, seen):
-    fields = {"receiptRef", "ticket", "outcome", "headSha", "terminalSha", "targetBranch", "occurredAt"}
-    if not isinstance(receipt, dict) or set(receipt) != fields:
+    if not isinstance(receipt, dict) or set(receipt) not in (RECEIPT_FIELDS, RECEIPT_FIELDS | {"decision"}):
         raise ActivityError("terminal receipt fields are invalid")
+    if "decision" in receipt:
+        _validate_decision(receipt["decision"])
     if not isinstance(receipt.get("receiptRef"), str) or RECEIPT_REF_RE.fullmatch(receipt["receiptRef"]) is None:
         raise ActivityError("terminal receipt reference is invalid")
     if receipt["receiptRef"] in seen:
@@ -398,6 +426,104 @@ def _validate_registry(value: Any, expected_repository: str) -> list[dict[str, s
     return receipts
 
 
+def _registry_receipts_by_ticket(root: Path, path: Path) -> dict[str, list[dict[str, str]]]:
+    """Validated receipts grouped by ticket, in registry order.
+
+    A batch reads the registry text once, so every ticket of one inspection
+    shares one parse and one full validation of that exact text. Any invalid
+    receipt still rejects every resolution, as an uncached read would.
+    """
+    try:
+        text = _read_text(path)
+    except OSError as error:
+        raise ActivityError(f"invalid activity document {path}: {error}") from error
+    expected = repository_ref(root)
+    batch = _READ_BATCH.get()
+    key = ("registry_receipts", path.absolute(), expected, text)
+    if batch is not None and key in batch.derived:
+        return batch.derived[key]
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise ActivityError(f"invalid activity document {path}: {error}") from error
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for receipt in _validate_registry(value, expected):
+        grouped.setdefault(receipt["ticket"], []).append(receipt)
+    if batch is not None:
+        batch.derived[key] = grouped
+    return grouped
+
+
+def _run_graph(root: Path, newer: str) -> tuple[dict[str, tuple[str, ...]], dict[str, int]] | None:
+    """The commit graph reachable from `newer` in topological order, or None if unreadable.
+
+    Children precede parents, so every ancestor of a commit has a larger index.
+    """
+    result = subprocess.run(
+        ["git", "-C", str(root), "rev-list", "--topo-order", "--parents", newer, "--"],
+        capture_output=True, check=False, timeout=60,
+        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+    )
+    if result.returncode:
+        return None
+    parents: dict[str, tuple[str, ...]] = {}
+    order: dict[str, int] = {}
+    for index, line in enumerate(result.stdout.decode("ascii", errors="replace").splitlines()):
+        commit, *rest = line.split()
+        parents[commit] = tuple(rest)
+        order[commit] = index
+    return parents, order
+
+
+def _graph_ancestor(graph, older: str, newer: str) -> bool | None:
+    """Answer `merge-base --is-ancestor older newer` from a graph containing `newer`.
+
+    None means the graph cannot answer because `newer` is outside it. Every
+    ancestor of `newer` is in the graph, so an absent `older` is not one.
+    """
+    if graph is None:
+        return None
+    parents, order = graph
+    if newer not in order:
+        return None
+    limit = order.get(older)
+    if limit is None or order[newer] > limit:
+        return False
+    stack, seen = [newer], {newer}
+    while stack:
+        commit = stack.pop()
+        if commit == older:
+            return True
+        for parent in parents[commit]:
+            # A commit after `older` in topological order cannot reach it.
+            if parent not in seen and order.get(parent, limit + 1) <= limit:
+                seen.add(parent)
+                stack.append(parent)
+    return False
+
+
+def _answer_from_graphs(graphs, older: str, newer: str) -> bool | None:
+    if not (SHA_RE.fullmatch(older) and SHA_RE.fullmatch(newer)):
+        return None
+    if newer in graphs and graphs[newer] is None:
+        return False  # `newer` is unreadable, so merge-base fails as well.
+    for graph in graphs.values():
+        answer = _graph_ancestor(graph, older, newer)
+        if answer is not None:
+            return answer
+    return None
+
+
+def _revalidated_ancestors(root: Path, observed: dict[tuple[str, str], bool], graph_roots) -> dict[tuple[str, str], bool]:
+    """Re-answer every observed relation from freshly read Git state."""
+    graphs = {newer: _run_graph(root, newer) for newer in graph_roots}
+    current: dict[tuple[str, str], bool] = {}
+    for older, newer in observed:
+        answer = _answer_from_graphs(graphs, older, newer)
+        current[(older, newer)] = _run_ancestor(root, older, newer) if answer is None else answer
+    return current
+
+
 def _run_ancestor(root: Path, older: str, newer: str) -> bool:
     result = subprocess.run(
         ["git", "-C", str(root), "merge-base", "--is-ancestor", older, newer],
@@ -415,7 +541,17 @@ def _ancestor(root: Path, older: str, newer: str) -> bool:
         raise ActivityError("activity read batch cannot cross checkouts")
     key = (older, newer)
     if key not in batch.ancestors:
-        batch.ancestors[key] = _run_ancestor(root, older, newer)
+        # One probe stays one merge-base. From the second question about the
+        # same full commit ID, read its history once; any later question
+        # about a commit inside that history is answered from the graph.
+        answer = _answer_from_graphs(batch.graphs, older, newer)
+        if answer is None:
+            probes = batch.ancestor_probes.get(newer, 0) + 1
+            batch.ancestor_probes[newer] = probes
+            if probes > 1 and SHA_RE.fullmatch(newer) and SHA_RE.fullmatch(older):
+                batch.graphs[newer] = _run_graph(root, newer)
+                answer = _answer_from_graphs(batch.graphs, older, newer)
+        batch.ancestors[key] = _run_ancestor(root, older, newer) if answer is None else answer
     return batch.ancestors[key]
 
 
@@ -553,6 +689,10 @@ def _terminal_verified(
     if rule is None or target is None:
         return False
     head_sha, terminal_sha = receipt["headSha"], receipt["terminalSha"]
+    if rule.get("verification") == OWNER_DECISION_VERIFICATION:
+        return _owner_decision_verified(root, receipt, target)
+    if "decision" in receipt:
+        return False
     if not _ancestor(root, terminal_sha, target):
         return False
     integrated = _ancestor(root, head_sha, terminal_sha)
@@ -560,6 +700,29 @@ def _terminal_verified(
         integrated = _rewritten_patch(root, head_sha, terminal_sha)
     return integrated and not _advanced_ticket_branch(
         root, receipt["ticket"], head_sha, terminal_sha
+    )
+
+
+def _commit_exists(root: Path, sha: str) -> bool:
+    return _git(root, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}", check=False) == sha
+
+
+def _owner_decision_verified(root: Path, receipt: dict[str, Any], target: str) -> bool:
+    """Owner closed the ticket PR unmerged at headSha; no later ticket work exists.
+
+    terminalSha is the target branch tip observed with the decision and must
+    still be on the target. The decided head must exist locally, so a receipt
+    cannot name work this clone never saw. Any ticket branch (local or origin)
+    that has advanced past the decided head makes the ticket active again.
+    """
+    if "decision" not in receipt:
+        return False
+    head_sha, terminal_sha = receipt["headSha"], receipt["terminalSha"]
+    if not _commit_exists(root, head_sha) or not _ancestor(root, terminal_sha, target):
+        return False
+    return not any(
+        head != head_sha and _ancestor(root, head_sha, head)
+        for head in _ticket_branch_heads(root, receipt["ticket"])
     )
 
 
@@ -604,6 +767,11 @@ def _branch_heads_by_ticket(listed: str) -> dict[str, tuple[str, ...]]:
 
 def _unmerged_ticket_branch(root: Path, ticket: str, target: str) -> bool:
     """Keep supported outstanding ticket branches active from a strict inventory."""
+    return any(not _ancestor(root, head, target) for head in _ticket_branch_heads(root, ticket))
+
+
+def _ticket_branch_heads(root: Path, ticket: str) -> tuple[str, ...]:
+    """Heads of every local and origin branch naming the ticket."""
     batch = _READ_BATCH.get()
     if batch is not None:
         if root.resolve() != batch.root:
@@ -631,7 +799,7 @@ def _unmerged_ticket_branch(root: Path, ticket: str, target: str) -> bool:
                 ticket,
             )
         )
-    return any(not _ancestor(root, head, target) for head in heads)
+    return heads
 
 
 def _target_tree_entries(root: Path, spec: str) -> frozenset[str]:
@@ -643,6 +811,92 @@ def _target_tree_entries(root: Path, spec: str) -> frozenset[str]:
             batch.derived[key] = frozenset(raw.splitlines())
         return batch.derived[key]
     return frozenset(raw.splitlines())
+
+
+def _is_tracking_carrier(path: str, parent: str) -> bool:
+    prefix = f"{parent}/" if parent else ""
+    if path in {"TODO.md", f"{prefix}TICKETS.md", "project/TICKETS.md"}:
+        return True
+    return re.match(rf"^{re.escape(prefix)}ticket-[0-9]{{3,}}(?:/|$)", path) is not None
+
+
+def _target_delivery_evidence(
+    root: Path,
+    target: str,
+    parent: str,
+) -> tuple[dict[str, str | None], frozenset[str], frozenset[str]]:
+    status_raw = _git(
+        root,
+        "grep",
+        "-I",
+        "-E",
+        r"^[[:space:]]*-[[:space:]]*\*\*Status\*\*:",
+        target,
+        "--",
+        parent or ".",
+        check=False,
+    )
+    log_raw = _git(
+        root,
+        "log",
+        "-m",
+        "--first-parent",
+        "--format=@@COMMIT@@%s",
+        "-z",
+        "--name-only",
+        target,
+        check=False,
+    )
+    batch = _READ_BATCH.get()
+    key = ("target_delivery_evidence", target, parent, status_raw, log_raw)
+    if batch is not None and key in batch.derived:
+        return batch.derived[key]
+
+    prefix = f"{parent}/" if parent else ""
+    readme_re = re.compile(rf"^{re.escape(prefix)}(ticket-[0-9]{{3,}})/README\.md$")
+    ticket_path_re = re.compile(rf"^{re.escape(prefix)}(ticket-[0-9]{{3,}})(?:/|$)")
+
+    statuses: dict[str, str | None] = {}
+    target_prefix = f"{target}:"
+    for line in status_raw.splitlines():
+        if not line.startswith(target_prefix):
+            continue
+        rel_path, sep, matched = line[len(target_prefix):].partition(":")
+        if not sep:
+            continue
+        match = readme_re.fullmatch(rel_path)
+        if match is None:
+            continue
+        ticket_name = match.group(1)
+        if ticket_name not in statuses:
+            parsed_status, _ = parse_ticket_state_text(matched)
+            statuses[ticket_name] = parsed_status
+
+    delivered_names: set[str] = set()
+    delivered_numbers: set[str] = set()
+    for record in log_raw.split("@@COMMIT@@"):
+        if not record:
+            continue
+        parts = record.split("\x00")
+        subject = parts[0]
+        paths: list[str] = []
+        for index, raw_path in enumerate(parts[1:]):
+            cleaned = raw_path.removeprefix("\n") if index == 0 else raw_path
+            if cleaned:
+                paths.append(cleaned)
+        if not any(not _is_tracking_carrier(path, parent) for path in paths):
+            continue
+        for path in paths:
+            path_match = ticket_path_re.match(path)
+            if path_match is not None:
+                delivered_names.add(path_match.group(1))
+        for token_match in TICKET_BRANCH_TOKEN_RE.finditer(subject):
+            delivered_numbers.add(str(int(token_match.group(1))))
+
+    result = (statuses, frozenset(delivered_names), frozenset(delivered_numbers))
+    if batch is not None:
+        batch.derived[key] = result
+    return result
 
 
 def delivery_landed(root: Path, ticket_dir: Path, target: str) -> bool:
@@ -660,11 +914,11 @@ def delivery_landed(root: Path, ticket_dir: Path, target: str) -> bool:
     release — was reasoning over that noise, which is why declaring a conflict
     never helped anyone.
 
-    A ticket's own directory is committed together with its delivery, because a
-    commit carrying only tracking carriers is refused. Its presence on the
-    target ref is therefore the ancestry evidence the policy asks for. A branch
-    for the same ticket that the target does not yet contain means more of the
-    delivery is still in flight, and the ticket stays active.
+    Mere directory existence on the target ref is insufficient when planning or
+    allocation commits the ticket stub before implementation lands. Require
+    either a terminal ticket status on the target ref or a first-parent commit
+    on the target ref tying the ticket to at least one non-carrier delivery
+    path, with no unmerged ticket branch still in flight.
     """
     try:
         relative = ticket_dir.resolve().relative_to(root.resolve()).as_posix()
@@ -674,7 +928,16 @@ def delivery_landed(root: Path, ticket_dir: Path, target: str) -> bool:
     spec = f"{target}:{parent}" if parent else target
     if not name or name not in _target_tree_entries(root, spec):
         return False
-    return not _unmerged_ticket_branch(root, ticket_dir.name, target)
+    if _unmerged_ticket_branch(root, ticket_dir.name, target):
+        return False
+    statuses, delivered_names, delivered_numbers = _target_delivery_evidence(root, target, parent)
+    target_status = statuses.get(name)
+    if target_status in {"DONE", "CANCELLED", "CLOSED"}:
+        return True
+    if target_status in {"PLAN", "BACKLOG", "BLOCKED"}:
+        return False
+    number = str(int(name.removeprefix("ticket-"))) if TICKET_RE.fullmatch(name) else None
+    return name in delivered_names or (number is not None and number in delivered_numbers)
 
 
 def resolve(root: Path, ticket_dir: Path, active_statuses: set[str], *, status_override: str | None = None) -> ActivityResolution:
@@ -697,8 +960,7 @@ def resolve(root: Path, ticket_dir: Path, active_statuses: set[str], *, status_o
                 ticket, False, status, "git-ancestry", reason="delivery-on-target",
             )
         return ActivityResolution(ticket, True, status, "status-projection", reason="registry-absent")
-    receipts = _validate_registry(_load(path), repository_ref(root))
-    matching = [item for item in receipts if item["ticket"] == ticket]
+    matching = _registry_receipts_by_ticket(root, path).get(ticket, [])
     for receipt in reversed(matching):
         rule = policy["terminalOutcomes"].get(receipt["outcome"])
         if rule is None:

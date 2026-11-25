@@ -218,3 +218,74 @@ def test_ssot_pack_valid_and_negative_cases(tmp_path: Path) -> None:
     assert "SSOT-ACTION-001" in neg_codes
     assert "SSOT-PIN-001" in neg_codes
     assert "SSOT-POLICY-001" in neg_codes
+
+
+def test_gui_and_brand_registered_with_aliases_and_applicability():
+    from wellman.applicability import RULES
+    from wellman.registry import STANDARDS_CATALOG, get_standard
+
+    assert "wellmanifest/gui" in STANDARDS_CATALOG
+    assert "wellmanifest/brand" in STANDARDS_CATALOG
+    assert get_standard("gui").id == "wellmanifest/gui"
+    assert get_standard("brand").id == "wellmanifest/brand"
+    assert "wellmanifest/gui" in RULES
+    assert "wellmanifest/brand" in RULES
+
+
+def test_gui_pack_validates_view_schemas_layout_and_tui_parity(tmp_path):
+    assert [f.code for f in ConformanceRunner(tmp_path).run_standard("wellmanifest/gui")] == ["GOV-GUI-MISSING"]
+
+    _write(tmp_path / "ui" / "dashboard.gui.json", {
+        "id": "dashboard-main",
+        "section": "organization",
+        "kind": "panel",
+        "toolbar": {"add_button": {"id": "add", "label": "Add"}},
+        "url_state": {"tab": "organization", "view_param": "view"},
+        "tui_parity": {"missing": []},
+    })
+    assert ConformanceRunner(tmp_path).run_standard("wellmanifest/gui") == []
+
+    _write(tmp_path / "ui" / "public.gui.json", {
+        "id": "public-home",
+        "kind": "landing",
+        "item_section_toolbar": {"enabled": True},
+        "tui_parity": {"missing": ["audit-panel"]},
+    })
+    _write(tmp_path / "ui" / "broken.gui.json", {"section": "orphan"})
+    codes = {f.code for f in ConformanceRunner(tmp_path).run_standard("wellmanifest/gui")}
+    assert "GOV-GUI-LAYOUT-VIOLATION" in codes
+    assert "GOV-GUI-PARITY-GAP" in codes
+    assert "GOV-GUI-INVALID" in codes
+
+
+def test_brand_pack_validates_tokens_and_wcag_aa_contrast(tmp_path):
+    assert [f.code for f in ConformanceRunner(tmp_path).run_standard("wellmanifest/brand")] == ["GOV-BRAND-MISSING"]
+
+    _write(tmp_path / ".governance" / "brand.json", {
+        "profile": "subactor/brand",
+        "colors": {
+            "ink": "#0F172A",
+            "surface": "#FFFFFF",
+            "muted": "#475569",
+        },
+        "contrast_pairs": [
+            {"name": "body", "foreground": "ink", "background": "surface"},
+            {"name": "heading", "foreground": "muted", "background": "surface", "large_text": True},
+        ],
+    })
+    assert ConformanceRunner(tmp_path).run_standard("wellmanifest/brand") == []
+
+    _write(tmp_path / ".governance" / "brand.json", {
+        "profile": "subactor/brand",
+        "colors": {
+            "ink": "#CCCCCC",
+            "surface": "#FFFFFF",
+            "bad": "not-a-hex",
+        },
+        "contrast_pairs": [
+            {"name": "body", "foreground": "ink", "background": "surface"},
+        ],
+    })
+    codes = {f.code for f in ConformanceRunner(tmp_path).run_standard("wellmanifest/brand")}
+    assert "GOV-BRAND-CONTRAST-FAIL" in codes
+    assert "GOV-BRAND-TOKEN-INVALID" in codes

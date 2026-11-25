@@ -1,0 +1,72 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-128",
+  "summary": "Enable coordination idleTakeover policy in governance manifest",
+  "workstream": "governance",
+  "classification": {
+    "kind": "FEATURE",
+    "priority": "P2",
+    "origin": "requested"
+  },
+  "allowedPaths": [
+    "project/ticket-128/**",
+    "TODO.md",
+    "project/TICKETS.md",
+    ".governance/manifest.json"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": null,
+  "delivery": {
+    "acceptedBaseSha": "af2018b65b453e52405e2f86548ddc281dffde03",
+    "targetBranch": "main",
+    "outcome": "Enable coordination.idleTakeover in .governance/manifest.json so idle_takeover.py can execute CAS lease takeover on stalled/expired tickets without hand-editing leases.",
+    "nonGoals": [
+      "Modify any existing ticket lease or worktree in this ticket"
+    ],
+    "complexity": "S",
+    "estimatedMinutes": 10,
+    "budgets": {
+      "maxImplementationFiles": 1,
+      "maxAffectedComponents": 1,
+      "maxPublicInterfaceChanges": 0,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Add coordination.idleTakeover {enabled: true, idleMinutes: 15, leaseMinutes: 120} to .governance/manifest.json matching maskservice/update#435.",
+      "components": [
+        {
+          "name": "governance-manifest-coordination",
+          "paths": [
+            ".governance/manifest.json"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [],
+      "dataChanges": [],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Remove coordination.idleTakeover from .governance/manifest.json."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-01",
+        "commands": [
+          "./project/governance-check.sh",
+          "python3 .governance/idle_takeover.py observe"
+        ],
+        "evidence": ".governance/manifest.json validates cleanly and idle_takeover.py observe reports policy enabled."
+      }
+    ]
+  }
+}
